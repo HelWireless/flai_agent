@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import openai
 import yaml
-from vector_query import vector_db
+from vector_query import VectorQuery
 from speech_api import speech_api
 from content_filter import content_filter
 from typing import List
@@ -19,6 +19,13 @@ with open("config.yaml", "r") as config_file:
 openai.api_key = config["openai"]["api_key"]
 EMBEDDING_MODEL = config["openai"]["embedding_model"]
 COMPLETION_MODEL = config["openai"]["completion_model"]
+
+# VectorQuery 配置
+vector_db = VectorQuery(
+    url=config["qdrant"]["url"],
+    api_key=config["qdrant"]["api_key"],
+    collection_name=config["qdrant"]["collection_name"]
+)
 
 # 语音 API 配置
 speech_api.configure(
@@ -96,7 +103,7 @@ async def query(query: Query):
     
     # 如果不敏感,继续处理查询
     query_embedding = get_embedding(query.text)
-    search_results = vector_db.search_similar(query_embedding)
+    search_results = vector_db.search_similar(query_embedding, limit=5)
     context = build_context(search_results)
     
     # 假设我们有一个存储对话历史的列表
