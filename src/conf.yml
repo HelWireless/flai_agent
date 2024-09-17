@@ -1,0 +1,9 @@
+openai:
+  api_key: "your-openai-api-key"
+  embedding_model: "text-embedding-ada-002"
+  completion_model: "gpt-3.5-turbo"
+
+speech_api:
+  provider: "your-speech-api-provider"
+  api_key: "your-speech-api-key"
+  region: "your-speech-api-region"
