@@ -54,18 +54,13 @@ class SpeechAPI:
 
 # 读取配置文件
 def load_config(config_path):
-    import os
-    # 打印当前工作目录
-    print("Current working directory:", os.getcwd())
-    # 打印配置文件路径
-    print("Config file path:", config_path)
-    try:
-        with open(config_path, 'r') as file:
-            config = yaml.safe_load(file)
-        return config
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-        raise
+    # 获取当前工作目录
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # 拼接绝对路径
+    absolute_path = os.path.join(current_dir, config_path)
+    with open(absolute_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
 
 def synthesize_speech(config, text, speaker_id):
     # 确保 'access_token' 存在于 config 字典中
