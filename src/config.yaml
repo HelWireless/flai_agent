@@ -25,6 +25,6 @@ speech_api:
   appid: "6876644863"
   access_token: "SmjmNcd4sPVl5FqLi7U6Gvs8WtF0yMlF"
   secret_key: qbQn3ScXJDr4mxUJ22yCgoUqhmW9OmoU
-  cluster: "VoiceCloning7406618528462278963"
+  cluster: "volcano_mega"
   voice_type: "S_LDfNJ5E11"
   host: "openspeech.bytedance.com"
