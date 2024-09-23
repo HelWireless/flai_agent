@@ -64,16 +64,16 @@ def load_config(config_path):
 
 def synthesize_speech(config, text, speaker_id):
     # 确保 'access_token' 存在于 config 字典中
-    if 'access_token' not in config:
+    if 'access_token' not in config["speech_api"]:
         raise KeyError("The 'access_token' key is missing from the config dictionary.")
     
     url = "https://openspeech.bytedance.com/api/v1/mega_tts/synthesize"
     headers = {
-        "Authorization": f"Bearer;{config['access_token']}",
+        "Authorization": f"Bearer;{config['speech_api']['access_token']}",
         "Content-Type": "application/json"
     }
     payload = {
-        "appid": config['appid'],
+        "appid": config['speech_api']['appid'],
         "text": text,
         "speaker_id": speaker_id,
         "cluster": "volcano_mega",
