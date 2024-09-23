@@ -20,3 +20,8 @@ database:
   host: "81.68.235.167"
   port: "5432"
   dbname: "pillow_customer_prod"
+
+speech_api:
+  appid: 6876644863
+  access_token: SmjmNcd4sPVl5FqLi7U6Gvs8WtF0yMlF
+  secret_key: qbQn3ScXJDr4mxUJ22yCgoUqhmW9OmoU
