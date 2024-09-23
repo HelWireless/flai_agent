@@ -58,7 +58,7 @@ def load_config(config_path):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     # 拼接绝对路径
     absolute_path = os.path.join(current_dir, config_path)
-    with open(absolute_path, 'r') as file:
+    with open(absolute_path, 'r', encoding='utf-8') as file:  # 修改这里，添加 encoding='utf-8'
         config = yaml.safe_load(file)
     return config
 
