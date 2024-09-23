@@ -15,4 +15,8 @@ qdrant:
 
 
 database:
-  url: "mysql://pillow:1234QWERasdf!@#$@81.68.235.167:5432/pillow_customer_prod"
+  username: "pillow"
+  password: "1234QWERasdf!@#$"
+  host: "81.68.235.167"
+  port: "5432"
+  dbname: "pillow_customer_prod"
