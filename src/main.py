@@ -1,147 +1,39 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import openai
-import yaml
-from vector_query import VectorQuery
-from speech_api import speech_api
-from content_filter import content_filter
-from typing import List
-import io
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import uvicorn
+from api.routes import router
 
-app = FastAPI()
-
-# 加载配置
-with open("config.yaml", "r") as config_file:
-    config = yaml.safe_load(config_file)
-
-# OpenAI 配置
-openai.api_key = config["openai"]["api_key"]
-EMBEDDING_MODEL = config["openai"]["embedding_model"]
-COMPLETION_MODEL = config["openai"]["completion_model"]
-
-# VectorQuery 配置
-vector_db = VectorQuery(
-    url=config["qdrant"]["url"],
-    api_key=config["qdrant"]["api_key"],
-    collection_name=config["qdrant"]["collection_name"]
-)
-
-# 语音 API 配置
-speech_api.configure(
-    provider=config["speech_api"]["provider"],
-    api_key=config["speech_api"]["api_key"],
-    region=config["speech_api"]["region"]
-)
-
-class Document(BaseModel):
-    text: str
-
-class Query(BaseModel):
-    text: str
-
-class ContentCheckRequest(BaseModel):
-    text: str
-
-class TextToSpeechRequest(BaseModel):
-    text: str
-    voice: str
-
-def get_embedding(text: str) -> List[float]:
-    return openai.Embedding.create(input=text, model=EMBEDDING_MODEL)["data"][0]["embedding"]
-
-def build_context(search_results: List[dict]) -> str:
-    return "\n".join([hit.payload["text"] for hit in search_results])
-
-def generate_answer(context: str, question: str, messages: list) -> str:
-    is_repetitive, repeated_sentence = check_assistant_repetition(messages)
-    
-    if is_repetitive:
-        new_system_prompt = f"You are a helpful assistant. Use the following context to answer the user's question. Avoid repeating this sentence: '{repeated_sentence}'"
-    else:
-        new_system_prompt = "You are a helpful assistant. Use the following context to answer the user's question."
-
-    messages = [
-        {"role": "system", "content": new_system_prompt},
-        {"role": "user", "content": f"Context: {context}\n\nQuestion: {question}"}
-    ] + messages
-
-    response = openai.ChatCompletion.create(
-        model=COMPLETION_MODEL,
-        messages=messages
+def create_app() -> FastAPI:
+    app = FastAPI(title="Pillow Talk", debug=False)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
-    return response.choices[0].message.content
+    return app
 
-def check_assistant_repetition(messages, threshold=0.8):
-    assistant_responses = [msg['content'] for msg in messages if msg['role'] == 'assistant']
-    
-    if len(assistant_responses) < 2:
-        return False, ""
+app = create_app()
+app.include_router(router)
 
-    latest_response = assistant_responses[-1]
-    previous_responses = assistant_responses[:-1]
+async def set_body(request: Request):
+    receive_ = await request._receive()
+    async def receive():
+        return receive_
+    request._receive = receive
 
-    for response in previous_responses:
-        similarity = content_filter.check_sentence_similarity(latest_response, response)
-        if similarity > threshold:
-            return True, response
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: Exception):
+    await set_body(request)
+    request_text = await request.body()
+    request_text = str(request_text.decode('utf-8'))
+    app.logger.warning(f'请求发生异常，记录request的请求体如下:{request_text}')
+    return JSONResponse(
+        status_code=exc.status_code if isinstance(exc, HTTPException) else 500,
+        content={"detail": exc.detail}
+    )
 
-    return False, ""
-
-@app.post("/add_document")
-async def add_document(document: Document):
-    embedding = get_embedding(document.text)
-    vector_db.insert_document(doc_id=hash(document.text), vector=embedding, payload={"text": document.text})
-    return {"message": "Document added successfully"}
-
-@app.post("/query")
-async def query(query: Query):
-    # 首先检查查询内容是否敏感
-    is_sensitive, sensitive_words = content_filter.detect_sensitive_content(query.text)
-    if is_sensitive:
-        raise HTTPException(status_code=400, detail="Query contains sensitive content")
-    
-    # 如果不敏感,继续处理查询
-    query_embedding = get_embedding(query.text)
-    search_results = vector_db.search_similar(query_embedding, limit=5)
-    context = build_context(search_results)
-    
-    # 假设我们有一个存储对话历史的列表
-    conversation_history = []  # 这应该在实际应用中持久化存储
-    
-    answer = generate_answer(context, query.text, conversation_history)
-    
-    # 更新对话历史
-    conversation_history.append({"role": "user", "content": query.text})
-    conversation_history.append({"role": "assistant", "content": answer})
-    
-    # 检查生成的答案是否包含敏感内容
-    is_sensitive, sensitive_words = content_filter.detect_sensitive_content(answer)
-    if is_sensitive:
-        answer = content_filter.filter_sensitive_content(answer)
-    
-    return {"answer": answer, "contains_sensitive_content": is_sensitive}
-
-@app.post("/check_content")
-async def check_content(request: ContentCheckRequest):
-    is_sensitive, sensitive_words = content_filter.detect_sensitive_content(request.text)
-    if is_sensitive:
-        return {
-            "is_sensitive": True,
-            "sensitive_words": sensitive_words,
-            "filtered_text": content_filter.filter_sensitive_content(request.text)
-        }
-    else:
-        return {"is_sensitive": False}
-
-@app.post("/text_to_speech")
-async def text_to_speech(request: TextToSpeechRequest):
-    audio_content = speech_api.text_to_speech(request.text, request.voice)
-    if audio_content:
-        return StreamingResponse(io.BytesIO(audio_content), media_type="audio/mpeg")
-    else:
-        return {"error": "Failed to generate speech"}
-
-if __name__ == "__main__":
-    import uvicorn
+if __name__ == '__main__':
     uvicorn.run(app, host="0.0.0.0", port=8000)
