@@ -1,0 +1,18 @@
+deepseek:
+  base_url: "https://api.deepseek.com/v1"
+  api_key: "sk-2f77d8d8f2bb4941a5776d46e3132606"
+  completion_model: "deepseek-chat"
+
+speech_api:
+  provider: "your-speech-api-provider"
+  api_key: "your-speech-api-key"
+  region: "your-speech-api-region"
+
+qdrant:
+  url: "http://47.103.39.33:6333"
+  api_key: ""  # 如果没有设置 API 密钥,保持为空字符串
+  collection_name: "pillow"
+
+
+database:
+  url: "mysql://pillow:1234QWERasdf!@#$@81.68.235.167:5432/pillow_customer_prod"
