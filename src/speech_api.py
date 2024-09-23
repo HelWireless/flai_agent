@@ -1,54 +1,72 @@
-import requests
-from typing import Optional
-import os
-import yaml
-import base64
+#coding=utf-8
 
-# 读取配置文件
+'''
+requires Python 3.6 or later
+pip install requests pyyaml
+'''
+import base64
+import json
+import uuid
+import requests
+import yaml
+
 def load_config(config_path):
-    # 获取当前工作目录
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    # 拼接绝对路径
-    absolute_path = os.path.join(current_dir, config_path)
-    with open(absolute_path, 'r', encoding='utf-8') as file:  # 修改这里，添加 encoding='utf-8'
+    with open(config_path, 'r', encoding='utf-8') as file:  # 添加 encoding='utf-8'
         config = yaml.safe_load(file)
     return config
 
-def synthesize_speech(config, text, speaker_id):
-    # 确保 'access_token' 存在于 config 字典中
-    if 'access_token' not in config["speech_api"]:
-        raise KeyError("The 'access_token' key is missing from the config dictionary.")
-    
-    url = "https://openspeech.bytedance.com/api/v1/tts"
-    headers = {
-        "Authorization": f"Bearer;{config['speech_api']['access_token']}",
-        "Content-Type": "application/json"
+# 加载配置文件
+config = load_config('config.yaml')
+
+appid = config['appid']
+access_token = config['access_token']
+cluster = config['cluster']
+voice_type = config['voice_type']
+host = config['host']
+api_url = f"https://{host}/api/v1/tts"
+
+header = {
+    "Authorization": f"Bearer {access_token}",
+    "Resource-Id": "VoiceCloning7406618528462278963"  # 添加 Resource-Id
+}
+
+request_json = {
+    "app": {
+        "appid": appid,
+        "token": access_token,  # 使用变量 access_token
+        "cluster": cluster
+    },
+    "user": {
+        "uid": "388808087185088"
+    },
+    "audio": {
+        "voice_type": voice_type,
+        "encoding": "mp3",
+        "speed_ratio": 1.0,
+        "volume_ratio": 1.0,
+        "pitch_ratio": 1.0,
+    },
+    "request": {
+        "reqid": str(uuid.uuid4()),
+        "text": "字节跳动语音合成",
+        "text_type": "plain",
+        "operation": "query",
+        "with_frontend": 1,
+        "frontend_type": "unitTson"
     }
-    payload = {
-        "appid": config['speech_api']['appid'],
-        "text": text,
-        "speaker_id": speaker_id,
-        "cluster": "volcano_mega",
-        "voice_type": speaker_id
-    }
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code == 200:
-        result = response.json()
-        if result["BaseResp"]["StatusCode"] == 0:
-            audio_data = base64.b64decode(result["audio"])
-            with open("output.wav", "wb") as audio_file:
-                audio_file.write(audio_data)
-            print("语音合成成功，音频已保存为 output.wav")
+}
+
+if __name__ == '__main__':
+    try:
+        print(f"Sending request to {api_url} with headers {header} and body {request_json}")
+        resp = requests.post(api_url, json=request_json, headers=header)  # 使用 json=request_json
+        print(f"HTTP status code: {resp.status_code}")
+        print(f"Response body: {resp.text}")
+        if resp.status_code == 200 and "data" in resp.json():
+            data = resp.json()["data"]
+            with open("test_submit.mp3", "wb") as file_to_save:  # 使用 with 语句确保文件正确关闭
+                file_to_save.write(base64.b64decode(data))
         else:
-            print(f"语音合成失败: {result['BaseResp']['StatusMessage']}")
-    else:
-        print(f"HTTP 请求失败: {response.status_code}")
-
-# 测试部分
-if __name__ == "__main__":
-    config_path = 'config.yaml'
-    config = load_config(config_path)
-    text = "你好，这是一个语音合成示例。"
-    speaker_id = "S_LDfNJ5E11"
-    synthesize_speech(config, text, speaker_id)
-
+            print(f"HTTP 请求失败: {resp.status_code}")
+    except Exception as e:
+        print(f"An error occurred: {e}")  # 打印错误信息
