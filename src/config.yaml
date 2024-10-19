@@ -1,6 +1,6 @@
 deepseek:
   base_url: "https://api.deepseek.com/v1"
-  api_key: "abc_sk-2f77d8d8f2bb4941a5776d46e3132606"
+  api_key: "sk-2f77d8d8f2bb4941a5776d46e3132606"
   completion_model: "deepseek-chat"
 
 qdrant:
@@ -18,15 +18,15 @@ database:
 
 speech_api:
   appid: "6876644863"
-  access_token: "abc_SmjmNcd4sPVl5FqLi7U6Gvs8WtF0yMlF"
-  secret_key: "abc_qbQn3ScXJDr4mxUJ22yCgoUqhmW9OmoU"
+  access_token: "SmjmNcd4sPVl5FqLi7U6Gvs8WtF0yMlF"
+  secret_key: "qbQn3ScXJDr4mxUJ22yCgoUqhmW9OmoU"
   cluster: "volcano_mega"
   voice_type: "S_LDfNJ5E11"
   host: "openspeech.bytedance.com"
 
 oss_key:
-  access_key_id: "abc_LTAI5tQLC1ShqDBV6VKuLhrZ"
-  access_key_secret: "abc_yd4IxfCS977axJtU1D7Q7kOKiC3TTV"
+  access_key_id: "LTAI5tQLC1ShqDBV6VKuLhrZ"
+  access_key_secret: "yd4IxfCS977axJtU1D7Q7kOKiC3TTV"
   endpoint: "oss-cn-shanghai.aliyuncs.com"
   bucket_name: "pillow-chat"
 
