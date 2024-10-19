@@ -34,3 +34,13 @@ class ChatResponse(BaseModel):
     llm_message: List[str]
     complex_message: Optional[str] = None
     emotion_type: int
+
+class Text2Voice(BaseModel):
+    user_id: str
+    text_id: str
+    text: str
+
+class Text2VoiceResponse(BaseModel):
+    user_id: str
+    text_id: str
+    url: str
