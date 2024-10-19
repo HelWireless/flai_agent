@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
-from api.routes import router
+from src.api.routes import router
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Pillow Talk", debug=False)

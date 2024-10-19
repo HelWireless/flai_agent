@@ -1,20 +1,20 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from schemas import *
-from database import get_db
-from dialogue_query import get_user_dialogue_history
+from src.schemas import *
+from src.database import get_db
+from src.dialogue_query import get_user_dialogue_history
 import openai
-from content_filter import content_filter
-from utils import get_emotion_type, check_assistant_repetition, split_message
-from vector_query import VectorQuery
+from src.content_filter import content_filter
+from src.utils import get_emotion_type, check_assistant_repetition, split_message
+from src.vector_query import VectorQuery
 import yaml
 from typing import List, Dict
 import os
 import uuid
-from speech_api import SpeechAPI
-from oss_client import get_oss_bucket
+from src.speech_api import SpeechAPI
+from src.oss_client import get_oss_bucket
 import time
-from custom_logger import custom_logger  # 导入自定义logger
+from src.custom_logger import custom_logger  # 导入自定义logger
 
 
 router = APIRouter(
