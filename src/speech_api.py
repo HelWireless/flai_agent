@@ -1,19 +1,18 @@
-#coding=utf-8
-
-'''
-requires Python 3.6 or later
-pip install requests pyyaml
-'''
 import base64
 import json
 import uuid
 import requests
 import yaml
 import os
+from time import time
 
 class SpeechAPI:
-    def __init__(self, config_path):
+    def __init__(self, config_path, user_id=uuid.uuid4()):
         self.config = self.load_config(config_path)
+        self.uid = user_id
+        self.timestamp = int(time())
+        self.reqid =  self.uid +"_" + self.timestamp
+
 
     def load_config(self, config_path):
         with open(config_path, 'r', encoding='utf-8') as file:  # 添加 encoding='utf-8'
@@ -28,7 +27,7 @@ class SpeechAPI:
                 "cluster": self.config["cluster"]
             },
             "user": {
-                "uid": str(uuid.uuid4())
+                "uid": self.uid
             },
             "audio": {
                 "voice_type": self.config["voice_type"],
@@ -38,7 +37,7 @@ class SpeechAPI:
                 "pitch_ratio": 1.0
             },
             "request": {
-                "reqid": str(uuid.uuid4()),
+                "reqid": self.reqid,
                 "text": text,
                 "text_type": "plain",
                 "operation": "query",
@@ -48,7 +47,7 @@ class SpeechAPI:
         }
         return request_body
 
-    def send_request(self, api_url, request_body):
+    def send_request(self, api_url, request_body, output_path):
         headers = {
             "Authorization": f"Bearer;{self.config['access_token']}"
         }
@@ -61,7 +60,7 @@ class SpeechAPI:
                 response_json = response.json()
                 if "data" in response_json:
                     data = response_json["data"]
-                    with open("output.mp3", "wb") as file_to_save:  # 保存为 MP3 文件
+                    with open(output_path, "wb") as file_to_save:  # 保存为 MP3 文件
                         file_to_save.write(base64.b64decode(data))
                     print("MP3 文件已保存为 output.mp3")
                 else:
