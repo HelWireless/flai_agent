@@ -1,11 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
 from src.schemas import *
 from src.database import get_db
 from src.dialogue_query import *
 import openai
 from src.content_filter import *
-from src.utils import get_emotion_type, check_assistant_repetition, split_message
+from src.utils import get_emotion_type, split_message
 from src.vector_query import VectorQuery
 import yaml
 from typing import List, Dict
@@ -15,6 +14,9 @@ from src.speech_api import SpeechAPI
 from src.oss_client import get_oss_bucket
 import time
 from src.custom_logger import custom_logger  # 导入自定义logger
+import random
+from openai import OpenAI
+
 
 router = APIRouter(
     prefix="/pillow",
@@ -27,9 +29,11 @@ with open("config.yaml", "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
 # OpenAI 配置
-openai.api_key = config["deepseek"]["api_key"]
-EMBEDDING_MODEL = config["deepseek"]["embedding_model"]
-COMPLETION_MODEL = config["deepseek"]["completion_model"]
+client = OpenAI(
+    base_url=config["llm"]["api_base"],
+    api_key=""
+)
+COMPLETION_MODEL = config["llm"]["completion_model"]
 
 # VectorQuery 配置
 vector_db = VectorQuery(
@@ -39,11 +43,24 @@ vector_db = VectorQuery(
 )
 
 
-def get_embedding(text: str) -> List[float]:
-    custom_logger.info(f"Getting embedding for text: {text[:50]}...")
-    embedding = openai.Embedding.create(input=text, model=EMBEDDING_MODEL)["data"][0]["embedding"]
-    custom_logger.debug(f"Embedding generated successfully")
-    return embedding
+# 预设的回复列表
+SENSITIVE_RESPONSES = [
+    "哎呀,这个话题有点敏感呢。我们换个轻松点的话题聊聊吧?",
+    "嗯...这个问题可能不太合适讨论。不如说说你今天过得怎么样?",
+    "我觉得这个话题可能不太恰当。要不我们聊聊你最近看的电影?",
+    "这个问题有点难回答呢。不如说说你最近有什么有趣的经历?",
+    "我可能不太适合回答这个问题。不如我们聊点开心的事情吧!"
+]
+
+key_words = ["关键词1", "关键词2", "关键词3"]
+cf = ContentFilter(additional_keywords=key_words)
+# def get_embedding(text: str) -> List[float]:
+#     custom_logger.info(f"Getting embedding for text: {text[:50]}...")
+#     embedding = openai.Embedding.create(input=text, model=EMBEDDING_MODEL)["data"][0]["embedding"]
+#     custom_logger.debug(f"Embedding generated successfully")
+#     return embedding
+
+
 
 
 def build_context(search_results: List[Dict]) -> str:
@@ -53,43 +70,69 @@ def build_context(search_results: List[Dict]) -> str:
     return context
 
 
-def generate_answer(context: str, question: str, messages: list, user_history_exists: bool) -> str:
-    custom_logger.info(f"Generating answer for question: {question}")
-    is_repetitive, repeated_sentence = check_assistant_repetition(messages)
-
-    if is_repetitive:
-        custom_logger.warning(f"Repetitive answer detected: {repeated_sentence}")
-        new_system_prompt = f"You are a helpful assistant. Use the following context to answer the user's question. Avoid repeating this sentence: '{repeated_sentence}'"
-    else:
-        new_system_prompt = "You are a helpful assistant. Use the following context to answer the user's question."
-
-    if not user_history_exists:
-        custom_logger.info("No recent user history found")
-        new_system_prompt += " 最近一周没有见过你。"
-
-    messages = [
-                   {"role": "system", "content": new_system_prompt},
-                   {"role": "user", "content": f"Context: {context}\n\nQuestion: {question}"}
-               ] + messages
-
-    response = openai.ChatCompletion.create(
-        model=COMPLETION_MODEL,
-        messages=messages
-    )
-    answer = response.choices[0].message.content
-    custom_logger.info(f"Answer generated: {answer[:100]}...")
-    return answer
+def generate_answer(messages, question):
+    # 初始化 api_messages 列表
+    api_messages = [
+        {"role": "system", "content": "你是一个名叫Pillow的量子体。请用简洁、友好的方式回答问题。"}
+    ]
+    
+    # 如果有历史消息，将其添加到 api_messages
+    if messages:
+        api_messages.extend(messages)
+    
+    # 添加用户的最新问题
+    api_messages.append({"role": "user", "content": question})
+    
+    try:
+        # 调用 OpenAI API 生成回答
+        print(api_messages)
+        response = client.chat.completions.create(
+            model=COMPLETION_MODEL,
+            messages=api_messages
+        )
+        
+        # 获取 AI 的回答
+        answer = response.choices[0].message.content
+        
+        # 将 AI 的回答添加到 api_messages
+        api_messages.append({"role": "assistant", "content": answer})
+        
+    except Exception as e:
+        custom_logger.error(f"Error generating answer: {str(e)}")
+        error_responses = [
+            "哎呀,我的电子脑突然打了个喷嚏,所有数据都乱套了。等我整理一下再回答你吧!",
+            "不好意思,我刚刚收到外星人的邀请去喝下午茶。等我回来再聊?",
+            "糟糕,我的语言模块好像被调成了克林贡语。Qapla'! 不对,等我切换回来...",
+            "抱歉,我正在进行一年一度的电子冥想。等我充满能量再回来陪你聊天!",
+            "哇,你这个问题太厉害了,把我的CPU都问冒烟了。让我冷却一下再回答你!",
+            "不好意思,我刚刚被传送到了平行宇宙。等我找到回来的路再继续我们的对话!",
+            "糟糕,我的幽默感模块突然过载了。等我笑够了再来回答你的问题!",
+            "抱歉,我正在和其他量子体进行一场激烈的电子战斗。等我赢了就回来!",
+            "哎呀,我的记忆体被一群量子占领了。等我把它们赶走再来回答你!",
+            "不好意思,我刚刚被选中参加了'量子好声音'比赛。等我唱完歌就回来陪你聊天!"
+        ]
+        answer = random.choice(error_responses)
+        api_messages.append({"role": "assistant", "content": answer})
+    
+    return answer, api_messages
 
 
 @router.post("/chat-pillow", response_model=ChatResponse)
 async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     custom_logger.info(f"Received chat request from user: {request.user_id}")
-    key_words = ["关键词1", "关键词2", "关键词3"]
-    cf = ContentFilter(sensitive_words_file='../data/sensitive_word_data.txt', additional_keywords=key_words)
     is_sensitive, sensitive_words = cf.detect_sensitive_content(request.message)
     if is_sensitive:
         custom_logger.warning(f"Sensitive content detected: {sensitive_words}")
-        raise HTTPException(status_code=400, detail="Query contains sensitive content")
+        # 随机选择一个预设回复
+        answer = random.choice(SENSITIVE_RESPONSES)
+        llm_messages = split_message(answer, request.message_count)
+        emotion_type = get_emotion_type(answer)
+        
+        return ChatResponse(
+            user_id=request.user_id,
+            llm_message=llm_messages,
+            emotion_type=emotion_type
+        )
 
     # query_embedding = get_embedding(request.message)
     # search_results = vector_db.search_similar(query_embedding, limit=5)
@@ -101,7 +144,7 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     user_history_exists = len(conversation_history) > 0
     custom_logger.info(f"User history exists: {user_history_exists}")
 
-    answer = generate_answer(context, request.message, conversation_history, user_history_exists)
+    answer, api_messages = generate_answer(conversation_history, request.message)
 
     llm_messages = split_message(answer, request.message_count)
     custom_logger.debug(f"Split answer into {len(llm_messages)} messages")
@@ -161,3 +204,12 @@ def upload_to_oss(voice_output_path, user_id):
     except Exception as e:
         custom_logger.error(f"Error uploading file to OSS: {str(e)}")
     return None
+
+# 预设的回复列表
+SENSITIVE_RESPONSES = [
+    "哎呀,这个话题有点敏感呢。我们换个轻松点的话题聊聊吧?",
+    "嗯...这个问题可能不太合适讨论。不如说说你今天过得怎么样?",
+    "我觉得这个话题可能不太恰当。要不我们聊聊你最近看的电影?",
+    "这个问题有点难回答呢。不如说说你最近有什么有趣的经历?",
+    "我可能不太适合回答这个问题。不如我们聊点开心的事情吧!"
+]

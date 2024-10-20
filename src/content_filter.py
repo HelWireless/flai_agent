@@ -1,16 +1,21 @@
 import re
 from typing import List, Tuple
 import difflib
-
+import os
 class ContentFilter:
-    def __init__(self, sensitive_words_file: str, additional_keywords: List[str] = None):
-        self.sensitive_words = self.load_sensitive_words(sensitive_words_file)
+    def __init__(self,additional_keywords: List[str] = None):
+        self.sensitive_words = self.load_sensitive_words()
         self.keywords = additional_keywords or []
         self.sensitive_pattern = re.compile("|".join(map(re.escape, self.sensitive_words)), re.IGNORECASE)
         self.keyword_pattern = re.compile("|".join(map(re.escape, self.keywords)), re.IGNORECASE)
 
-    def load_sensitive_words(self, file_path: str) -> List[str]:
-        with open(file_path, 'r', encoding='utf-8') as file:
+    def load_sensitive_words(self) -> List[str]:
+        # 获取当前脚本的目录
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        # 构建config.yaml的绝对路径
+        config_path = os.path.join(current_dir, "sensitive_word_data.txt")
+
+        with open(config_path, 'r', encoding='utf-8') as file:
             return [line.strip() for line in file if line.strip()]
 
     def detect_sensitive_content(self, text: str) -> Tuple[bool, List[str]]:
@@ -71,7 +76,6 @@ class ContentFilter:
 if __name__ == "__main__":
     # 初始化 ContentFilter 实例
     content_filter = ContentFilter(
-        sensitive_words_file='src/data/sensitive_word_data.txt',
         additional_keywords=["关键词1", "关键词2", "关键词3"]
     )
     text = "这是一个包含关键词1和刘少奇的测试文本。这是另一个包含关键词1的句子。这是一个非常相似的句子。这是一个非常相似的句子。"

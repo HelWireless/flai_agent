@@ -12,7 +12,7 @@ class DialogueQuery:
         else:
             self.engine = self.load_config()
             self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-            self.db = self.get_db()
+            self.db = next(self.get_db())
 
     def load_config(self):
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -45,7 +45,7 @@ class DialogueQuery:
             db.close()
 
     def get_user_dialogue_history(self, user_id: str) -> List[Dict[str, str]]:
-        db = next(self.get_db())
+        db = self.db
         query = text("""
             SELECT
                 t1.message AS user_message,
