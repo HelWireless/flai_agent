@@ -6,12 +6,13 @@ import yaml
 import urllib
 
 class DialogueQuery:
-    def __init__(self, engine: Engine, if_test: bool = False):
+    def __init__(self, db=None, if_test: bool = False):
         if not if_test:
-            self.engine = engine
+            self.db = db
         else:
             self.engine = self.load_config()
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+            self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+            self.db = self.get_db()
 
     def load_config(self):
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +44,7 @@ class DialogueQuery:
         finally:
             db.close()
 
-    def get_user_dialogue_history(self, user_id: int) -> List[Dict[str, str]]:
+    def get_user_dialogue_history(self, user_id: str) -> List[Dict[str, str]]:
         db = next(self.get_db())
         query = text("""
             SELECT
@@ -95,6 +96,6 @@ class DialogueQuery:
 
 # 示例用法
 if __name__ == "__main__":
-    dialogue_query = DialogueQuery(engine='abc',if_test=True)
-    result = dialogue_query.get_user_dialogue_history(1000009)   
+    dialogue_query = DialogueQuery(if_test=True)
+    result = dialogue_query.get_user_dialogue_history('1000009')
     print(result)

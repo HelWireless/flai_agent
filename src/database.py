@@ -2,6 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import yaml
 import os
+import urllib
 
 # 获取当前脚本的目录
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,8 +20,11 @@ except yaml.YAMLError as e:
 except UnicodeDecodeError:
     print(f"文件编码错误,请确保 {config_path} 使用 UTF-8 编码")
 
-DATABASE_URL = config["database"]["url"]
-engine = create_engine(DATABASE_URL)
+encoded_password = urllib.parse.quote(config["database"]["password"])
+host = config["database"]["host"]
+username = config["database"]["username"]
+DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}/pillow_customer_prod'
+engine = create_engine(DATABASE_URI)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():

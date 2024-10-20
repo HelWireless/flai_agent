@@ -66,13 +66,14 @@ class ContentFilter:
             "processed_text": text
         }
 
-# 初始化 ContentFilter 实例
-content_filter = ContentFilter(
-    sensitive_words_file='src/data/sensitive_word_data.txt',
-    additional_keywords=["关键词1", "关键词2", "关键词3"]
-)
+
 
 if __name__ == "__main__":
+    # 初始化 ContentFilter 实例
+    content_filter = ContentFilter(
+        sensitive_words_file='src/data/sensitive_word_data.txt',
+        additional_keywords=["关键词1", "关键词2", "关键词3"]
+    )
     text = "这是一个包含关键词1和刘少奇的测试文本。这是另一个包含关键词1的句子。这是一个非常相似的句子。这是一个非常相似的句子。"
     result = content_filter.process_text(text)
     print(result)

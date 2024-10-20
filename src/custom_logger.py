@@ -91,9 +91,18 @@ class CustomizeLogger:
 
     @classmethod
     def load_logging_config(cls, config_path):
-        with open(config_path, 'r') as config_file:
-            config = yaml.safe_load(config_file)
-        return config
+        try:
+            with open(config_path, "r", encoding="utf-8") as config_file:
+                config = yaml.safe_load(config_file)
+                return config
+        except FileNotFoundError:
+            print(f"无法找到配置文件: {config_path}")
+            # 可以在这里添加更多的错误处理逻辑
+        except yaml.YAMLError as e:
+            print(f"YAML 解析错误: {e}")
+        except UnicodeDecodeError:
+            print(f"文件编码错误,请确保 {config_path} 使用 UTF-8 编码")
+
 
 config_path = Path(__file__).with_name('config.yaml')
 custom_logger = CustomizeLogger.make_logger(config_path=config_path)
