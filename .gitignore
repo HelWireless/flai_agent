@@ -12,6 +12,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+voice_tmp/
 eggs/
 .eggs/
 .idea/
