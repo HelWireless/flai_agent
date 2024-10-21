@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
-from api.routes import router
+from src.api.routes import router
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Pillow Talk", debug=False)
@@ -27,7 +27,7 @@ async def set_body(request: Request):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: Exception):
     await set_body(request)
-    request_text = await request.body()
+    request_text = await request.body(2)
     request_text = str(request_text.decode('utf-8'))
     app.logger.warning(f'请求发生异常，记录request的请求体如下:{request_text}')
     return JSONResponse(
@@ -36,4 +36,4 @@ async def http_exception_handler(request: Request, exc: Exception):
     )
 
 if __name__ == '__main__':
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000 )

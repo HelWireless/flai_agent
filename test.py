@@ -1,38 +1,14 @@
-import byzerllm
-
-data = {
-    'name': 'Jane Doe',
-    'task_count': 3,
-    'tasks': [
-        {'name': 'Submit report', 'due_date': '2024-03-10'},
-        {'name': 'Finish project', 'due_date': '2024-03-15'},
-        {'name': 'Reply to emails', 'due_date': '2024-03-08'}
-    ]
-}
+import yaml
 
 
-class RAG():
-    def __init__(self):
-        self.llm = byzerllm.ByzerLLM()
-        self.llm.setup_template(model="deepseek_chat", template="auto")
-        self.llm.setup_default_model_name("deepseek_chat")
+# 加载配置
+with open("src/config.yaml", "r", encoding="utf-8") as config_file:
+    config = yaml.safe_load(config_file)
 
-    @byzerllm.prompt(lambda self: self.llm)
-    def generate_answer(self, name, task_count, tasks) -> str:
-        '''
-        Hello {{ name }},
+api_base = config["llm"]["api_base"]
 
-        This is a reminder that you have {{ task_count }} pending tasks:
-        {% for task in tasks %}
-        - Task: {{ task.name }} | Due: {{ task.due_date }}
-        {% endfor %}
-
-        Best regards,
-        Your Reminder System
-        '''
+COMPLETION_MODEL = config["llm"]["completion_model"]
 
 
-t = RAG()
+input = {"id":"a2ffc9c6-7b64-5e3a-ad12-ed248ce1b2df","model":"qwen","messages":[{"role":"system","content":"你是情绪判断专家，你会根据用户的要求来进行情绪判断。"},{"role":"user","content":"你好啊"}]}
 
-response = t.generate_answer(**data)
-print(response)
