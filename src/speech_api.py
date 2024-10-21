@@ -7,17 +7,19 @@ import os
 from time import time
 
 class SpeechAPI:
-    def __init__(self, config_path, user_id=uuid.uuid4()):
-        self.config = self.load_config(config_path)
+    def __init__(self, user_id=uuid.uuid4()):
+        self.config = self.load_config()
         self.uid = user_id
         self.timestamp = int(time())
-        self.reqid =  self.uid +"_" + self.timestamp
+        self.req_id = f"{self.uid}_{self.timestamp}"
 
 
-    def load_config(self, config_path):
-        with open(config_path, 'r', encoding='utf-8') as file:  # 添加 encoding='utf-8'
-            config = yaml.safe_load(file)["speech_api"]
-        return config
+    def load_config(self):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(current_dir, "config.yaml")
+        with open(config_path, "r", encoding="utf-8") as config_file:
+            config = yaml.safe_load(config_file)
+        return config["speech_api"]
 
     def generate_request_body(self, text):
         request_body = {
@@ -37,7 +39,7 @@ class SpeechAPI:
                 "pitch_ratio": 1.0
             },
             "request": {
-                "reqid": self.reqid,
+                "reqid": self.req_id,
                 "text": text,
                 "text_type": "plain",
                 "operation": "query",
@@ -71,8 +73,7 @@ class SpeechAPI:
             print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    config_path = 'src/config.yaml'  # 使用相对路径
-    speech_api = SpeechAPI(config_path)
+    speech_api = SpeechAPI()
     text = input("请输入要合成的文本: ")
     request_body = speech_api.generate_request_body(text)
     api_url = "https://openspeech.bytedance.com/api/v1/tts"
