@@ -15,7 +15,7 @@ from src.oss_client import get_oss_bucket
 import time
 from src.custom_logger import custom_logger  # 导入自定义logger
 import random
-from openai import OpenAI
+import httpx
 
 
 router = APIRouter(
@@ -28,11 +28,8 @@ router = APIRouter(
 with open("config.yaml", "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
-# OpenAI 配置
-client = OpenAI(
-    base_url=config["llm"]["api_base"],
-    api_key=""
-)
+# api 配置
+api_base = config["llm"]["api_base"]
 COMPLETION_MODEL = config["llm"]["completion_model"]
 
 # VectorQuery 配置
@@ -70,29 +67,38 @@ def build_context(search_results: List[Dict]) -> str:
     return context
 
 
-def generate_answer(messages, question):
+async def generate_answer(user_id, messages, question, user_history_exists=False):
     # 初始化 api_messages 列表
     api_messages = [
         {"role": "system", "content": "你是一个名叫Pillow的量子体。请用简洁、友好的方式回答问题。"}
     ]
     
     # 如果有历史消息，将其添加到 api_messages
-    if messages:
+    if user_history_exists:
         api_messages.extend(messages)
-    
-    # 添加用户的最新问题
-    api_messages.append({"role": "user", "content": question})
-    
+        api_messages.append({"role": "user", "content": question})
+    else:
+        api_messages.append({"role": "user", "content": "我们很久没见了啦！" + question})
+
     try:
-        # 调用 OpenAI API 生成回答
-        print(api_messages)
-        response = client.chat.completions.create(
-            model=COMPLETION_MODEL,
-            messages=api_messages
-        )
-        
-        # 获取 AI 的回答
-        answer = response.choices[0].message.content
+        # 准备请求数据
+        request_data = {
+            "id": user_id,
+            "model": COMPLETION_MODEL,
+            "messages": api_messages
+        }
+        custom_logger.info(f"api_messages: {api_messages}")
+        # 发送POST请求到api_base
+        async with httpx.AsyncClient() as client:
+            response = await client.post(api_base, json=request_data)
+            
+            if response.status_code != 200:
+                custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+                raise Exception(f"API request failed with status code {response.status_code}")
+            
+            # 解析响应
+            response_data = response.json()
+            answer = response_data['choices'][0]['message']['content']
         
         # 将 AI 的回答添加到 api_messages
         api_messages.append({"role": "assistant", "content": answer})
@@ -144,7 +150,7 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     user_history_exists = len(conversation_history) > 0
     custom_logger.info(f"User history exists: {user_history_exists}")
 
-    answer, api_messages = generate_answer(conversation_history, request.message)
+    answer, api_messages = await generate_answer(request.user_id, conversation_history, request.message, user_history_exists)
 
     llm_messages = split_message(answer, request.message_count)
     custom_logger.debug(f"Split answer into {len(llm_messages)} messages")
