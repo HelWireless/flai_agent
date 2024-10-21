@@ -168,10 +168,10 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
 @router.post("/text2voice", response_model=Text2VoiceResponse)
 async def text_to_voice(request: Text2Voice):
     custom_logger.info(f"Received text-to-voice request for user: {request.user_id}, text_id: {request.text_id}")
-    speech_api = SpeechAPI(request.user_id)
+    speech_api = SpeechAPI(config["speech_api"], request.user_id)
     request_body = speech_api.generate_request_body(request.text)
     api_url = "https://openspeech.bytedance.com/api/v1/tts"
-    voice_output_path = f"voice_tmp/{uuid.uuid4()}_{request.text_id}.mp3"
+    voice_output_path = f"voice_tmp/{request.user_id}_{uuid.uuid4()}_{request.text_id}.mp3"
     os.makedirs(os.path.dirname(voice_output_path), exist_ok=True)
 
     try:

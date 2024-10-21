@@ -7,19 +7,11 @@ import os
 from time import time
 
 class SpeechAPI:
-    def __init__(self, user_id=uuid.uuid4()):
-        self.config = self.load_config()
+    def __init__(self, config_, user_id=uuid.uuid4()):
+        self.config = config_
         self.uid = user_id
         self.timestamp = int(time())
         self.req_id = f"{self.uid}_{self.timestamp}"
-
-
-    def load_config(self):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(current_dir, "config.yaml")
-        with open(config_path, "r", encoding="utf-8") as config_file:
-            config = yaml.safe_load(config_file)
-        return config["speech_api"]
 
     def generate_request_body(self, text):
         request_body = {
@@ -72,9 +64,10 @@ class SpeechAPI:
         except Exception as e:
             print(f"An error occurred: {e}")
 
+
 if __name__ == "__main__":
     speech_api = SpeechAPI()
-    text = input("请输入要合成的文本: ")
+    text = "请输入要合成的文本"
     request_body = speech_api.generate_request_body(text)
     api_url = "https://openspeech.bytedance.com/api/v1/tts"
     speech_api.send_request(api_url, request_body)
