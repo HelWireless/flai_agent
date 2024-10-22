@@ -46,7 +46,7 @@ class DialogueQuery:
 
     def get_user_dialogue_history(self, user_id: str) -> List[Dict[str, str]]:
         db = self.db
-        query = text("""
+        query = text(f"""
             SELECT
                 t1.message AS user_message,
                 t1.text AS assistant_response,
@@ -54,14 +54,14 @@ class DialogueQuery:
             FROM
                 t_dialogue t1
             WHERE
-                t1.account_id = :user_id
+                t1.account_id = '{user_id}'
             AND
                 t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
             ORDER BY
                 t1.create_time DESC, t1.id ASC
         """)
-        
-        query_results = db.execute(query, {"user_id": user_id}).fetchall()    
+    
+        query_results = db.execute(query).fetchall()    
         return self._process_query_results(query_results)
 
     def _process_query_results(self, query_results):

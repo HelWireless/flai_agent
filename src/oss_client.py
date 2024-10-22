@@ -2,7 +2,7 @@ from pathlib import Path
 import os
 import yaml
 import oss2
-from custom_logger import custom_logger
+from src.custom_logger import *
 
 def get_oss_bucket():
 
