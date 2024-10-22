@@ -24,8 +24,12 @@ router = APIRouter(
     responses={404: {"description": "Not found"}}
 )
 
+# 获取当前脚本的目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 构建config.yaml的绝对路径
+config_path = os.path.join(os.path.dirname(current_dir), "config.yaml")
 # 加载配置
-with open("config.yaml", "r", encoding="utf-8") as config_file:
+with open(config_path, "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
 # api 配置
@@ -36,7 +40,8 @@ COMPLETION_MODEL = config["llm"]["completion_model"]
 vector_db = VectorQuery(
     url=config["qdrant"]["url"],
     api_key=config["qdrant"]["api_key"],
-    collection_name=config["qdrant"]["collection_name"]
+    collection_name=config["qdrant"]["collection_name"],
+    embedding_api_key=config["qdrant"]["embedding_api_key"]
 )
 
 
@@ -87,7 +92,7 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
             "model": COMPLETION_MODEL,
             "messages": api_messages
         }
-        custom_logger.info(f"api_messages: {api_messages}")
+        custom_logger.info(f"api_messages: {api_messages} \n if_history:{user_history_exists}")
         # 发送POST请求到api_base
         async with httpx.AsyncClient() as client:
             response = await client.post(api_base, json=request_data)
