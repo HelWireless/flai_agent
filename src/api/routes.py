@@ -15,7 +15,11 @@ from src.oss_client import get_oss_bucket
 import time
 from src.custom_logger import custom_logger  # 导入自定义logger
 import random
-import httpx
+import asyncio
+import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+from functools import partial
 
 
 router = APIRouter(
@@ -71,6 +75,23 @@ def build_context(search_results: List[Dict]) -> str:
     custom_logger.debug(f"Context built: {context[:100]}...")
     return context
 
+def create_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 502, 504)):
+    session = requests.Session()
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+async def make_request(session, url, json_data):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, partial(session.post, url, json=json_data))
 
 async def generate_answer(user_id, messages, question, user_history_exists=False):
     # 初始化 api_messages 列表
@@ -93,18 +114,21 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
             "messages": api_messages
         }
         custom_logger.info(f"api_messages: {api_messages} \n if_history:{user_history_exists}")
-        # 发送POST请求到api_base
-        async with httpx.AsyncClient() as client:
-            response = await client.post(api_base, json=request_data)
-            
-            if response.status_code != 200:
-                custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
-                raise Exception(f"API request failed with status code {response.status_code}")
-            
-            # 解析响应
-            response_data = response.json()
-            answer = response_data['choices'][0]['message']['content']
         
+        # 创建一个带有重试机制的会话
+        session = create_retry_session()
+        
+        # 发送POST请求到api_base
+        response = await make_request(session, api_base, request_data)
+        
+        if response.status_code != 200:
+            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+            raise Exception(f"API request failed with status code {response.status_code}")
+        
+        # 解析响应
+        response_data = response.json()
+        answer = response_data['choices'][0]['message']['content']
+    
         # 将 AI 的回答添加到 api_messages
         api_messages.append({"role": "assistant", "content": answer})
         
@@ -220,3 +244,4 @@ SENSITIVE_RESPONSES = [
     "这个问题有点难回答呢。不如说说你最近有什么有趣的经历?",
     "我可能不太适合回答这个问题。不如我们聊点开心的事情吧!"
 ]
+
