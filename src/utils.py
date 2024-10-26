@@ -3,7 +3,7 @@ import re
 import math
 import random
 from collections import Counter
-
+import content_filter
 
 def get_emotion_type(text: str) -> int:
     emotion_keywords = {
@@ -84,24 +84,6 @@ def get_emotion_type(text: str) -> int:
     
     return emotion_map[max_emotion]
 
-
-def check_assistant_repetition(messages, threshold=0.8):
-    assistant_responses = [msg['content'] for msg in messages if msg['role'] == 'assistant']
-
-    if len(assistant_responses) < 2:
-        return False, ""
-
-    latest_response = assistant_responses[-1]
-    previous_responses = assistant_responses[:-1]
-
-    for response in previous_responses:
-        similarity = content_filter.check_sentence_similarity(latest_response, response)
-        if similarity > threshold:
-            return True, response
-
-    return False, ""
-
-
 def generate_random_proportions(count: int) -> List[float]:
     """生成count个随机比例，总和为1"""
     proportions = [random.random() for _ in range(count)]
@@ -109,14 +91,25 @@ def generate_random_proportions(count: int) -> List[float]:
     return [p / total for p in proportions]
 
 
-def split_message(message: str, count: int) -> List[str]:
-    # print(f"原始消息: {message}")
-    # print(f"目标分割数: {count}")
+def clean_sentence(sentence: str) -> str:
+    # 定义要移除的符号
+    symbols_to_remove = r'[\\"\(\)\[\]\{\}]'
+    # 使用正则表达式替换这些符号为空字符串
+    cleaned_sentence = re.sub(symbols_to_remove, '', sentence)
+    # 去除首尾空白字符
+    cleaned_sentence = cleaned_sentence.strip()
     
+    # 去除句子开头到第一个文字之间的所有符号
+    cleaned_sentence = re.sub(r'^[^\w\s]+', '', cleaned_sentence)
+    
+    return cleaned_sentence
+
+
+def split_message(message: str, count: int) -> List[str]:
     message = message.replace('\\"', '#')
 
     if count <= 1:
-        return [message]
+        return [clean_sentence(message)]
 
     # 生成随机比例
     proportions = generate_random_proportions(count)
@@ -173,29 +166,33 @@ def split_message(message: str, count: int) -> List[str]:
         else:
             break
 
-    print(f"最终结果: {result}")
+    # 清理每个句子中的干扰符号
+    result = [clean_sentence(sentence) for sentence in result]
+    # 过滤掉长度小于或等于1的句子
+    result = [sentence for sentence in result if len(sentence) > 1]
+
+    # print(f"最终结果: {result}")
     return result
 
 
 if __name__ == "__main__":
-    long_text = "你刚刚好像在逗我，说要给我奖励，但是我可没那么容易就范哦 要奖励也可以，不过先告诉我，你准备了什么样的奖励呢 期待ing～"
+    long_text = "你刚刚好像在逗我，说要给我奖励，但是我可没那(么容易就范哦) 要奖励也\"可以，“‘k&不过先告诉我，你准备了什么样的奖励呢 期待ing～"
     result = split_message(long_text, 10)
     print(f"主函数中的结果: {result}")
 
-    test_sentences = [
-        "我今天真的很开心！😊",
-        "我对未来充满期待，你觉得呢？",
-        "这太让人生气了，简直不可理喻！😠",
-        "听到这个消息，我感到非常伤心。😢",
-        "天哪，这太可怕了！😱",
-        "我有点不好意思说这个... 😳",
-        "需要一个温暖的抱抱。🤗",
-        "这是什么情况？我完全不明白。"
+    # 添加更多测试用例
+    test_cases = [
+        "!!!你好，这是一个测试句子。",
+        "...这是另一个(测试)句子。",
+        "###第三个测试句子!!!",
+        "   空格开头的句子",
+        "（括号）开头的句子",
+        "\"引号\"开头的句子",
+        "\\反斜杠\\开头的句子",
     ]
-    
-    for sentence in test_sentences:
-        emotion_type = get_emotion_type(sentence)
-        print(f"句子: {sentence}")
-        print(f"情感类型: {emotion_type}")
-        print()
 
+    for test_case in test_cases:
+        cleaned = clean_sentence(test_case)
+        print(f"原句: {test_case}")
+        print(f"清理后: {cleaned}")
+        print()

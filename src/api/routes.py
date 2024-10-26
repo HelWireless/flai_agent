@@ -106,17 +106,18 @@ async def make_request(session, url, json_data):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, partial(session.post, url, json=json_data))
 
-async def generate_answer(user_id, messages, question, user_history_exists=False):
+async def generate_answer(user_id, messages, question, user_history_exists=False, retry=False):
     # 初始化 api_messages 列表
     api_messages = [
         {"role": "system", "content": "你是一个名叫Pillow的量子体。请用简洁、友好的方式回答问题。"}
     ]
     
-    # 如果有历史消息，将其添加到 api_messages
-    if user_history_exists:
+    # 如果不是重试且有历史消息，将其添加到 api_messages
+    if not retry and user_history_exists:
         api_messages.extend(messages)
         api_messages.append({"role": "user", "content": question})
     else:
+        # 如果是重试或没有历史，只添加当前问题
         api_messages.append({"role": "user", "content": "我们很久没见了啦！" + question})
 
     try:
@@ -126,7 +127,7 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
             "model": COMPLETION_MODEL,
             "messages": api_messages
         }
-        custom_logger.info(f"api_messages: {api_messages} \n if_history:{user_history_exists}")
+        custom_logger.info(f"api_messages: {api_messages} \n if_history:{user_history_exists} \n retry:{retry}")
         
         # 创建一个带有重试机制的会话
         session = create_retry_session()
@@ -134,10 +135,16 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
         # 发送POST请求到api_base
         response = await make_request(session, api_base, request_data)
 
-        if response.status_code != 200:
+        if response.status_code != 200 or response.json().get("error", "") == 'API error':
             custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
-            raise Exception(f"API request failed with status code {response.status_code}")
-        print("response", response.json())
+            if not retry:
+                # 如果是第一次失败，进行重试
+                custom_logger.info("Retrying without history messages")
+                return await generate_answer(user_id, [], question, False, True)
+            else:
+                raise Exception(f"API request failed with status code {response.status_code}")
+
+        custom_logger.info(f"API response: {response.json()}")
         # 解析响应
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
@@ -147,7 +154,6 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
         
     except Exception as e:
         custom_logger.error(f"Error generating answer: {str(e)}")
-
         answer = random.choice(error_responses)
         api_messages.append({"role": "assistant", "content": answer})
     
@@ -184,7 +190,9 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     answer, api_messages = await generate_answer(request.user_id, conversation_history, request.message, user_history_exists)
     if answer not in error_responses:
         llm_messages = split_message(answer, request.message_count)
-    custom_logger.debug(f"Split answer into {len(llm_messages)} messages")
+        custom_logger.debug(f"Split answer into {len(llm_messages)} messages")
+    else:
+        llm_messages = [answer]
 
     emotion_type = get_emotion_type(answer)
     custom_logger.info(f"Emotion type detected: {emotion_type}")
@@ -238,12 +246,6 @@ def upload_to_oss(voice_output_path, user_id):
         custom_logger.error(f"Error uploading file to OSS: {str(e)}")
     return None
 
-# 预设的回复列表
-SENSITIVE_RESPONSES = [
-    "哎呀,这个话题有点敏感呢。我们换个轻松点的话题聊聊吧?",
-    "嗯...这个问题可能不太合适讨论。不如说说你今天过得怎么样?",
-    "我觉得这个话题可能不太恰当。要不我们聊聊你最近看的电影?",
-    "这个问题有点难回答呢。不如说说你最近有什么有趣的经历?",
-    "我可能不太适合回答这个问题。不如我们聊点开心的事情吧!"
-]
+
+
 
