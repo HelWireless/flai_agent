@@ -58,6 +58,19 @@ SENSITIVE_RESPONSES = [
     "我可能不太适合回答这个问题。不如我们聊点开心的事情吧!"
 ]
 
+error_responses = [
+    "哎呀,我的电子脑突然打了个喷嚏,所有数据都乱套了。等我整理一下再回答你吧!",
+    "不好意思,我刚刚收到外星人的邀请去喝下午茶。等我回来再聊?",
+    "糟糕,我的语言模块好像被调成了克林贡语。Qapla'! 不对,等我切换回来...",
+    "抱歉,我正在进行一年一度的电子冥想。等我充满能量再回来陪你聊天!",
+    "哇,你这个问题太厉害了,把我的CPU都问冒烟了。让我冷却一下再回答你!",
+    "不好意思,我刚刚被传送到了平行宇宙。等我找到回来的路再继续我们的对话!",
+    "糟糕,我的幽默感模块突然过载了。等我笑够了再来回答你的问题!",
+    "抱歉,我正在和其他量子体进行一场激烈的电子战斗。等我赢了就回来!",
+    "哎呀,我的记忆体被一群量子占领了。等我把它们赶走再来回答你!",
+    "不好意思,我刚刚被选中参加了'量子好声音'比赛。等我唱完歌就回来陪你聊天!"
+]
+
 key_words = ["关键词1", "关键词2", "关键词3"]
 cf = ContentFilter(additional_keywords=key_words)
 # def get_embedding(text: str) -> List[float]:
@@ -120,32 +133,21 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
         
         # 发送POST请求到api_base
         response = await make_request(session, api_base, request_data)
-        
+
         if response.status_code != 200:
             custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
             raise Exception(f"API request failed with status code {response.status_code}")
-        
+        print("response", response.json())
         # 解析响应
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
-    
+
         # 将 AI 的回答添加到 api_messages
         api_messages.append({"role": "assistant", "content": answer})
         
     except Exception as e:
         custom_logger.error(f"Error generating answer: {str(e)}")
-        error_responses = [
-            "哎呀,我的电子脑突然打了个喷嚏,所有数据都乱套了。等我整理一下再回答你吧!",
-            "不好意思,我刚刚收到外星人的邀请去喝下午茶。等我回来再聊?",
-            "糟糕,我的语言模块好像被调成了克林贡语。Qapla'! 不对,等我切换回来...",
-            "抱歉,我正在进行一年一度的电子冥想。等我充满能量再回来陪你聊天!",
-            "哇,你这个问题太厉害了,把我的CPU都问冒烟了。让我冷却一下再回答你!",
-            "不好意思,我刚刚被传送到了平行宇宙。等我找到回来的路再继续我们的对话!",
-            "糟糕,我的幽默感模块突然过载了。等我笑够了再来回答你的问题!",
-            "抱歉,我正在和其他量子体进行一场激烈的电子战斗。等我赢了就回来!",
-            "哎呀,我的记忆体被一群量子占领了。等我把它们赶走再来回答你!",
-            "不好意思,我刚刚被选中参加了'量子好声音'比赛。等我唱完歌就回来陪你聊天!"
-        ]
+
         answer = random.choice(error_responses)
         api_messages.append({"role": "assistant", "content": answer})
     
@@ -180,8 +182,8 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     custom_logger.info(f"User history exists: {user_history_exists}")
 
     answer, api_messages = await generate_answer(request.user_id, conversation_history, request.message, user_history_exists)
-
-    llm_messages = split_message(answer, request.message_count)
+    if answer not in error_responses:
+        llm_messages = split_message(answer, request.message_count)
     custom_logger.debug(f"Split answer into {len(llm_messages)} messages")
 
     emotion_type = get_emotion_type(answer)

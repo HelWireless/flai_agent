@@ -110,6 +110,9 @@ def generate_random_proportions(count: int) -> List[float]:
 
 
 def split_message(message: str, count: int) -> List[str]:
+    # print(f"原始消息: {message}")
+    # print(f"目标分割数: {count}")
+    
     message = message.replace('\\"', '#')
 
     if count <= 1:
@@ -118,10 +121,10 @@ def split_message(message: str, count: int) -> List[str]:
     # 生成随机比例
     proportions = generate_random_proportions(count)
 
-    # 使用正则表达式匹配句子，特别处理感叹句
-    pattern = re.compile(r'([^。！？]+[。？])|([^。！？]+![^。！？]*[。！？]?)')
+    # 使用正则表达式匹配句子，考虑空格、句号、感叹号和问号作为分隔符
+    pattern = re.compile(r'([^。！？\s]+[。！？]?)|([^。！？\s]+\s)')
     sentences = pattern.findall(message)
-    sentences = [''.join(s) for s in sentences]
+    sentences = [''.join(s).strip() for s in sentences if ''.join(s).strip()]
 
     result = []
     current_segment = ""
@@ -130,36 +133,19 @@ def split_message(message: str, count: int) -> List[str]:
     proportion_index = 0
 
     for sentence in sentences:
-        # 如果是感叹句，特殊处理
-        if '!' in sentence:
-            exclamation_index = sentence.index('!')
-            if current_segment:
-                result.append(current_segment.strip())
-                current_segment = ""
-                current_length = 0
-                proportion_index += 1
-                if proportion_index < count:
-                    target_length = int(len(message) * proportions[proportion_index])
-            if exclamation_index > 0:
-                result.append(sentence[:exclamation_index].strip())
-            result.append(sentence[exclamation_index:].strip())
+        if current_length == 0:
+            target_length = int(len(message) * proportions[proportion_index])
+
+        if current_length + len(sentence) <= target_length or not current_segment:
+            current_segment += sentence + " "
+            current_length += len(sentence)
+        else:
+            result.append(current_segment.strip())
+            current_segment = sentence + " "
+            current_length = len(sentence)
             proportion_index += 1
             if proportion_index < count:
                 target_length = int(len(message) * proportions[proportion_index])
-        else:
-            if current_length == 0:
-                target_length = int(len(message) * proportions[proportion_index])
-
-            if current_length + len(sentence) <= target_length or not current_segment:
-                current_segment += sentence
-                current_length += len(sentence)
-            else:
-                result.append(current_segment.strip())
-                current_segment = sentence
-                current_length = len(sentence)
-                proportion_index += 1
-                if proportion_index < count:
-                    target_length = int(len(message) * proportions[proportion_index])
 
     if current_segment:
         result.append(current_segment.strip())
@@ -173,24 +159,28 @@ def split_message(message: str, count: int) -> List[str]:
             if length < min_length:
                 min_length = length
                 min_index = i
-        result[min_index] = result[min_index] + result[min_index + 1]
+        result[min_index] = result[min_index] + " " + result[min_index + 1]
         result.pop(min_index + 1)
 
-    i = 0
-    while i < len(result):
-        if i > 0 and result[i].strip('。！？') == '':
-            result[i - 1] += result[i]
-            result.pop(i)
+    # 确保至少有 count 个段落
+    while len(result) < count:
+        longest_segment = max(result, key=len)
+        index = result.index(longest_segment)
+        parts = longest_segment.split(None, 1)
+        if len(parts) > 1:
+            result[index] = parts[0]
+            result.insert(index + 1, parts[1])
         else:
-            i += 1
+            break
 
-    return [i.replace("。", "") for i in result]
+    print(f"最终结果: {result}")
+    return result
 
 
 if __name__ == "__main__":
-    long_text = "我们要把它分割成更小的部分。啊!它包含多短句。这是第四个句子。这是第五个句子。这是第六个句子。这是第七个句子。"
-    result = split_message(long_text, 3)
-    print(result)
+    long_text = "你刚刚好像在逗我，说要给我奖励，但是我可没那么容易就范哦 要奖励也可以，不过先告诉我，你准备了什么样的奖励呢 期待ing～"
+    result = split_message(long_text, 10)
+    print(f"主函数中的结果: {result}")
 
     test_sentences = [
         "我今天真的很开心！😊",
@@ -208,3 +198,4 @@ if __name__ == "__main__":
         print(f"句子: {sentence}")
         print(f"情感类型: {emotion_type}")
         print()
+
