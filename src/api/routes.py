@@ -51,11 +51,12 @@ vector_db = VectorQuery(
 
 # 预设的回复列表
 SENSITIVE_RESPONSES = [
-    "哎呀,这个话题有点敏感呢。我们换个轻松点的话题聊聊吧?",
+    "哎呀,这个话题有点敏感呢。我们换个更棒点的话题聊聊吧?",
     "嗯...这个问题可能不太合适讨论。不如说说你今天过得怎么样?",
-    "我觉得这个话题可能不太恰当。要不我们聊聊你最近看的电影?",
-    "这个问题有点难回答呢。不如说说你最近有什么有趣的经历?",
-    "我可能不太适合回答这个问题。不如我们聊点开心的事情吧!"
+    "嗯...这个问题量子态的pillow无法回答，不如来说说你喜欢的人?",
+    "这个问题居然我回答不了！算了！不如说说其他的，我更喜欢你被我问到的样子!",
+    "我可能不太适合回答这个问题。不如我们聊点酷炫的事情吧!",
+    "我觉得这个问题可以丢进垃圾桶! 还是当黑客来的轻松。"
 ]
 
 error_responses = [
@@ -168,12 +169,11 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
         custom_logger.warning(f"Sensitive content detected: {sensitive_words}")
         # 随机选择一个预设回复
         answer = random.choice(SENSITIVE_RESPONSES)
-        llm_messages = split_message(answer, request.message_count)
         emotion_type = get_emotion_type(answer)
         
         return ChatResponse(
             user_id=request.user_id,
-            llm_message=llm_messages,
+            llm_message=[answer],
             emotion_type=emotion_type
         )
 
