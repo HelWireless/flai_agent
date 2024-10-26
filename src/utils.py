@@ -3,7 +3,6 @@ import re
 import math
 import random
 from collections import Counter
-import content_filter
 
 def get_emotion_type(text: str) -> int:
     emotion_keywords = {
