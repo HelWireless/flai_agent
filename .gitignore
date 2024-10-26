@@ -27,7 +27,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-config.yaml
+*config.yaml
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -167,3 +167,4 @@ cython_debug/
 .auto-coder/
 actions/
 output.txt
+src/*.yaml
