@@ -207,7 +207,7 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
 @router.post("/text2voice", response_model=Text2VoiceResponse)
 async def text_to_voice(request: Text2Voice):
     custom_logger.info(f"Received text-to-voice request for user: {request.user_id}, text_id: {request.text_id}")
-    speech_api = SpeechAPI(config["speech_api"], request.user_id)
+    speech_api = SpeechAPI(config["speech_api"], str(request.user_id))
     request_body = speech_api.generate_request_body(request.text)
     api_url = "https://openspeech.bytedance.com/api/v1/tts"
     voice_output_path = f"voice_tmp/{request.user_id}_{uuid.uuid4()}_{request.text_id}.mp3"
@@ -220,7 +220,7 @@ async def text_to_voice(request: Text2Voice):
         custom_logger.error(f"Failed to generate voice: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate voice: {str(e)}")
 
-    file_key = upload_to_oss(voice_output_path, request.user_id)
+    file_key = upload_to_oss(voice_output_path, str(request.user_id))
     if not file_key:
         custom_logger.error("Failed to upload voice file to OSS")
         raise HTTPException(status_code=500, detail="Failed to upload voice file to OSS")
@@ -228,7 +228,7 @@ async def text_to_voice(request: Text2Voice):
     voice_response_url = f"https://pillow.fanwoon.com/{file_key}"
     custom_logger.info(f"Voice file uploaded successfully: {voice_response_url}")
 
-    return Text2VoiceResponse(user_id=request.user_id, text_id=request.text_id, url=voice_response_url)
+    return Text2VoiceResponse(user_id=int(request.user_id), text_id=int(request.text_id), url=voice_response_url)
 
 
 def upload_to_oss(voice_output_path, user_id):
