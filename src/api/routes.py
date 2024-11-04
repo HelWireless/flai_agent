@@ -225,10 +225,10 @@ async def text_to_voice(request: Text2Voice):
         custom_logger.error("Failed to upload voice file to OSS")
         raise HTTPException(status_code=500, detail="Failed to upload voice file to OSS")
 
-    voice_response_url = f"https://pillow-agent.oss-cn-shanghai.aliyuncs.com/{file_key}"
+    voice_response_url = f"https://pillow.fanwoon.com/{file_key}"
     custom_logger.info(f"Voice file uploaded successfully: {voice_response_url}")
 
-    return Text2VoiceResponse(user_id=request.user_id, text_id=request.text_id, url=voice_response_url)
+    return Text2VoiceResponse(user_id=request.user_id, text_id=int(request.text_id), url=voice_response_url)
 
 
 def upload_to_oss(voice_output_path, user_id):

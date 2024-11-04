@@ -37,10 +37,10 @@ class ChatResponse(BaseModel):
 
 class Text2Voice(BaseModel):
     user_id: str
-    text_id: str
+    text_id: int
     text: str
 
 class Text2VoiceResponse(BaseModel):
     user_id: str
-    text_id: str
+    text_id: int
     url: str
