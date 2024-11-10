@@ -1,10 +1,8 @@
 import base64
-import json
 import uuid
 import requests
-import yaml
-import os
 from time import time
+from src.custom_logger import custom_logger  # 导入自定义logger
 
 class SpeechAPI:
     def __init__(self, config_, user_id=uuid.uuid4()):
@@ -46,23 +44,22 @@ class SpeechAPI:
             "Authorization": f"Bearer;{self.config['access_token']}"
         }
         try:
-            print(f"Sending request to {api_url} with headers {headers} and body {request_body}")
+            (f"Sending request to {api_url} with headers {headers} and body {request_body}")
             response = requests.post(api_url, json=request_body, headers=headers)
-            print(f"HTTP status code: {response.status_code}")
-            print(f"Response body: {response.text}")
+            custom_logger.info(f"HTTP status code: {response.status_code}")
             if response.status_code == 200:
                 response_json = response.json()
                 if "data" in response_json:
                     data = response_json["data"]
                     with open(output_path, "wb") as file_to_save:  # 保存为 MP3 文件
                         file_to_save.write(base64.b64decode(data))
-                    print("MP3 文件已保存为 output.mp3")
+                    custom_logger.info("MP3 文件已保存为 output.mp3")
                 else:
-                    print("响应中没有找到数据")
+                    custom_logger.error("响应中没有找到数据")
             else:
-                print(f"HTTP 请求失败: {response.status_code}")
+                custom_logger.error(f"HTTP 请求失败: {response.status_code}")
         except Exception as e:
-            print(f"An error occurred: {e}")
+            custom_logger.error(f"An error occurred: {e}")
 
 
 if __name__ == "__main__":
