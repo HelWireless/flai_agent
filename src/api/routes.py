@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from src.schemas import *
 from src.database import get_db
 from src.dialogue_query import *
-import openai
+from sqlalchemy.orm import Session
 from src.content_filter import *
 from src.utils import get_emotion_type, split_message
 from src.vector_query import VectorQuery
