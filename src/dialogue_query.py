@@ -1,9 +1,10 @@
 import os
 from typing import List, Dict
-from sqlalchemy import create_engine, text, Engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 import yaml
 import urllib
+from src.custom_logger import custom_logger  # 导入自定义logger
 
 class DialogueQuery:
     def __init__(self, db=None, if_test: bool = False):
@@ -28,13 +29,13 @@ class DialogueQuery:
                 engine = create_engine(DATABASE_URI)
                 return engine
         except FileNotFoundError:
-            print(f"无法找到配置文件: {config_path}")
+            custom_logger.error(f"无法找到配置文件: {config_path}")
             raise
         except yaml.YAMLError as e:
-            print(f"YAML 解析错误: {e}")
+            custom_logger.error(f"YAML 解析错误: {e}")
             raise
         except UnicodeDecodeError:
-            print(f"文件编码错误,请确保 {config_path} 使用 UTF-8 编码")
+            custom_logger.error(f"文件编码错误,请确保 {config_path} 使用 UTF-8 编码")
             raise
 
     def get_db(self):
