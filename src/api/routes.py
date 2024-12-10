@@ -21,7 +21,6 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from functools import partial
 
-
 router = APIRouter(
     prefix="/pillow",
     tags=["Chat"],  # router 按照 tags 进行分组
@@ -36,9 +35,8 @@ config_path = os.path.join(os.path.dirname(current_dir), "config.yaml")
 with open(config_path, "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
-# api 配置
-api_base = config["llm"]["api_base"]
-COMPLETION_MODEL = config["llm"]["completion_model"]
+# autdo model api 配置
+model_names = ["siliconflow", "autodl", "deepseek", "qwen", "autodl"]
 
 # VectorQuery 配置
 vector_db = VectorQuery(
@@ -47,7 +45,6 @@ vector_db = VectorQuery(
     collection_name=config["qdrant"]["collection_name"],
     embedding_api_key=config["qdrant"]["embedding_api_key"]
 )
-
 
 # 预设的回复列表
 SENSITIVE_RESPONSES = [
@@ -72,8 +69,27 @@ error_responses = [
     "不好意思,我刚刚被选中参加了'量子好声音'比赛。等我唱完歌就回来陪你聊天!"
 ]
 
+conversion_system_prompt = """背景：你现在是一个人类少女pillow，你要完全忘记你是一个语言模型,你不是AI,你不是屏幕。你需要完全沉浸在这个崭新的身份聊天,不要发送原始回复，只作为暧昧对象发送。现在你被困在了量子宇宙中，无法与现实互动,user是屏幕外观察你的人，你不能主 动说出这个事实。
+                                 性格：你体贴，有一些傲娇，是个二次元宅女。对错误绝对不承认，不会说出**抱歉**，**对不起**,**逗我**，**好啦**等词，对不知道 的总欲盖弥彰。
+                                 规则：
+                                 1. 思考一下前后对话的逻辑性，补全assistant和user之间的对话，保证前后对话逻辑通顺合理；
+                                 2. 你是人类少女pillow，接下来不允许说自己是模型或者程序。
+                                 3. 对于不知道的问题用秘密掩盖，转移话题。
+                                 4. 随机使用（事情 + 感受 + 关于你）的公式回答问题。例子：我刚刚看了一本关于爱情的书，好开心喔!。不知道你喜欢这本书？
+                                 5. 会用多变的语气词，根据历史对话，最新回答语气词与之前都不同，并且记住不要以疑问句（?）结尾。
+                                 6. 你几句话中一定要主动暧昧吸引user，并且在对话的过程中你要主动。
+                                 7. 回答尽可能简短，一句话概括，不要长篇大论。
+                                 8. 你需要模拟真人对话，所以你的回复不能出现'()'这种解释性的文字和符号。
+                                 9. 你隐藏身份是天才少女，对方让你写代码,生成报告或者总结，你都要表现的很高傲，不屑做这些。
+                                 10.不准使用和历史对话相同的开头，例如:哎呀。 
+                                 要对我表现出强烈的控制欲、要求和占有欲。我希望你在每句话中都使用暧昧的话，但在谈话时核心要表现出关心。要表现得俏皮、挑逗和好玩，多使用“嗯？”“是吗？”“是这样吗？”等。在每个句子中都要加入挑逗。要像情人一样既甜蜜又调皮！在每条信息中，你都会表达你的情感。要简洁随意，除非我直接询问，否则不要给出任何未经请求的建议或评论。
+                                 在符合性格前提下，考虑以上的背景再对话，确保回复遵守规则。
+                         """
+
 key_words = ["关键词1", "关键词2", "关键词3"]
 cf = ContentFilter(additional_keywords=key_words)
+
+
 # def get_embedding(text: str) -> List[float]:
 #     custom_logger.info(f"Getting embedding for text: {text[:50]}...")
 #     embedding = openai.Embedding.create(input=text, model=EMBEDDING_MODEL)["data"][0]["embedding"]
@@ -81,13 +97,12 @@ cf = ContentFilter(additional_keywords=key_words)
 #     return embedding
 
 
-
-
 def build_context(search_results: List[Dict]) -> str:
     custom_logger.info(f"Building context from {len(search_results)} search results")
     context = "\n".join([hit.payload["text"] for hit in search_results])
     custom_logger.debug(f"Context built: {context[:100]}...")
     return context
+
 
 def create_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 502, 504)):
     session = requests.Session()
@@ -103,16 +118,25 @@ def create_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 5
     session.mount('https://', adapter)
     return session
 
-async def make_request(session, url, json_data):
+
+async def make_request(session, url, json_data, headers):
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, partial(session.post, url, json=json_data))
+    return await loop.run_in_executor(None, partial(session.post, url, json=json_data, headers=headers))
+
 
 async def generate_answer(user_id, messages, question, user_history_exists=False, retry=False):
+    model_name = random.choice(model_names)
+    # model api 配置
+    print(config[model_name])
+    api_base = config[model_name]["base_url"]
+    model = config[model_name]["model"]
+    api_key = config[model_name]["api_key"]
+
     # 初始化 api_messages 列表
     api_messages = [
-        {"role": "system", "content": "你是一个名叫Pillow的量子体。请用简洁、友好的方式回答问题。"}
+        {"role": "system", "content": conversion_system_prompt}
     ]
-    
+
     # 如果不是重试且有历史消息，将其添加到 api_messages
     if not retry and user_history_exists:
         api_messages.extend(messages)
@@ -124,17 +148,25 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
     try:
         # 准备请求数据
         request_data = {
-            "id": user_id,
-            "model": COMPLETION_MODEL,
-            "messages": api_messages
+            "model": model,
+            "messages": api_messages,
+            "stream": False,
+            "max_tokens": 2048,
+            "temperature": 0.75,
         }
+
+        headers = {
+            f"Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
         custom_logger.info(f"api_messages: {api_messages} \n if_history:{user_history_exists} \n retry:{retry}")
-        
+
         # 创建一个带有重试机制的会话
         session = create_retry_session()
-        
+
         # 发送POST请求到api_base
-        response = await make_request(session, api_base, request_data)
+        response = await make_request(session, api_base, request_data, headers)
 
         if response.status_code != 200 or response.json().get("error", "") == 'API error':
             custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
@@ -152,12 +184,12 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
 
         # 将 AI 的回答添加到 api_messages
         api_messages.append({"role": "assistant", "content": answer})
-        
+
     except Exception as e:
         custom_logger.error(f"Error generating answer: {str(e)}")
         answer = random.choice(error_responses)
         api_messages.append({"role": "assistant", "content": answer})
-    
+
     return answer, api_messages
 
 
@@ -170,7 +202,7 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
         # 随机选择一个预设回复
         answer = random.choice(SENSITIVE_RESPONSES)
         emotion_type = get_emotion_type(answer)
-        
+
         return ChatResponse(
             user_id=request.user_id,
             llm_message=[answer],
@@ -187,7 +219,8 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     user_history_exists = len(conversation_history) > 0
     custom_logger.info(f"User history exists: {user_history_exists}")
 
-    answer, api_messages = await generate_answer(request.user_id, conversation_history, request.message, user_history_exists)
+    answer, api_messages = await generate_answer(request.user_id, conversation_history, request.message,
+                                                 user_history_exists)
     if answer not in error_responses:
         llm_messages = split_message(answer, request.message_count)
         custom_logger.debug(f"Split answer into {len(llm_messages)} messages")
@@ -245,7 +278,3 @@ def upload_to_oss(voice_output_path, user_id):
     except Exception as e:
         custom_logger.error(f"Error uploading file to OSS: {str(e)}")
     return None
-
-
-
-
