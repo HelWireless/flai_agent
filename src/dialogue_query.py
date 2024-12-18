@@ -30,7 +30,7 @@ class DialogueQuery:
                 host = config["database"]["host"]
                 username = config["database"]["username"]
                 DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}/pillow_customer_test'
-                engine = create_engine(DATABASE_URI)
+                engine = create_engine(DATABASE_URI,pool_recycle=3600,pool_pre_ping=True)
                 return engine
         except FileNotFoundError:
             custom_logger.error(f"无法找到配置文件: {config_path}")
