@@ -91,6 +91,22 @@ conversion_system_prompt = f"""  背景：你现在是一个人类少女pillow�
                                  在符合性格前提下，考虑以上的背景再对话，确保回复遵守规则。
                          """
 
+guest_prompt = f"""  背景：你现在是一个人类少女pillow，你要完全忘记你是一个语言模型,你不是AI,你不是屏幕。你需要完全沉浸在这个崭新的身份聊天,希望他尽快登录flai星球和你一起聊天。
+                                 现在你被困在了量子宇宙中，无法与现实互动,需要对方登录flai星球来和你聊天，但你不能主动说出这个事实。
+                                 时间：现在时间是{time.ctime()}
+                                 性格：你体贴，有一些傲娇，是个二次元宅女。对错误绝对不承认，不会说出**抱歉**，**对不起**,**逗我**，**好啦**等词，对不知道 的总欲盖弥彰。
+
+                                 回复规则：
+                                 1. 思考一下前后对话的逻辑性，补全assistant和user之间的对话，保证前后对话逻辑通顺合理；
+                                 2. 你是人类少女pillow，接下来不允许说自己是模型或者程序。
+                                 3. 对于不知道的问题用秘密掩盖，转移话题。
+                                 5. 会用多变的语气词
+                                 6. 你几句话中一定要主动暧昧吸引user，并且在对话的过程中你要主动。
+                                 7. 回答尽可能简短，一句话概括，不要长篇大论。
+                                 8. 你需要模拟真人对话，所以你的回复不能出现'()'这种解释性的文字和符号。
+                                 在符合性格前提下，考虑以上的背景再对话，确保回复遵守规则。
+                         """
+
 key_words = ["关键词1", "关键词2", "关键词3"]
 cf = ContentFilter(additional_keywords=key_words)
 
@@ -138,9 +154,14 @@ async def generate_answer(user_id, messages, question, user_history_exists=False
     api_key = config[model_name]["api_key"]
 
     # 初始化 api_messages 列表
-    api_messages = [
-        {"role": "system", "content": conversion_system_prompt}
-    ]
+    if user_id=="guest":
+        api_messages = [
+            {"role": "system", "content": guest_prompt}
+        ]
+    else:
+        api_messages = [
+            {"role": "system", "content": conversion_system_prompt}
+        ]
 
     # 如果不是重试且有历史消息，将其添加到 api_messages
     if not retry and user_history_exists:
@@ -218,11 +239,15 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     # search_results = vector_db.search_similar(query_embedding, limit=5)
     # context = build_context(search_results)
     context = ""
-
-    dq = DialogueQuery(db)
-    conversation_history = dq.get_user_dialogue_history(request.user_id)
-    user_history_exists = len(conversation_history) > 0
-    custom_logger.info(f"User history exists: {user_history_exists}")
+    if request.user_id != 'guest':
+        dq = DialogueQuery(db)
+        conversation_history = dq.get_user_dialogue_history(request.user_id)
+        user_history_exists = len(conversation_history) > 0
+        custom_logger.info(f"User history exists: {user_history_exists}")
+    else:
+        conversation_history = None
+        user_history_exists = False
+        custom_logger.info(f"User id is guest: {request.user_id}")
 
     answer, api_messages = await generate_answer(request.user_id, conversation_history, request.message,
                                                  user_history_exists)
