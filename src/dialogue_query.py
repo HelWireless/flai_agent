@@ -30,7 +30,7 @@ class DialogueQuery:
                 host = config["database"]["host"]
                 username = config["database"]["username"]
                 DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}/pillow_customer_test'
-                engine = create_engine(DATABASE_URI)
+                engine = create_engine(DATABASE_URI,pool_recycle=3600,pool_pre_ping=True)
                 return engine
         except FileNotFoundError:
             custom_logger.error(f"无法找到配置文件: {config_path}")
@@ -77,23 +77,37 @@ class DialogueQuery:
         )
         return result.fetchall()
 
-    def get_user_dialogue_history(self, user_id: str) -> List[Dict[str, str]]:
+    def nickname_query(self, db_session, user_id):
+        result = db_session.execute(
+            text("""
+                    SELECT a.name 
+                    FROM t_account a
+                    WHERE a.id = :user_id
+            """),
+            {"user_id": user_id}  # 使用参数化查询来防止SQL注入
+        )
+        row = result.fetchone()
+        return row[0] if row else '陌生人'  # 如果有结果，则返回第一项，否则返回None
+
+    def get_user_dialogue_history(self, user_id: str):
         try:
             print("我在这里")
             results = self.query_with_retry(self.db, self.perform_query, user_id)
+            nickname = self.query_with_retry(self.db, self.nickname_query, user_id)
         except Exception as e:
             results = []
+            nickname = '陌生人'
             custom_logger.error(f"Failed to execute query after retries: {e}")
-        return self._process_query_results(results)
+        return self._process_query_results(results), nickname
 
     def _process_query_results(self, query_results):
         processed_results = []
         temp_dict = {}
 
-        for result in query_results:
-            user_msg = result[0]
-            assistant_msg = result[1]
-            timestamp = result[2]
+        for query_result in query_results:
+            user_msg = query_result[0]
+            assistant_msg = query_result[1]
+            timestamp = query_result[2]
 
             if timestamp not in temp_dict:
                 temp_dict[timestamp] = {"user": "", "assistant": ""}
@@ -120,6 +134,7 @@ class DialogueQuery:
 # 示例用法
 if __name__ == "__main__":
     dialogue_query = DialogueQuery(if_test=True)
-    result = dialogue_query.get_user_dialogue_history('1000004')
+    result, user_nickname = dialogue_query.get_user_dialogue_history('1000004')
     # result = dialogue_query.perform_query('1000004')
     print(result)
+    print("user_nickname", user_nickname)
