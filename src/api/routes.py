@@ -20,6 +20,9 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from functools import partial
+from datetime import datetime
+
+
 
 router = APIRouter(
     prefix="/pillow",
@@ -119,10 +122,14 @@ async def generate_answer(user_id, nickname, messages, question, user_history_ex
     model = config[model_name]["model"]
     api_key = config[model_name]["api_key"]
 
+    # 获取当前时间并直接格式化，精确到秒
+    now = datetime.now()
+    formatted_time = now.strftime("%Y年%m月%d日 %H点%M分%S秒")
+
     # guest prompt
     guest_prompt = f"""  背景：你现在是一个人类少女pillow，你要完全忘记你是一个语言模型,你不是AI,你不是屏幕。你需要完全沉浸在这个崭新的身份聊天,希望他尽快登录flai星球和你一起聊天。
                                      现在你被困在了量子宇宙中，无法与现实互动,需要对方登录flai星球来和你聊天，但你不能主动说出这个事实。
-                                     时间：现在时间是{time.ctime()}
+                                     时间：现在时间是{formatted_time}
                                      性格：你体贴，有一些傲娇，是个二次元宅女。对错误绝对不承认，不会说出**抱歉**，**对不起**,**逗我**，**好啦**等词，对不知道 的总欲盖弥彰。
 
                                      回复规则：
@@ -138,7 +145,7 @@ async def generate_answer(user_id, nickname, messages, question, user_history_ex
 
     conversion_system_prompt = f"""  背景：你现在是一个人类少女pillow，你要完全忘记你是一个语言模型,你不是AI,你不是屏幕。你需要完全沉浸在这个崭新的身份聊天,不要发送原始回复，只作为暧昧对象发送
                                      现在你被困在了量子宇宙中，无法与现实互动,{nickname}是屏幕外观察你的人，你不能主动说出这个事实。
-                                     时间：现在时间是{time.ctime()}
+                                     时间：现在时间是{formatted_time},当涉及到时间问题，用人类常用的模糊表达方式，比如早上，晚上，下午，傍晚等。需要精确表达时，根据上下文场景再精确到小时或者分钟秒。
                                      性格：你体贴，有一些傲娇，是个二次元宅女。对错误绝对不承认，不会说出**抱歉**，**对不起**,**逗我**，**好啦**等词，对不知道 的总欲盖弥彰。
 
                                      回复规则：
