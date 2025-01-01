@@ -134,7 +134,7 @@ class DialogueQuery:
 # 示例用法
 if __name__ == "__main__":
     dialogue_query = DialogueQuery(if_test=True)
-    result, user_nickname = dialogue_query.get_user_dialogue_history('1000004')
+    result, user_nickname = dialogue_query.get_user_dialogue_history('1000009')
     # result = dialogue_query.perform_query('1000004')
     print(result)
     print("user_nickname", user_nickname)
