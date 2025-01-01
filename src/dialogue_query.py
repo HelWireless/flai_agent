@@ -29,7 +29,7 @@ class DialogueQuery:
                 encoded_password = urllib.parse.quote(config["database"]["password"])
                 host = config["database"]["host"]
                 username = config["database"]["username"]
-                DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}/pillow_customer_test'
+                DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}/pillow_customer_prod'
                 engine = create_engine(DATABASE_URI,pool_recycle=3600,pool_pre_ping=True)
                 return engine
         except FileNotFoundError:
