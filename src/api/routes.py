@@ -211,7 +211,7 @@ async def generate_answer(user_id, nickname, messages, question, user_history_ex
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying without history messages")
-                return await generate_answer(user_id, [], question, False, True)
+                return await generate_answer(user_id, nickname, [], question, False, True)
             else:
                 raise Exception(f"API request failed with status code {response.status_code}")
 
