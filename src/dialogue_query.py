@@ -87,6 +87,7 @@ class DialogueQuery:
             {"user_id": user_id}  # 使用参数化查询来防止SQL注入
         )
         row = result.fetchone()
+        custom_logger.info(f"user nickname is {row}")
         return row[0] if row else '陌生人'  # 如果有结果，则返回第一项，否则返回None
 
     def get_user_dialogue_history(self, user_id: str):
