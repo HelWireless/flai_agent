@@ -115,7 +115,10 @@ async def make_request(session, url, json_data, headers):
 
 
 async def generate_answer(user_id, nickname, messages, question, user_history_exists=False, retry=False):
-    model_name = random.choice(model_names)
+    if retry:
+        model_name = random.choice(['qwen', 'autodl'])
+    else:
+        model_name = random.choice(model_names)
     # model api 配置
     print(config[model_name])
     api_base = config[model_name]["base_url"]
