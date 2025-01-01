@@ -29,7 +29,7 @@ class DialogueQuery:
                 encoded_password = urllib.parse.quote(config["database"]["password"])
                 host = config["database"]["host"]
                 username = config["database"]["username"]
-                DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}/pillow_customer_prod'
+                DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}'
                 engine = create_engine(DATABASE_URI,pool_recycle=3600,pool_pre_ping=True)
                 return engine
         except FileNotFoundError:
@@ -65,7 +65,7 @@ class DialogueQuery:
                     t1.text AS assistant_response,
                     t1.create_time
                 FROM
-                    t_dialogue t1
+                    pillow_customer_prod.t_dialogue t1
                 WHERE
                     t1.account_id = :user_id
                 AND
@@ -81,7 +81,7 @@ class DialogueQuery:
         result = db_session.execute(
             text("""
                     SELECT a.name 
-                    FROM t_account a
+                    FROM pillow_customer_prod.t_account a
                     WHERE a.id = :user_id
             """),
             {"user_id": user_id}  # 使用参数化查询来防止SQL注入
@@ -135,7 +135,7 @@ class DialogueQuery:
 # 示例用法
 if __name__ == "__main__":
     dialogue_query = DialogueQuery(if_test=True)
-    result, user_nickname = dialogue_query.get_user_dialogue_history('1000009')
+    result, user_nickname = dialogue_query.get_user_dialogue_history('1000007')
     # result = dialogue_query.perform_query('1000004')
     print(result)
     print("user_nickname", user_nickname)
