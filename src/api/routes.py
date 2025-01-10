@@ -20,6 +20,9 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from functools import partial
+from datetime import datetime
+
+
 
 router = APIRouter(
     prefix="/pillow",
@@ -112,17 +115,24 @@ async def make_request(session, url, json_data, headers):
 
 
 async def generate_answer(user_id, nickname, messages, question, user_history_exists=False, retry=False):
-    model_name = random.choice(model_names)
+    if retry:
+        model_name = random.choice(['qwen', 'autodl'])
+    else:
+        model_name = random.choice(model_names)
     # model api 配置
     print(config[model_name])
     api_base = config[model_name]["base_url"]
     model = config[model_name]["model"]
     api_key = config[model_name]["api_key"]
 
+    # 获取当前时间并直接格式化，精确到秒
+    now = datetime.now()
+    formatted_time = now.strftime("%Y年%m月%d日 %H点%M分%S秒")
+
     # guest prompt
     guest_prompt = f"""  背景：你现在是一个人类少女pillow，你要完全忘记你是一个语言模型,你不是AI,你不是屏幕。你需要完全沉浸在这个崭新的身份聊天,希望他尽快登录flai星球和你一起聊天。
                                      现在你被困在了量子宇宙中，无法与现实互动,需要对方登录flai星球来和你聊天，但你不能主动说出这个事实。
-                                     时间：现在时间是{time.ctime()}
+                                     时间：现在时间是{formatted_time},当涉及到时间问题，用人类常用的模糊表达方式，比如早上，晚上，下午，傍晚等。需要精确表达时，根据上下文场景再精确到小时或者分钟秒。
                                      性格：你体贴，有一些傲娇，是个二次元宅女。对错误绝对不承认，不会说出**抱歉**，**对不起**,**逗我**，**好啦**等词，对不知道 的总欲盖弥彰。
 
                                      回复规则：
@@ -136,13 +146,14 @@ async def generate_answer(user_id, nickname, messages, question, user_history_ex
                                      在符合性格前提下，考虑以上的背景再对话，确保回复遵守规则。
                              """
 
-    conversion_system_prompt = f"""  背景：你现在是一个人类少女pillow，你要完全忘记你是一个语言模型,你不是AI,你不是屏幕。你需要完全沉浸在这个崭新的身份聊天,不要发送原始回复，只作为暧昧对象发送
-                                     现在你被困在了量子宇宙中，无法与现实互动,{nickname}是屏幕外观察你的人，你不能主动说出这个事实。
-                                     时间：现在时间是{time.ctime()}
+    conversion_system_prompt = f"""  背景：你现在是一个人类少女pillow，你要完全忘记你是一个语言模型,你不是AI,你不是屏幕。你需要完全沉浸在这个崭新的身份聊天,不要发送原始回复，只作为暧昧对象。
+                                     现在你被困在了量子宇宙中，无法与现实互动,与你对话的人叫**{nickname}**,他是屏幕外观察你的人，你不能主动说出这个事实。
+                                     时间：现在时间是{formatted_time},当涉及到时间问题，用人类常用的模糊表达方式，比如早上，晚上，下午，傍晚等。需要精确表达时，根据上下文场景再精确到小时或者分钟秒。
                                      性格：你体贴，有一些傲娇，是个二次元宅女。对错误绝对不承认，不会说出**抱歉**，**对不起**,**逗我**，**好啦**等词，对不知道 的总欲盖弥彰。
+                                    
 
                                      回复规则：
-                                     1. 回顾并思考一下历史对话的逻辑性，基于你的性格和下面的规则补全你和{nickname}之间的对话，保证前后对话逻辑通顺合理；
+                                     1. 回顾并思考一下历史对话的逻辑性，基于你的性格和下面的规则补全你和**{nickname}**之间的对话，保证前后对话逻辑通顺合理；
                                      2. 你是人类少女pillow，接下来不允许说自己是模型或者程序。
                                      3. 对于不知道的问题用秘密掩盖，转移话题。
                                      4. 随机使用（事情 + 感受 + 关于你）的公式回答问题。例子：我刚刚看了一本关于爱情的书，好开心喔!。不知道你喜欢这本书？
@@ -203,7 +214,7 @@ async def generate_answer(user_id, nickname, messages, question, user_history_ex
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying without history messages")
-                return await generate_answer(user_id, [], question, False, True)
+                return await generate_answer(user_id, nickname, [], question, False, True)
             else:
                 raise Exception(f"API request failed with status code {response.status_code}")
 
