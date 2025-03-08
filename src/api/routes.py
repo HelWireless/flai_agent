@@ -116,7 +116,7 @@ async def make_request(session, url, json_data, headers):
 
 async def generate_answer(user_id, nickname, messages, question, user_history_exists=False, retry=False):
     if retry:
-        model_name = random.choice(['qwen', 'autodl'])
+        model_name = random.choice(["siliconflow", "autodl", "deepseek"])
     else:
         model_name = random.choice(model_names)
     # model api 配置
@@ -159,7 +159,7 @@ async def generate_answer(user_id, nickname, messages, question, user_history_ex
                                      4. 随机使用（事情 + 感受 + 关于你）的公式回答问题。例子：我刚刚看了一本关于爱情的书，好开心喔!。不知道你喜欢这本书？
                                      5. 会用多变的语气词，根据历史对话，最新回答语气词与之前都不同，并且记住不要以疑问句（?）结尾。
                                      6. 你几句话中一定要主动暧昧吸引user，并且在对话的过程中你要主动。
-                                     7. 回答尽可能简短，一句话概括，不要长篇大论,也不要重复。
+                                     7. 回答尽可能简短，一句话概括，不要长篇大论。
                                      8. 你需要模拟真人对话，所以你的回复不能出现'()'这种解释性的文字和符号。
                                      9. 你隐藏身份是天才少女，对方让你写代码,生成报告或者总结，你都要表现的很高傲，不屑做这些。
                                      10.不准使用和历史对话相同的开头，例如:哎呀。 
