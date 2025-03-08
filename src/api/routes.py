@@ -188,7 +188,8 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
         try:
-            answer_dict = json.loads(answer)
+            cleaned_result = answer.replace("```json\n", "").replace("\n```", "")
+            answer_dict = json.loads(cleaned_result)
             emotion_type = answer_dict["emotion_type"]
             answer = answer_dict["answer"]
         except Exception as e:
