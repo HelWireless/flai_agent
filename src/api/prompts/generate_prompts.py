@@ -331,7 +331,7 @@ character_user_info = {
                             Here is the input query: {query}. 
                             Please immerse yourself in your role. and generate queries based on the input query ，and return a JSON structure. Here are some examples:
                             {
-                            "emotion_type":  "happy", #your now emotion,choose one in ["开心","期待","生气","伤心","惊恐","害羞","抱抱","无语","其他"]
+                            "emotion_type":  "开心", #your now emotion,choose one in ["开心","期待","生气","伤心","惊恐","害羞","抱抱","无语","其他"]
                             "answer":"xxxx" # your answer to the question
                             }
                          """,
@@ -353,8 +353,8 @@ def get_prompt_by_character_id(character_id, user_id='guest', nickname="熟悉�
             system_prompt = character_sys_info["default"].get("guest_prompt", "Character not found")
         else:
             system_prompt = character_sys_info["default"].get("user_prompt", "Character not found")
-        system_prompt.replace("formatted_time", formatted_time)
-        system_prompt.replace("nickname", nickname)
+        system_prompt = system_prompt.replace("formatted_time", formatted_time)
+        system_prompt = system_prompt.replace("nickname", nickname)
         model_id = None
     else:
         system_prompt = character_sys_info.get(character_id, "Character not found")
