@@ -139,14 +139,14 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
     api_key = config[model_name]["api_key"]
 
     api_messages = [{"role": "system", "content": prompt["system_prompt"]}]
-
+    user_content = prompt["user_prompt"].replace("question", question)
     # 如果不是重试且有历史消息，将其添加到 api_messages
     if not retry and user_history_exists:
         api_messages.extend(messages)
-        api_messages.append({"role": "user", "content": prompt["user_prompt"].replace("question", question)})
+        api_messages.append({"role": "user", "content": user_content})
     else:
         # 如果是重试或没有历史，只添加当前问题
-        api_messages.append({"role": "user", "content": prompt["user_prompt"].replace("question", question)})
+        api_messages.append({"role": "user", "content": user_content})
 
     try:
         # 准备请求数据
@@ -155,7 +155,8 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
             "messages": api_messages,
             "stream": False,
             "max_tokens": 2048,
-            "temperature": 0.75,
+            "temperature": 0.7,
+            "top_p": 0.8,
         }
 
         headers = {
