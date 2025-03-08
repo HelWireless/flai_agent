@@ -126,7 +126,7 @@ async def make_request(session, url, json_data, headers):
     return await loop.run_in_executor(None, partial(session.post, url, json=json_data, headers=headers))
 
 
-async def generate_answer(user_id, prompt, messages, question, user_history_exists=False, model_name=None, retry=False):
+async def generate_answer(prompt, messages, question, user_history_exists=False, model_name=None, retry=False):
     if retry:
         model_name = random.choice(['qwen', 'autodl', 'qwen-max'])
     else:
@@ -176,7 +176,7 @@ async def generate_answer(user_id, prompt, messages, question, user_history_exis
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying without history messages")
-                return await generate_answer(user_id, prompt, [], question, False, None, True)
+                return await generate_answer(prompt, [], question, False, None, True)
             else:
                 raise Exception(f"API request failed with status code {response.status_code}")
 
@@ -223,7 +223,6 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     # context = build_context(search_results)
     prompt, conversation_history, user_history_exists, model_name = generate_prompt(request.character_id,
                                                                                     request.user_id, db)
-
     answer, api_messages, emotion_type = await generate_answer(
         prompt=prompt,
         messages=conversation_history,
