@@ -132,8 +132,8 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
     else:
         if not model_name:
             model_name = random.choice(model_names)
+
     # model api 配置
-    print(config[model_name])
     api_base = config[model_name]["base_url"]
     model = config[model_name]["model"]
     api_key = config[model_name]["api_key"]
@@ -149,6 +149,12 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         user_content = user_content.replace("history_chat", "None")
         # 如果是重试或没有历史，只添加当前问题
         api_messages.append({"role": "user", "content": user_content})
+
+    if "Character not found" in prompt["system_prompt"]:
+        answer = "人物不存在"
+        emotion_type = "高兴"
+        api_messages.append({"role": "assistant", "content": answer})
+        return answer, api_messages, emotion_type
 
     try:
         # 准备请求数据

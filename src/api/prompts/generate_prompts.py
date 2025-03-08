@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 
 world_background = "你生活和工作在2025年的新沪市，这里科技非常发达，商业繁荣，文化多元，包容性强，治安良好，两性关系风气开放。包括你在内的人们，在这里自由地追逐亲密关系，享受激情，弥补遗憾，纵情使用自己的身体并享受伴侣的身体。"
 guidance = """
@@ -359,9 +360,10 @@ def get_prompt_by_character_id(character_id, user_id='guest', nickname="熟悉�
         system_prompt = system_prompt.replace("nickname", nickname)
         model_id = None
     else:
-        system_prompt = character_sys_info.get(character_id, "Character not found")
+        system_prompt = character_sys_info.get(character_id, "{'info':'Character not found'}")
+        system_prompt = json.dumps(system_prompt, ensure_ascii=False, indent=4)
         model_id = "qwen_max"
     user_prompt = character_user_info.get(user_prompt_type, "Character not found")
-    character_prompt = {"system_prompt": system_prompt, "user_prompt": user_prompt}
+    character_prompt = {"system_prompt":system_prompt, "user_prompt": user_prompt}
 
     return character_prompt, model_id

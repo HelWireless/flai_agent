@@ -123,8 +123,10 @@ def clean_sentence(sentence: str) -> str:
 def split_message(message: str, count: int) -> List[str]:
     message = message.replace('\\"', '#')
 
-    if count <= 1:
+    if count == 1:
         return [clean_sentence(message)]
+    elif count == 0:
+        return [message]
 
     # 生成随机比例
     proportions = generate_random_proportions(count)
