@@ -139,12 +139,14 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
     api_key = config[model_name]["api_key"]
 
     api_messages = [{"role": "system", "content": prompt["system_prompt"]}]
-    user_content = prompt["user_prompt"].replace("question", question)
+    user_content = prompt["user_prompt"].replace("query", question)
     # 如果不是重试且有历史消息，将其添加到 api_messages
     if not retry and user_history_exists:
-        api_messages.extend(messages)
+        # api_messages.extend(messages)
+        user_content = user_content.replace("history_chat", messages)
         api_messages.append({"role": "user", "content": user_content})
     else:
+        user_content = user_content.replace("history_chat", "None")
         # 如果是重试或没有历史，只添加当前问题
         api_messages.append({"role": "user", "content": user_content})
 
