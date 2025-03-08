@@ -40,7 +40,7 @@ with open(config_path, "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
 # autdo model api 配置
-model_names = ["siliconflow", "autodl", "deepseek", "qwen", "autodl", "qwen_max"]
+model_names = ["siliconflow", "autodl", "qwen_plus", "autodl", "qwen_max", "autodl", "deepseek_v3"]
 
 # VectorQuery 配置
 vector_db = VectorQuery(
@@ -128,7 +128,7 @@ async def make_request(session, url, json_data, headers):
 
 async def generate_answer(prompt, messages, question, user_history_exists=False, model_name=None, retry=False):
     if retry:
-        model_name = random.choice(['qwen', 'autodl', 'qwen-max'])
+        model_name = random.choice(['qwen_plus', 'autodl', 'qwen-max'])
     else:
         if not model_name:
             model_name = random.choice(model_names)
@@ -143,7 +143,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
     # 如果不是重试且有历史消息，将其添加到 api_messages
     if not retry and user_history_exists:
         # api_messages.extend(messages)
-        user_content = user_content.replace("history_chat", messages)
+        user_content = user_content.replace("history_chat", str(messages))
         api_messages.append({"role": "user", "content": user_content})
     else:
         user_content = user_content.replace("history_chat", "None")
