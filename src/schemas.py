@@ -2,6 +2,7 @@ from sqlalchemy import Column, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
 from typing import List, Optional
+from pydantic import ConfigDict, Field
 
 Base = declarative_base()
 
@@ -45,3 +46,16 @@ class Text2VoiceResponse(BaseModel):
     user_id: int
     text_id: int
     url: str
+
+
+class GenerateOpenerRequest(BaseModel):
+    character_id: str = Field(alias="characterId")  # 使用Field直接定义别名
+    opener_index: int = Field(alias="openerIndex")
+
+    model_config = ConfigDict(
+        populate_by_name=True  # 替代原来的allow_population_by_field_name
+    )
+
+class GenerateOpenerResponse(BaseModel):
+    opener: str
+

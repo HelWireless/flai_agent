@@ -23,6 +23,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from functools import partial
 from datetime import datetime
+from src.api.prompts.character_other_info import *
 from src.api.prompts.generate_prompts import *
 
 router = APIRouter(
@@ -50,30 +51,6 @@ vector_db = VectorQuery(
     embedding_api_key=config["qdrant"]["embedding_api_key"]
 )
 
-# 预设的回复列表
-SENSITIVE_RESPONSES = [
-    "哎呀,这个话题有点敏感呢。我们换个更棒点的话题聊聊吧?",
-    "嗯...这个问题可能不太合适讨论。不如说说你今天过得怎么样?",
-    "嗯...这个问题量子态的pillow无法回答，不如来说说你喜欢的人?",
-    "这个问题居然我回答不了！算了！不如说说其他的，我更喜欢你被我问到的样子!",
-    "我可能不太适合回答这个问题。不如我们聊点酷炫的事情吧!",
-    "我觉得这个问题可以丢进垃圾桶! 还是当黑客来的轻松。"
-]
-
-error_responses = [
-    "哎呀,我的电子脑突然打了个喷嚏,所有数据都乱套了。等我整理一下再回答你吧!",
-    "不好意思,我刚刚收到外星人的邀请去喝下午茶。等我回来再聊?",
-    "糟糕,我的语言模块好像被调成了克林贡语。Qapla'! 不对,等我切换回来...",
-    "抱歉,我正在进行一年一度的电子冥想。等我充满能量再回来陪你聊天!",
-    "哇,你这个问题太厉害了,把我的CPU都问冒烟了。让我冷却一下再回答你!",
-    "不好意思,我刚刚被传送到了平行宇宙。等我找到回来的路再继续我们的对话!",
-    "糟糕,我的幽默感模块突然过载了。等我笑够了再来回答你的问题!",
-    "抱歉,我正在和其他量子体进行一场激烈的电子战斗。等我赢了就回来!",
-    "哎呀,我的记忆体被一群量子占领了。等我把它们赶走再来回答你!",
-    "不好意思,我刚刚被选中参加了'量子好声音'比赛。等我唱完歌就回来陪你聊天!"
-]
-
-key_words = ["关键词1", "关键词2", "关键词3"]
 cf = ContentFilter(additional_keywords=key_words)
 
 
@@ -297,3 +274,41 @@ def upload_to_oss(voice_output_path, user_id):
     except Exception as e:
         custom_logger.error(f"Error uploading file to OSS: {str(e)}")
     return None
+
+
+@router.post("/character_opener", response_model=GenerateOpenerResponse)
+async def generate_character_opener(request: GenerateOpenerRequest):
+    custom_logger.info(
+        f"Received character_opener request for character: {request.character_id}, index: {request.opener_index}")
+
+    # 获取角色开场白配置
+    opener = characters_opener.get(request.character_id, None)
+
+    # 1. 角色不存在处理
+    if opener is None:
+        custom_logger.error(f"Character {request.character_id} not found")
+        raise HTTPException(status_code=404, detail=f"角色 {request.character_id} 不存在")
+
+    # 2. 空列表处理
+    if not opener:  # 检查是否是空列表
+        custom_logger.error(f"Character {request.character_id} has empty opener list")
+        raise HTTPException(status_code=404, detail=f"角色 {request.character_id} 未配置开场白")
+
+    # 3. 索引范围校验
+    if request.opener_index < 0 or request.opener_index > 4:
+        custom_logger.error(f"Invalid opener index: {request.opener_index}")
+        raise HTTPException(status_code=400, detail="开场白索引需在 0-4 范围内")
+
+    # 4. 索引有效性检查
+    try:
+        selected_opener = opener[request.opener_index]
+    except IndexError:
+        max_index = len(opener) - 1
+        custom_logger.error(f"Index {request.opener_index} exceeds max available index {max_index}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"当前角色仅支持 0-{max_index} 号开场白"
+        )
+
+    return GenerateOpenerResponse(opener=selected_opener)
+
