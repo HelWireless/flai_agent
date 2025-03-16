@@ -45,3 +45,20 @@ class Text2VoiceResponse(BaseModel):
     user_id: int
     text_id: int
     url: str
+
+
+class GenerateOpenerRequest(BaseModel):
+    character_id: str  # 对应输入的characterId
+    opener_index: int  # 对应输入的openerIndex
+
+    class Config:
+        # 允许使用字段别名接收JSON数据
+        allow_population_by_field_name = True
+        fields = {
+            "character_id": {"alias": "characterId"},
+            "opener_index": {"alias": "openerIndex"}
+        }
+
+class GenerateOpenerResponse(BaseModel):
+    opener: str
+

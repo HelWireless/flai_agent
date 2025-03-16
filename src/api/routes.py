@@ -23,6 +23,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from functools import partial
 from datetime import datetime
+from src.api.prompts.character_other_info import *
 from src.api.prompts.generate_prompts import *
 
 router = APIRouter(
@@ -50,30 +51,6 @@ vector_db = VectorQuery(
     embedding_api_key=config["qdrant"]["embedding_api_key"]
 )
 
-# 预设的回复列表
-SENSITIVE_RESPONSES = [
-    "哎呀,这个话题有点敏感呢。我们换个更棒点的话题聊聊吧?",
-    "嗯...这个问题可能不太合适讨论。不如说说你今天过得怎么样?",
-    "嗯...这个问题量子态的pillow无法回答，不如来说说你喜欢的人?",
-    "这个问题居然我回答不了！算了！不如说说其他的，我更喜欢你被我问到的样子!",
-    "我可能不太适合回答这个问题。不如我们聊点酷炫的事情吧!",
-    "我觉得这个问题可以丢进垃圾桶! 还是当黑客来的轻松。"
-]
-
-error_responses = [
-    "哎呀,我的电子脑突然打了个喷嚏,所有数据都乱套了。等我整理一下再回答你吧!",
-    "不好意思,我刚刚收到外星人的邀请去喝下午茶。等我回来再聊?",
-    "糟糕,我的语言模块好像被调成了克林贡语。Qapla'! 不对,等我切换回来...",
-    "抱歉,我正在进行一年一度的电子冥想。等我充满能量再回来陪你聊天!",
-    "哇,你这个问题太厉害了,把我的CPU都问冒烟了。让我冷却一下再回答你!",
-    "不好意思,我刚刚被传送到了平行宇宙。等我找到回来的路再继续我们的对话!",
-    "糟糕,我的幽默感模块突然过载了。等我笑够了再来回答你的问题!",
-    "抱歉,我正在和其他量子体进行一场激烈的电子战斗。等我赢了就回来!",
-    "哎呀,我的记忆体被一群量子占领了。等我把它们赶走再来回答你!",
-    "不好意思,我刚刚被选中参加了'量子好声音'比赛。等我唱完歌就回来陪你聊天!"
-]
-
-key_words = ["关键词1", "关键词2", "关键词3"]
 cf = ContentFilter(additional_keywords=key_words)
 
 
@@ -297,3 +274,25 @@ def upload_to_oss(voice_output_path, user_id):
     except Exception as e:
         custom_logger.error(f"Error uploading file to OSS: {str(e)}")
     return None
+
+
+@router.post("/character_opener", response_model=GenerateOpenerResponse)
+async def generate_character_opener(request: GenerateOpenerRequest):
+    custom_logger.info(
+        f"Received character_opener request for user: {request.character_id}, index_id: {request.opener_index}")
+    opener = characters_opener.get(request.character_id, None)
+    # 没有找到该角色，则返回一个错误
+    if opener is None:
+        custom_logger.error(f"Character {request.character_id} not found")
+        raise HTTPException(status_code=404, detail=f"Character {request.character_id} not found")
+    # opener 非空，则尝试使用opener_index 取opener(list)下标
+    elif opener:
+        try:
+            opener = opener[request.opener_index]
+            custom_logger.info(f"Generated opener for user: {request.character_id}, index_id: {request.opener_index}")
+        except Exception as e:
+            custom_logger.error(
+                f"Character {request.character_id} opener index {request.opener_index}  not in (0,4), error is {e}")
+            raise HTTPException(status_code=404,
+                                detail=f"index {request.opener_index} should in (0,4)")
+    return GenerateOpenerResponse(opener=opener)
