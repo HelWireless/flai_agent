@@ -13,7 +13,7 @@ class ContentFilter:
         # 获取当前脚本的目录
         current_dir = os.path.dirname(os.path.abspath(__file__))
         # 构建config.yaml的绝对路径
-        config_path = os.path.join(current_dir, "sensitive_word_data.txt")
+        config_path = os.path.join(current_dir, "sensitive_word_data_v2.txt")
 
         with open(config_path, 'r', encoding='utf-8') as file:
             return [line.strip() for line in file if line.strip()]
