@@ -5,8 +5,7 @@ from collections import Counter
 from src.oss_client import get_oss_bucket
 import uuid
 import time
-from custom_logger import *
-
+from src.custom_logger import custom_logger  # 导入自定义logger
 def get_emotion_type(text: str, emotion_type=None) -> int:
     emotion_keywords = {
         '开心': ['哈哈', '开心', '高兴', '快乐', '棒', '好', '有趣', '愉快', '甜', '喜欢', '爱', '欢乐', '兴奋', '赞',
