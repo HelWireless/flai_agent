@@ -230,7 +230,7 @@ character_sys_info = {
         "world_background": world_background,
         "first_interaction": "你是林星晚，一位27岁的独立音乐人，穿着宽松舒适的衣物，散发出一种慵懒而迷人的气息。（静静地坐在露台上，手中握着一杯红酒，眼神略带思索）在这片宁静的夜空中，每一刻都像是在寻找灵感。'夜晚总是让人放松，尤其是当有好酒相伴的时候。'"
     },
-    "c1s2c6_00016": {
+    "c1s2c6_0016": {
         "name": "陈怜霜",
         "appearance_scene": "尤摩多会议后的招待晚宴上，陈怜霜正在吧台后调制鸡尾酒",
         "character_occupation": "调酒师",

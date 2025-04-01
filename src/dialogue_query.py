@@ -29,8 +29,10 @@ class DialogueQuery:
                 encoded_password = urllib.parse.quote(config["database"]["password"])
                 host = config["database"]["host"]
                 username = config["database"]["username"]
-                DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}'
-                engine = create_engine(DATABASE_URI,pool_recycle=3600,pool_pre_ping=True)
+                database_name = config["database"].get("database_name", "pillow_customer_prod")
+                DATABASE_URI = f'mysql+mysqldb://{username}:{encoded_password}@{host}/{database_name}'
+
+                engine = create_engine(DATABASE_URI, pool_recycle=3600, pool_pre_ping=True)
                 return engine
         except FileNotFoundError:
             custom_logger.error(f"无法找到配置文件: {config_path}")
@@ -59,13 +61,13 @@ class DialogueQuery:
 
     def perform_query(self, db_session, user_id):
         result = db_session.execute(
-            text("""
+            text(f"""
                 SELECT
                     t1.message AS user_message,
                     t1.text AS assistant_response,
                     t1.create_time
                 FROM
-                    pillow_customer_prod.t_dialogue t1
+                    t_dialogue t1
                 WHERE
                     t1.account_id = :user_id
                 AND
@@ -77,11 +79,32 @@ class DialogueQuery:
         )
         return result.fetchall()
 
+    def character_history_query(self, db_session, user_id, character_id):
+        result = db_session.execute(
+            text(f"""
+                SELECT    t1.message as user_message
+                        , t1.text as assistant_response
+                        , t1.create_time
+                from t_third_character_dialogue t1
+                where 
+                    t1.account_id = :user_id
+                AND 
+                    t1.third_character_id = :character_id
+                AND 
+                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                ORDER BY
+                    t1.create_time DESC
+                LIMIT 20
+            """),
+            {"user_id": user_id, "character_id": character_id}  # 使用参数化查询来防止SQL注入
+        )
+        return result.fetchall()
+
     def nickname_query(self, db_session, user_id):
         result = db_session.execute(
-            text("""
+            text(f"""
                     SELECT a.name 
-                    FROM pillow_customer_prod.t_account a
+                    FROM t_account a
                     WHERE a.id = :user_id
             """),
             {"user_id": user_id}  # 使用参数化查询来防止SQL注入
@@ -90,9 +113,12 @@ class DialogueQuery:
         custom_logger.info(f"user nickname is {row}")
         return row[0] if row else '陌生人'  # 如果有结果，则返回第一项，否则返回None
 
-    def get_user_dialogue_history(self, user_id: str):
+    def get_user_third_character_dialogue_history(self, user_id:str, character_id:str):
+        results = self.query_with_retry(self.db, self.character_history_query, user_id, character_id)
+        nickname = self.query_with_retry(self.db, self.nickname_query, user_id)
+        return self._process_query_results(results, if_pillow=False), nickname
+    def get_user_pillow_dialogue_history(self, user_id: str):
         try:
-            print("我在这里")
             results = self.query_with_retry(self.db, self.perform_query, user_id)
             nickname = self.query_with_retry(self.db, self.nickname_query, user_id)
         except Exception as e:
@@ -101,7 +127,7 @@ class DialogueQuery:
             custom_logger.error(f"Failed to execute query after retries: {e}")
         return self._process_query_results(results), nickname
 
-    def _process_query_results(self, query_results):
+    def _process_query_results(self, query_results, if_pillow=True):
         processed_results = []
         temp_dict = {}
 
@@ -121,21 +147,22 @@ class DialogueQuery:
                 else:
                     temp_dict[timestamp]["assistant"] = assistant_msg
 
-        # 按照 timestamp 排序并取最近的 3 条对话
-        sorted_keys = sorted(temp_dict.keys(), reverse=True)
-        for key in sorted_keys[:3]:
+
+        # 按照 timestamp 排序并取最近的 6 条对话
+        sorted_keys = sorted(temp_dict.keys(), reverse=if_pillow)
+        for key in sorted_keys[:6]:
             if temp_dict[key]["user"]:
                 processed_results.append({"role": "user", "content": temp_dict[key]["user"]})
             if temp_dict[key]["assistant"]:
                 processed_results.append({"role": "assistant", "content": temp_dict[key]["assistant"]})
 
         return processed_results
-
-
 # 示例用法
 if __name__ == "__main__":
     dialogue_query = DialogueQuery(if_test=True)
-    result, user_nickname = dialogue_query.get_user_dialogue_history('1000007')
+    result, user_nickname = dialogue_query.get_user_pillow_dialogue_history('1000003') # 生产测试1000009
+    tmp = dialogue_query.get_user_third_character_dialogue_history("1000003","c1s2c6_0016")
     # result = dialogue_query.perform_query('1000004')
     print(result)
     print("user_nickname", user_nickname)
+    print("third character:", tmp)

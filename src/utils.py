@@ -2,7 +2,10 @@ from typing import List
 import re
 import random
 from collections import Counter
-
+from src.oss_client import get_oss_bucket
+import uuid
+import time
+from custom_logger import *
 
 def get_emotion_type(text: str, emotion_type=None) -> int:
     emotion_keywords = {
@@ -191,6 +194,21 @@ def split_message(message: str, count: int) -> List[str]:
     # print(f"最终结果: {result}")
     return result
 
+
+def upload_to_oss(voice_output_path, user_id):
+    custom_logger.info(f"Uploading voice file to OSS for user: {user_id}")
+    file_key_prefix = "message_chat"
+    file_key = file_key_prefix + f"/{uuid.uuid4()}_{user_id}_{time.time()}.mp3"
+    bucket = get_oss_bucket()
+    try:
+        upload_result = bucket.put_object_from_file(file_key, voice_output_path)
+        if upload_result.status == 200:
+            voice_response_url = f"https://pillow-agent.oss-cn-shanghai.aliyuncs.com/{file_key}"
+            custom_logger.info(f"Voice file uploaded successfully: {voice_response_url}")
+            return file_key
+    except Exception as e:
+        custom_logger.error(f"Error uploading file to OSS: {str(e)}")
+    return None
 
 if __name__ == "__main__":
     long_text = "你刚刚好像在逗我，说要给我奖励，但是我可没那(么容易就范哦) 要奖励也\"可以，“‘k&不过先告诉我，你准备了什么样的奖励呢 期待ing～"

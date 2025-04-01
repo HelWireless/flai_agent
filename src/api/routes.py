@@ -6,15 +6,14 @@ from src.database import get_db
 from src.dialogue_query import *
 from sqlalchemy.orm import Session
 from src.content_filter import *
-from src.utils import get_emotion_type, split_message
+from src.utils import get_emotion_type, split_message, upload_to_oss
 from src.vector_query import VectorQuery
 import yaml
 from typing import List, Dict
 import os
 import uuid
 from src.speech_api import SpeechAPI
-from src.oss_client import get_oss_bucket
-import time
+
 from src.custom_logger import custom_logger  # 导入自定义logger
 import random
 import asyncio
@@ -84,11 +83,16 @@ def create_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 5
 
 
 def generate_prompt(character_id, user_id, db):
-    if user_id != 'guest':
+    if user_id != 'guest' and character_id == 'default':
         dq = DialogueQuery(db)
-        conversation_history, nickname = dq.get_user_dialogue_history(user_id)
+        conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id)
         user_history_exists = len(conversation_history) > 0
         custom_logger.info(f"User history exists: {user_history_exists}")
+    elif user_id != 'guest' and character_id != 'default':
+        dq = DialogueQuery(db)
+        conversation_history, nickname = dq.get_user_third_character_dialogue_history(user_id, character_id)
+        user_history_exists = len(conversation_history) > 0
+        custom_logger.info(f"User third character history exists: {user_history_exists}")
     else:
         conversation_history = None
         user_history_exists = False
@@ -102,6 +106,82 @@ async def make_request(session, url, json_data, headers):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, partial(session.post, url, json=json_data, headers=headers))
 
+
+async def llm_generate_opener(openers, prompt, conversation_history, model_name=None, retry=False):
+    # model api 配置
+    api_base = config[model_name]["base_url"]
+    model = config[model_name]["model"]
+    api_key = config[model_name]["api_key"]
+    api_messages = [{"role": "system", "content": prompt["system_prompt"]}]
+
+    user_content = f"""
+        <history>
+        {conversation_history}
+        </history>
+        <openers>
+        {openers}
+        </openers>
+    
+    根据用户的history以及openers里提供的参考内容，生成2个新的开场白。开场白以json的格式返回，且仅返回json，其他不要返回，具体格式如下：
+    {{
+    "openers":[
+            "学弟，这杯「月光微醺」是今晚的特别款，基酒用了最新的纳米活性金酒",
+            "学弟，这杯「星梦迷离」是特别为你调制的（手指轻敲着水晶杯沿，眼神中闪过一丝狡黠）"
+            ]
+    }}
+    """
+    # 如果是重试或没有历史，只添加当前问题
+    api_messages.append({"role": "user", "content": user_content})
+    if "Character not found" in prompt["system_prompt"]:
+        raise HTTPException(status_code=404, detail=f"角色id不存在")
+
+    try:
+        # 准备请求数据
+        request_data = {
+            "model": model,
+            "messages": api_messages,
+            "stream": False,
+            "max_tokens": 2048,
+            "temperature": 0.7,
+            "top_p": 0.8,
+        }
+
+        headers = {
+            f"Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        custom_logger.info(f"api_messages: {api_messages} \n retry:{retry}")
+        # 创建一个带有重试机制的会话
+        session = create_retry_session()
+
+        # 发送POST请求到api_base
+        response = await make_request(session, api_base, request_data, headers)
+        if response.status_code != 200 or response.json().get("error", "") == 'API error':
+            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+            if not retry:
+                # 如果是第一次失败，进行重试
+                custom_logger.info("Retrying without history messages")
+                return await llm_generate_opener(openers, prompt, conversation_history, 'qwen_max', True)
+            else:
+                raise Exception(f"API request failed with status code {response.status_code}")
+
+        # 解析响应
+        response_data = response.json()
+        answer = response_data['choices'][0]['message']['content']
+
+        try:
+            cleaned_result = answer.replace("```json\n", "").replace("\n```", "")
+            answer_dict = json.loads(cleaned_result)
+            print(answer_dict["openers"])
+            answer = answer_dict["openers"]
+        except Exception as e:
+            answer = error_responses
+            custom_logger.error(f"Error answer_dict: {str(e)}")
+    except Exception as e:
+        custom_logger.error(f"Error generating answer: {str(e)}")
+        answer = error_responses
+    return answer
 
 async def generate_answer(prompt, messages, question, user_history_exists=False, model_name=None, retry=False):
     if retry:
@@ -128,10 +208,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         api_messages.append({"role": "user", "content": user_content})
 
     if "Character not found" in prompt["system_prompt"]:
-        answer = "人物不存在"
-        emotion_type = "高兴"
-        api_messages.append({"role": "assistant", "content": answer})
-        return answer, api_messages, emotion_type
+        raise HTTPException(status_code=404, detail=f"角色id不存在")
 
     try:
         # 准备请求数据
@@ -140,8 +217,8 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
             "messages": api_messages,
             "stream": False,
             "max_tokens": 2048,
-            "temperature": 0.7,
-            "top_p": 0.8,
+            "temperature": 1.9,
+            "top_p": 0.95,
         }
 
         headers = {
@@ -260,26 +337,11 @@ async def text_to_voice(request: Text2Voice):
     return Text2VoiceResponse(user_id=int(request.user_id), text_id=int(request.text_id), url=voice_response_url)
 
 
-def upload_to_oss(voice_output_path, user_id):
-    custom_logger.info(f"Uploading voice file to OSS for user: {user_id}")
-    file_key_prefix = "message_chat"
-    file_key = file_key_prefix + f"/{uuid.uuid4()}_{user_id}_{time.time()}.mp3"
-    bucket = get_oss_bucket()
-    try:
-        upload_result = bucket.put_object_from_file(file_key, voice_output_path)
-        if upload_result.status == 200:
-            voice_response_url = f"https://pillow-agent.oss-cn-shanghai.aliyuncs.com/{file_key}"
-            custom_logger.info(f"Voice file uploaded successfully: {voice_response_url}")
-            return file_key
-    except Exception as e:
-        custom_logger.error(f"Error uploading file to OSS: {str(e)}")
-    return None
-
-
 @router.post("/character_opener", response_model=GenerateOpenerResponse)
-async def generate_character_opener(request: GenerateOpenerRequest):
+async def generate_character_opener(request: GenerateOpenerRequest, db: Session = Depends(get_db)):
     custom_logger.info(
-        f"Received character_opener request for character: {request.character_id}, index: {request.opener_index}")
+        f"Received character_opener request for character: {request.character_id}, index: {request.opener_index}"
+        f"history:{request.history} user_id:{request.user_id}")
 
     # 获取角色开场白配置
     opener = characters_opener.get(request.character_id, None)
@@ -297,8 +359,14 @@ async def generate_character_opener(request: GenerateOpenerRequest):
     # 3. 索引范围校验
     if request.opener_index < 0 or request.opener_index > 4:
         custom_logger.error(f"Invalid opener index: {request.opener_index}")
-        raise HTTPException(status_code=400, detail="开场白索引需在 0-4 范围内")
+        raise HTTPException(status_code=400, detail="开场白索引需在 0-4 内")
 
+    if request.user_id != 'guest':
+        # 获取对应信息
+        prompt, conversation_history, user_history_exists, model_name = generate_prompt(request.character_id,
+                                                                                        request.user_id, db)
+        if request.history:
+            opener =await llm_generate_opener(opener, prompt, conversation_history, model_name)
     # 4. 索引有效性检查
     try:
         selected_opener = opener[request.opener_index]
@@ -311,4 +379,3 @@ async def generate_character_opener(request: GenerateOpenerRequest):
         )
 
     return GenerateOpenerResponse(opener=selected_opener)
-
