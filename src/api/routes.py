@@ -40,7 +40,7 @@ with open(config_path, "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
 # autdo model api 配置
-model_names = ["siliconflow", "autodl", "qwen_plus", "autodl", "qwen_max", "autodl", "deepseek_v3"]
+model_names = ["siliconflow", "autodl", "qwen_plus", "autodl", "qwen_max", "autodl", "deepseek"]
 
 # VectorQuery 配置
 vector_db = VectorQuery(

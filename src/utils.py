@@ -109,16 +109,13 @@ def generate_random_proportions(count: int) -> List[float]:
 
 
 def clean_sentence(sentence: str) -> str:
-    # 定义要移除的符号
-    symbols_to_remove = r'[\\"\(\)\[\]\{\}]'
-    # 使用正则表达式替换这些符号为空字符串
+    # 移除中英文括号及其他指定符号
+    symbols_to_remove = r'[\\"‘’“”\(\)（）\[\]\{\}【】]'
     cleaned_sentence = re.sub(symbols_to_remove, '', sentence)
-    # 去除首尾空白字符
     cleaned_sentence = cleaned_sentence.strip()
 
-    # 去除句子开头到第一个文字之间的所有符号
+    # 去除开头到第一个文字或空格前的非文字字符
     cleaned_sentence = re.sub(r'^[^\w\s]+', '', cleaned_sentence)
-
     return cleaned_sentence
 
 
