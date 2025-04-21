@@ -248,22 +248,23 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
         try:
-            cleaned_result = answer.replace("```json\n", "").replace("\n```", "")
-            answer_dict = json.loads(cleaned_result)
+            if "```json" in answer:
+                answer = answer.replace("```json\n", "").replace("\n```", "")
+            answer_dict = json.loads(answer)
             emotion_type = answer_dict["emotion_type"]
-            answer = answer_dict["answer"]
+            answer_result = answer_dict["answer"]
         except Exception as e:
             emotion_type = None
-            answer = random.choice(error_responses)
+            answer_result = random.choice(error_responses)
             custom_logger.error(f"Error answer_dict: {str(e)}")
         # 将 AI 的回答添加到 api_messages
-        api_messages.append({"role": "assistant", "content": answer})
+        api_messages.append({"role": "assistant", "content": answer_result})
     except Exception as e:
         emotion_type = None
         custom_logger.error(f"Error generating answer: {str(e)}")
-        answer = random.choice(error_responses)
-        api_messages.append({"role": "assistant", "content": answer})
-    return answer, api_messages, emotion_type
+        answer_result = random.choice(error_responses)
+        api_messages.append({"role": "assistant", "content": answer_result})
+    return answer_result, api_messages, emotion_type
 
 
 @router.post("/chat-pillow", response_model=ChatResponse)
