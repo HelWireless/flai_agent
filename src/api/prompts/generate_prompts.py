@@ -426,6 +426,7 @@ character_user_info = {
                             "answer": "xxxx"          // your answer to the question
                             }
                             ```
+                            
                             ** Finally only output the JSON structure without outputting any other content ** 
                          """,
     "return_answer_prompt": """
