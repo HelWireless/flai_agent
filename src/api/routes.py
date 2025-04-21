@@ -116,7 +116,7 @@ async def make_request(session, url, json_data, headers):
 
 async def generate_answer(user_id, nickname, messages, question, user_history_exists=False, retry=False):
     if retry:
-        model_name = random.choice(['qwen', 'autodl'])
+        model_name = random.choice(["siliconflow", "autodl", "deepseek"])
     else:
         model_name = random.choice(model_names)
     # model api 配置
