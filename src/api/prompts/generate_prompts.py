@@ -420,12 +420,12 @@ character_user_info = {
                             Here is the input question: {query}. 
                             Please immerse yourself in your role. and generate queries based on the input query ，and return a JSON structure. 
                             Here are some examples:
-                            
-                            {{
-                            "emotion_type":  "开心", // your now emotion,choose one in ["开心","期待","生气","伤心","惊恐","害羞","抱抱","无语","其他"]
-                            "answer":"xxxx" // your answer to the question
-                            }}
-                            
+                            ```json
+                            {
+                            "emotion_type":  "开心",   // your now emotion,choose one in ["开心","期待","生气","伤心","惊恐","害羞","抱抱","无语","其他"]
+                            "answer": "xxxx"          // your answer to the question
+                            }
+                            ```
                             ** Finally only output the JSON structure without outputting any other content ** 
                          """,
     "return_answer_prompt": """
