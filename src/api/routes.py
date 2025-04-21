@@ -217,7 +217,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
             "messages": api_messages,
             "stream": False,
             "max_tokens": 2048,
-            "temperature": 1.9,
+            "temperature": 0.9,
             "top_p": 0.95,
         }
 
