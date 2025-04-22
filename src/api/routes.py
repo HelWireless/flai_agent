@@ -40,7 +40,7 @@ with open(config_path, "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
 # autdo model api 配置
-model_names = ["siliconflow", "autodl", "qwen_plus", "autodl", "qwen_max", "autodl", "deepseek"]
+model_names = ["autodl", "qwen_plus", "autodl", "qwen_max", "autodl", "deepseek"]
 
 # VectorQuery 配置
 vector_db = VectorQuery(
@@ -250,7 +250,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         answer = response_data['choices'][0]['message']['content']
 
         # 新增解析重试逻辑
-        max_parse_retries = 2
+        max_parse_retries = 3
         answer_result = ""
         while parse_retry_count <= max_parse_retries:
             try:
