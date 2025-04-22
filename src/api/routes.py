@@ -142,7 +142,7 @@ async def llm_generate_opener(openers, prompt, conversation_history, model_name=
             "messages": api_messages,
             "stream": False,
             "max_tokens": 2048,
-            "temperature": 0.7,
+            "temperature": 0.65,
             "top_p": 0.8,
         }
 
@@ -183,7 +183,8 @@ async def llm_generate_opener(openers, prompt, conversation_history, model_name=
         answer = error_responses
     return answer
 
-async def generate_answer(prompt, messages, question, user_history_exists=False, model_name=None, retry=False):
+async def generate_answer(prompt, messages, question, user_history_exists=False, model_name=None, retry=False, parse_retry_count=0):
+    emotion_type = None
     if retry:
         model_name = random.choice(['qwen_plus', 'autodl', 'qwen-max'])
     else:
@@ -239,7 +240,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying without history messages")
-                return await generate_answer(prompt, [], question, False, None, True)
+                return await generate_answer(prompt, [], question, False, None, True, parse_retry_count)
             else:
                 raise Exception(f"API request failed with status code {response.status_code}")
 
@@ -247,20 +248,39 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         # 解析响应
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
-        try:
-            if "```json" in answer:
-                answer = answer.replace("```json\n", "").replace("\n```", "")
-            answer_dict = json.loads(answer)
-            emotion_type = answer_dict["emotion_type"]
-            answer_result = answer_dict["answer"]
-        except Exception as e:
-            emotion_type = None
-            answer_result = random.choice(error_responses)
-            custom_logger.error(f"Error answer_dict: {str(e)}")
+
+        # 新增解析重试逻辑
+        max_parse_retries = 2
+        answer_result = ""
+        while parse_retry_count <= max_parse_retries:
+            try:
+                if "```json" in answer:
+                    answer = answer.replace("```json\n", "").replace("\n```", "")
+                answer_dict = json.loads(answer)
+                emotion_type = answer_dict["emotion_type"]
+                answer_result = answer_dict["answer"]
+                break  # 解析成功则跳出循环
+            except Exception as e:
+                parse_retry_count += 1
+                if parse_retry_count <= max_parse_retries:
+                    custom_logger.warning(f"JSON解析失败，第{parse_retry_count}次重试...")
+                    # 重新生成回答（保留历史但更换模型）
+                    return await generate_answer(
+                        prompt,
+                        messages,
+                        question,
+                        user_history_exists,
+                        model_name=None,  # 强制更换模型
+                        retry=True,
+                        parse_retry_count=parse_retry_count
+                    )
+                else:
+                    answer_result = random.choice(error_responses)
+                    custom_logger.error(f"最终JSON解析失败: {str(e)}")
+                    break
         # 将 AI 的回答添加到 api_messages
         api_messages.append({"role": "assistant", "content": answer_result})
     except Exception as e:
-        emotion_type = None
         custom_logger.error(f"Error generating answer: {str(e)}")
         answer_result = random.choice(error_responses)
         api_messages.append({"role": "assistant", "content": answer_result})
