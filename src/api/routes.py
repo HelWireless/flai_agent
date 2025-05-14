@@ -143,7 +143,7 @@ async def llm_generate_opener(openers, prompt, conversation_history, model_name=
             "stream": False,
             "max_tokens": 2048,
             "temperature": 0.65,
-            "top_p": 0.8,
+            "top_p": 0.9,
         }
 
         headers = {
@@ -219,7 +219,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
             "stream": False,
             "max_tokens": 2048,
             "temperature": 0.9,
-            "top_p": 0.95,
+            "top_p": 0.85,
         }
 
         headers = {
