@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 from src.api.routes import router
-from custom_logger import *
+from src.custom_logger import *
 def create_app() -> FastAPI:
     app = FastAPI(title="Pillow Talk", debug=False)
     app.add_middleware(
