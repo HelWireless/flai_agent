@@ -35,7 +35,14 @@ async def http_exception_handler(request: Request, exc: Exception):
     )
 
 
-
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_text = await request.body()
+    custom_logger.error(f"未处理的异常: {exc}, 请求体: {request_text.decode('utf-8')[:100]}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "服务器内部错误，请稍后再试。"},
+    )
 
 
 if __name__ == '__main__':
