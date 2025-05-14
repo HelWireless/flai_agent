@@ -16,7 +16,7 @@ def create_app() -> FastAPI:
     return app
 
 app = create_app()
-app.include_router(router)
+
 
 async def set_body(request: Request):
     receive_ = await request._receive()
@@ -34,6 +34,19 @@ async def http_exception_handler(request: Request, exc: Exception):
         status_code=exc.status_code if isinstance(exc, HTTPException) else 500,
         content={"detail": exc.detail}
     )
+
+# 也可以添加通用异常处理
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    await set_body(request)  # 确保可以读取 body
+    request_text = await request.body()
+    app.logger.error(f"未处理的异常: {exc}, 请求体: {request_text.decode('utf-8')}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "服务器内部错误，请稍后再试。"},
+    )
+
+app.include_router(router)
 
 if __name__ == '__main__':
     uvicorn.run(app, host="0.0.0.0", port=8000)
