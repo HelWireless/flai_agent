@@ -29,22 +29,12 @@ async def http_exception_handler(request: Request, exc: Exception):
     await set_body(request)
     request_text = await request.body(2)
     request_text = str(request_text.decode('utf-8'))
-    app.logger.warning(f'请求发生异常，记录request的请求体如下:{request_text}')
+    app.logger.error(f'请求发生异常，记录request的请求体如下:{request_text}')
     return JSONResponse(
         status_code=exc.status_code if isinstance(exc, HTTPException) else 500,
         content={"detail": exc.detail}
     )
 
-# 也可以添加通用异常处理
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    await set_body(request)  # 确保可以读取 body
-    request_text = await request.body()
-    app.logger.error(f"未处理的异常: {exc}, 请求体: {request_text.decode('utf-8')}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "服务器内部错误，请稍后再试。"},
-    )
 
 
 
