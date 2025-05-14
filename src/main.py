@@ -27,13 +27,13 @@ async def set_body(request: Request):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: Exception):
     await set_body(request)
-    request_text = await request.body(2)
-    request_text = str(request_text.decode('utf-8'))
+    request_text = (await request.body()).decode("utf-8")[:100]  # 安全读取 body 并限制长度
     app.logger.error(f'请求发生异常，记录request的请求体如下:{request_text}')
     return JSONResponse(
         status_code=exc.status_code if isinstance(exc, HTTPException) else 500,
         content={"detail": exc.detail}
     )
+
 
 
 
