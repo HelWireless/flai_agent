@@ -61,3 +61,20 @@ class GenerateOpenerRequest(BaseModel):
 class GenerateOpenerResponse(BaseModel):
     opener: str
 
+class DrawCardRequest(BaseModel):
+    user_id: str
+
+
+class DrawCardResponse(BaseModel):
+    brief: str
+    luck: str
+    luckBrief: str
+    number: int
+    numberBrief: str
+    color: str
+    hex: str
+    colorBrief: str
+    action: str
+    actionBrief: str
+    refreshment: str
+    refreshmentBrief: str

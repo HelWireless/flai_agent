@@ -400,3 +400,79 @@ async def generate_character_opener(request: GenerateOpenerRequest, db: Session 
         )
 
     return GenerateOpenerResponse(opener=selected_opener)
+
+
+@router.post("/draw-card", response_model=DrawCardResponse)
+async def draw_card(request: DrawCardRequest):
+    custom_logger.info(f"Received draw card request for user: {request.user_id}")
+
+    # 获取占卜师角色提示词
+    system_prompt = character_sys_info.get("fortune_teller", {}).get("sys_prompt", "")
+    if not system_prompt:
+        raise HTTPException(status_code=404, detail="角色配置不存在")
+
+    model_id = "qwen_plus"
+
+    # 随机幸运数字和颜色
+    random_num = random.randint(1, 99)
+
+    def get_random_color(color_map_dict):
+        items = list(color_map_dict.items())
+        color_name, hex_code = random.choice(items)
+        return f"{color_name}{hex_code}"
+
+    random_color = get_random_color(color_map_dict)  # 修正：调用函数获取拼接值
+
+    # 构建用户输入
+    user_content = f"""
+        今天的幸运数字：{random_num}
+        今天的幸运颜色：{random_color}
+    """
+
+    api_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content}
+    ]
+
+    try:
+        # 准备请求数据
+        request_data = {
+            "model": config[model_id]["model"],
+            "messages": api_messages,
+            "stream": False,
+            "max_tokens": 4096,
+            "temperature": 0.7,
+            "top_p": 0.8,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {config[model_id]['api_key']}",
+            "Content-Type": "application/json"
+        }
+
+        session = create_retry_session()
+        response = await make_request(session, config[model_id]["base_url"], request_data, headers)
+
+        if response.status_code != 200 or response.json().get("error"):
+            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+            raise HTTPException(status_code=500, detail="调用大模型失败")
+
+        response_data = response.json()
+        answer = response_data['choices'][0]['message']['content']
+
+        # 增加调试日志：输出原始回答内容
+        custom_logger.debug(f"Raw model response content: {answer}")
+
+
+        # 尝试解析为 JSON
+        result_dict = json.loads(answer)
+
+    except json.JSONDecodeError as je:
+        custom_logger.error(f"JSON 解析失败，原始内容为: {answer}, 错误详情: {str(je)}")
+        raise HTTPException(status_code=500, detail=f"JSON 解析失败: {str(je)}")
+    except Exception as e:
+        custom_logger.error(f"Error generating card: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
+
+    return DrawCardResponse(**result_dict)
+
