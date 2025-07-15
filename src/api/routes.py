@@ -183,7 +183,9 @@ async def llm_generate_opener(openers, prompt, conversation_history, model_name=
         answer = error_responses
     return answer
 
-async def generate_answer(prompt, messages, question, user_history_exists=False, model_name=None, retry=False, parse_retry_count=0):
+
+async def generate_answer(prompt, messages, question, user_history_exists=False, model_name=None, retry=False,
+                          parse_retry_count=0):
     emotion_type = None
     if retry:
         model_name = random.choice(['qwen_plus', 'autodl', 'qwen-max'])
@@ -387,7 +389,7 @@ async def generate_character_opener(request: GenerateOpenerRequest, db: Session 
         prompt, conversation_history, user_history_exists, model_name = generate_prompt(request.character_id,
                                                                                         request.user_id, db)
         if request.history:
-            opener =await llm_generate_opener(opener, prompt, conversation_history, model_name)
+            opener = await llm_generate_opener(opener, prompt, conversation_history, model_name)
     # 4. 索引有效性检查
     try:
         selected_opener = opener[request.opener_index]
@@ -419,14 +421,18 @@ async def draw_card(request: DrawCardRequest):
     def get_random_color(color_map_dict):
         items = list(color_map_dict.items())
         color_name, hex_code = random.choice(items)
-        return f"{color_name}{hex_code}"
+        return color_name, hex_code
 
-    random_color = get_random_color(color_map_dict)  # 修正：调用函数获取拼接值
+    color_name, hex_code = get_random_color(color_map_dict)  # 修正：调用函数获取拼接值
+    random_color_brief = color_descriptions_dict.get(color_name)
+    random_color_dict = {"color": color_name,
+                         "hex": hex_code,
+                         "colorBrief": random_color_brief
+                         }
 
     # 构建用户输入
     user_content = f"""
         今天的幸运数字：{random_num}
-        今天的幸运颜色：{random_color}
     """
 
     api_messages = [
@@ -463,9 +469,15 @@ async def draw_card(request: DrawCardRequest):
         # 增加调试日志：输出原始回答内容
         custom_logger.debug(f"Raw model response content: {answer}")
 
-
         # 尝试解析为 JSON
         result_dict = json.loads(answer)
+        try:
+            result_dict.update(random_color_dict)
+        except:
+            result_dict.update({"color": "未知色",
+                                "hex": "#000000",
+                                "colorBrief": "未知色是一种无法明确归类的颜色，通常用于表示未定义或异常状态，通常具有模糊、不协调，充满神秘性。"
+                                })
 
     except json.JSONDecodeError as je:
         custom_logger.error(f"JSON 解析失败，原始内容为: {answer}, 错误详情: {str(je)}")
@@ -475,4 +487,3 @@ async def draw_card(request: DrawCardRequest):
         raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
 
     return DrawCardResponse(**result_dict)
-
