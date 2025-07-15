@@ -67,6 +67,7 @@ class DrawCardRequest(BaseModel):
 
 class DrawCardResponse(BaseModel):
     brief: str
+    luckNum: float
     luck: str
     luckBrief: str
     number: int
