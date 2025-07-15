@@ -424,7 +424,8 @@ async def draw_card(request: DrawCardRequest):
         return color_name, hex_code
 
     color_name, hex_code = get_random_color(color_map_dict)  # 修正：调用函数获取拼接值
-    random_color_brief = color_descriptions_dict.get(color_name)
+    random_color_brief_list = color_descriptions_dict.get(color_name)
+    random_color_brief = random.choice(random_color_brief_list)
     random_color_dict = {"color": color_name,
                          "hex": hex_code,
                          "colorBrief": random_color_brief
