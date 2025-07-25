@@ -408,33 +408,69 @@ async def generate_character_opener(request: GenerateOpenerRequest, db: Session 
 async def draw_card(request: DrawCardRequest):
     custom_logger.info(f"Received draw card request for user: {request.user_id}")
 
-    # 获取占卜师角色提示词
-    system_prompt = character_sys_info.get("fortune_teller", {}).get("sys_prompt", "")
-    if not system_prompt:
-        raise HTTPException(status_code=404, detail="角色配置不存在")
-
-    model_id = "qwen_plus"
-
-    # 随机幸运数字和颜色
-    random_num = random.randint(1, 99)
-
     def get_random_color(color_map_dict):
         items = list(color_map_dict.items())
         color_name, hex_code = random.choice(items)
         return color_name, hex_code
 
-    color_name, hex_code = get_random_color(color_map_dict)  # 修正：调用函数获取拼接值
-    random_color_brief_list = color_descriptions_dict.get(color_name)
-    random_color_brief = random.choice(random_color_brief_list)
-    random_color_dict = {"color": color_name,
-                         "hex": hex_code,
-                         "colorBrief": random_color_brief
-                         }
+    # 获取占卜师角色提示词
+    if request.detail:
+        color_name = request.total_summary
+        hex_code = request.total_summary
+        system_prompt = character_sys_info.get("fortune_teller_detail", {}).get("sys_prompt", "")
 
-    # 构建用户输入
-    user_content = f"""
-        今天的幸运数字：{random_num}
-    """
+        random_color_brief_list = color_descriptions_dict.get(color_name)
+        random_color_brief = random.choice(random_color_brief_list)
+
+        random_color_dict = {"color": color_name,
+                             "hex": hex_code,
+                             "colorBrief": random_color_brief
+                             }
+        user_content = f"""
+                     {{  
+                            "luckNum": {luckNum},
+                            "luck": "{luck}",
+                            "luckBrief": "",
+                            "number": {number},
+                            "numberBrief": "",
+                            "action": "{action}",
+                            "actionBrief": "",
+                            "refreshment": "{refreshment}",
+                            "refreshmentBrief": ""
+                        }}
+                """
+    else:
+        system_prompt = character_sys_info.get("fortune_teller_summary", {}).get("sys_prompt", "")
+
+        unknown_place_one = character_sys_info.get("fortune_teller_summary", {}).get("unknown_place_one_list", "")[
+            random.randint(-10, 120)]
+        brief = character_sys_info.get("fortune_teller_summary", {}).get("brief", "")[random.randint(-5, 30)]
+        brief = brief.replace("未知之地一", unknown_place_one)
+
+        # 随机幸运数字和颜色
+        # 生成12-30之间有1位小数的随机数
+        raise_num = round(random.uniform(12, 30), 1)
+        random_num = random.randint(1, 99)
+        color_name, hex_code = get_random_color(color_map_dict)  # 修正：调用函数获取拼接值
+        # 随机成0-5的整数，且0和5的概率较低，3的概率稍高1,2,和4
+        luckNum = random.choices([0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [0.06, 0.30, 0.25, 0.20, 0.15, 0.04])[0]
+        brief = brief.replace("神秘数字", raise_num)
+
+        random_color_dict = {"color": color_name,
+                             "hex": hex_code,
+                             "colorBrief": "",
+                             "luckNum": luckNum,
+                             "number": random_num,
+                             "brief": brief
+                             }
+        # 构建用户输入
+        user_content = f"""
+            今天的幸运数字：{random_num}
+        """
+
+    if not system_prompt:
+        raise HTTPException(status_code=404, detail="角色配置不存在")
+    model_id = "qwen_plus"
 
     api_messages = [
         {"role": "system", "content": system_prompt},
@@ -448,7 +484,7 @@ async def draw_card(request: DrawCardRequest):
             "messages": api_messages,
             "stream": False,
             "max_tokens": 4096,
-            "temperature": 0.7,
+            "temperature": 0.65,
             "top_p": 0.8,
         }
 
@@ -472,14 +508,13 @@ async def draw_card(request: DrawCardRequest):
 
         # 尝试解析为 JSON
         result_dict = json.loads(answer)
-        try:
-            result_dict.update(random_color_dict)
-        except:
-            result_dict.update({"color": "未知色",
-                                "hex": "#000000",
-                                "colorBrief": "未知色是一种无法明确归类的颜色，通常用于表示未定义或异常状态，通常具有模糊、不协调，充满神秘性。"
-                                })
+        result_dict.update(random_color_dict)
+        if request.detail:
+            result_dict.update(request.total_summary.get("brief"))
 
+        # 检查result_dict结果是否符合DrawCardResponse要求，缺少某些字段，则补充对应字段，用“”来填充
+        result_dict = {key: result_dict.get(key, "") for key in DrawCardResponse.__fields__.keys()}
+        result_dict["brief"].update({"brief": result_dict["brief"].repalce("未知之地二", result_dict["luck"])})
     except json.JSONDecodeError as je:
         custom_logger.error(f"JSON 解析失败，原始内容为: {answer}, 错误详情: {str(je)}")
         raise HTTPException(status_code=500, detail=f"JSON 解析失败: {str(je)}")

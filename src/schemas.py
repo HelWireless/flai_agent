@@ -61,8 +61,11 @@ class GenerateOpenerRequest(BaseModel):
 class GenerateOpenerResponse(BaseModel):
     opener: str
 
+# 在 src/schemas.py 中添加或修改 DrawCardRequest
 class DrawCardRequest(BaseModel):
     user_id: str
+    detail: bool = False  # 新增参数，默认为 False
+    total_summary: Optional[str] = None  # 新增可选参数
 
 
 class DrawCardResponse(BaseModel):
