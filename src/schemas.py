@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import ConfigDict, Field
 
 Base = declarative_base()
@@ -65,7 +65,7 @@ class GenerateOpenerResponse(BaseModel):
 class DrawCardRequest(BaseModel):
     user_id: str
     detail: bool = False  # 新增参数，默认为 False
-    total_summary: Optional[str] = None  # 新增可选参数
+    total_summary: Optional[Dict[str, Any]] = None  # 修改为字典类型
 
 
 class DrawCardResponse(BaseModel):

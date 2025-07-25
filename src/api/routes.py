@@ -415,36 +415,40 @@ async def draw_card(request: DrawCardRequest):
 
     # 获取占卜师角色提示词
     if request.detail:
-        color_name = request.total_summary
-        hex_code = request.total_summary
+        result_summary = request.total_summary
+        if not result_summary:
+            return HTTPException(status_code=500, detail=f"字段缺失: {str(result_summary)}")
         system_prompt = character_sys_info.get("fortune_teller_detail", {}).get("sys_prompt", "")
 
-        random_color_brief_list = color_descriptions_dict.get(color_name)
+        random_color_brief_list = color_descriptions_dict.get(result_summary.get("color"))
         random_color_brief = random.choice(random_color_brief_list)
 
-        random_color_dict = {"color": color_name,
-                             "hex": hex_code,
-                             "colorBrief": random_color_brief
+        random_color_dict = {"color": result_summary.get("color"),
+                             "hex": result_summary.get("hex"),
+                             "colorBrief": random_color_brief,
+                             "brief": result_summary.get("brief")
                              }
         user_content = f"""
                      {{  
-                            "luckNum": {luckNum},
-                            "luck": "{luck}",
+                            "luckNum": {result_summary.get("luckNum")},
+                            "luck": "{result_summary.get("luck")}",
                             "luckBrief": "",
-                            "number": {number},
+                            "number": {result_summary.get("number")},
                             "numberBrief": "",
-                            "action": "{action}",
+                            "action": "{result_summary.get("action")}",
                             "actionBrief": "",
-                            "refreshment": "{refreshment}",
+                            "refreshment": "{result_summary.get("refreshment")}",
                             "refreshmentBrief": ""
                         }}
                 """
     else:
         system_prompt = character_sys_info.get("fortune_teller_summary", {}).get("sys_prompt", "")
 
-        unknown_place_one = character_sys_info.get("fortune_teller_summary", {}).get("unknown_place_one_list", "")[
-            random.randint(-10, 120)]
-        brief = character_sys_info.get("fortune_teller_summary", {}).get("brief", "")[random.randint(-5, 30)]
+        unknown_place_one_list = character_sys_info.get("fortune_teller_summary", {}).get("unknown_place_one_list", "")
+        unknown_place_one = random.choice(unknown_place_one_list)
+        brief_list = character_sys_info.get("fortune_teller_summary", {}).get("brief", "")
+        # 从列表中随机选择一个
+        brief = random.choice(brief_list)
         brief = brief.replace("未知之地一", unknown_place_one)
 
         # 随机幸运数字和颜色
@@ -454,7 +458,7 @@ async def draw_card(request: DrawCardRequest):
         color_name, hex_code = get_random_color(color_map_dict)  # 修正：调用函数获取拼接值
         # 随机成0-5的整数，且0和5的概率较低，3的概率稍高1,2,和4
         luckNum = random.choices([0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [0.06, 0.30, 0.25, 0.20, 0.15, 0.04])[0]
-        brief = brief.replace("神秘数字", raise_num)
+        brief = brief.replace("神秘数字", str(raise_num))
 
         random_color_dict = {"color": color_name,
                              "hex": hex_code,
@@ -509,17 +513,14 @@ async def draw_card(request: DrawCardRequest):
         # 尝试解析为 JSON
         result_dict = json.loads(answer)
         result_dict.update(random_color_dict)
-        if request.detail:
-            result_dict.update(request.total_summary.get("brief"))
-
         # 检查result_dict结果是否符合DrawCardResponse要求，缺少某些字段，则补充对应字段，用“”来填充
         result_dict = {key: result_dict.get(key, "") for key in DrawCardResponse.__fields__.keys()}
-        result_dict["brief"].update({"brief": result_dict["brief"].repalce("未知之地二", result_dict["luck"])})
+        result_dict.update({"brief": result_dict["brief"].replace("未知之地二", result_dict["luck"])})
     except json.JSONDecodeError as je:
         custom_logger.error(f"JSON 解析失败，原始内容为: {answer}, 错误详情: {str(je)}")
-        raise HTTPException(status_code=500, detail=f"JSON 解析失败: {str(je)}")
+        return HTTPException(status_code=500, detail=f"JSON 解析失败: {str(je)}")
     except Exception as e:
         custom_logger.error(f"Error generating card: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
+        return HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
 
     return DrawCardResponse(**result_dict)
