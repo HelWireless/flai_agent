@@ -406,7 +406,7 @@ async def generate_character_opener(request: GenerateOpenerRequest, db: Session 
 
 @router.post("/draw-card", response_model=DrawCardResponse)
 async def draw_card(request: DrawCardRequest):
-    custom_logger.info(f"Received draw card request for user: {request.user_id}")
+    custom_logger.info(f"Received draw card request for user: {request.userId}")
 
     def get_random_color(color_map_dict):
         items = list(color_map_dict.items())
@@ -414,8 +414,8 @@ async def draw_card(request: DrawCardRequest):
         return color_name, hex_code
 
     # 获取占卜师角色提示词
-    if request.detail:
-        result_summary = request.total_summary
+    if request.totalSummary:
+        result_summary = request.totalSummary
         if not result_summary:
             return HTTPException(status_code=500, detail=f"字段缺失: {str(result_summary)}")
         system_prompt = character_sys_info.get("fortune_teller_detail", {}).get("sys_prompt", "")
@@ -473,7 +473,7 @@ async def draw_card(request: DrawCardRequest):
         """
 
     if not system_prompt:
-        raise HTTPException(status_code=404, detail="角色配置不存在")
+        return HTTPException(status_code=404, detail="角色配置不存在")
     model_id = "qwen_plus"
 
     api_messages = [
@@ -502,7 +502,7 @@ async def draw_card(request: DrawCardRequest):
 
         if response.status_code != 200 or response.json().get("error"):
             custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
-            raise HTTPException(status_code=500, detail="调用大模型失败")
+            return HTTPException(status_code=500, detail="调用大模型失败")
 
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
