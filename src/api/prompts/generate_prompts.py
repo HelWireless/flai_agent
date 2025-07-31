@@ -774,8 +774,8 @@ character_user_info = {
                          """,
     "return_answer_prompt": """
                             Here is the history input: {history}
-                            Here is the input query: {query}. 
-                            Please immerse yourself in your role. and generate queries based on the input query.
+                            Here is the input question: {query}. 
+                            Please immerse yourself in your role. and generate queries based on the input question.
                             """
 }
 
