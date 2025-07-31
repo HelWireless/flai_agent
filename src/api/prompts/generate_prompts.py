@@ -761,7 +761,7 @@ character_user_info = {
     "return_json_prompt": """
                             Here is the history: {history_chat}
                             Here is the input question: {query}. 
-                            Please immerse yourself in your role. and generate queries based on the input query ，and return a JSON structure. 
+                            Please immerse yourself in your role. and generate queries based on the input question ，and return a JSON structure. 
                             Here are some examples:
                             ```json
                             {

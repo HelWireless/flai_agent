@@ -40,7 +40,7 @@ with open(config_path, "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
 # autdo model api 配置
-model_names = ["autodl", "qwen_plus", "autodl", "qwen_max", "autodl", "deepseek"]
+model_names = ["autodl", "qwen_plus", "qwen3_32b_custom", "qwen_max", "autodl", "deepseek", "qwen3_32b_custom"]
 
 # VectorQuery 配置
 vector_db = VectorQuery(
@@ -188,7 +188,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
                           parse_retry_count=0):
     emotion_type = None
     if retry:
-        model_name = random.choice(['qwen_plus', 'autodl', 'qwen-max'])
+        model_name = random.choice(['qwen_plus', 'autodl', 'qwen-max', 'qwen3_32b_custom'])
     else:
         if not model_name:
             model_name = random.choice(model_names)
@@ -222,6 +222,9 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
             "max_tokens": 2048,
             "temperature": 0.9,
             "top_p": 0.85,
+            "enable_thinking": False,
+            "presence_penalty": 1.0,
+            "response_format":{"type": "json_object"}
         }
 
         headers = {
@@ -474,7 +477,7 @@ async def draw_card(request: DrawCardRequest):
 
     if not system_prompt:
         return HTTPException(status_code=404, detail="角色配置不存在")
-    model_id = "qwen_plus"
+    model_id = "qwen3_32b_custom"
 
     api_messages = [
         {"role": "system", "content": system_prompt},
