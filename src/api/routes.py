@@ -493,6 +493,9 @@ async def draw_card(request: DrawCardRequest):
             "max_tokens": 4096,
             "temperature": 0.65,
             "top_p": 0.8,
+            "enable_thinking": False,
+            "presence_penalty": 1.0,
+            "response_format": {"type": "json_object"}
         }
 
         headers = {
