@@ -477,7 +477,7 @@ async def draw_card(request: DrawCardRequest):
 
     if not system_prompt:
         return HTTPException(status_code=404, detail="角色配置不存在")
-    model_id = "qwen3_32b_custom"
+    model_id = "qwen_plus"
 
     api_messages = [
         {"role": "system", "content": system_prompt},
