@@ -30,6 +30,7 @@ class ChatRequest(BaseModel):
     message: str
     message_count: int
     character_id: str = "default"  # 新增人物ID字段
+    voice: bool = False
 
 class ChatResponse(BaseModel):
     user_id: str

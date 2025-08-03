@@ -82,10 +82,10 @@ def create_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 5
     return session
 
 
-def generate_prompt(character_id, user_id, db):
+def generate_prompt(character_id, user_id, if_voice, db):
     if user_id != 'guest' and character_id == 'default':
         dq = DialogueQuery(db)
-        conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id)
+        conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id, if_voice)
         user_history_exists = len(conversation_history) > 0
         custom_logger.info(f"User history exists: {user_history_exists}")
     elif user_id != 'guest' and character_id != 'default':
@@ -294,7 +294,8 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
 
 @router.post("/chat-pillow", response_model=ChatResponse)
 async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
-    custom_logger.info(f"Received chat request from user: {request.user_id}")
+    custom_logger.info(f"Received chat request from user: {request.user_id} \n if voice request: {request.voice}  ")
+    if_voice = request.voice
     is_sensitive, sensitive_words = cf.detect_sensitive_content(request.message)
     if is_sensitive:
         custom_logger.warning(f"Sensitive content  detected: {sensitive_words}")
@@ -312,7 +313,7 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     # search_results = vector_db.search_similar(query_embedding, limit=5)
     # context = build_context(search_results)
     prompt, conversation_history, user_history_exists, model_name = generate_prompt(request.character_id,
-                                                                                    request.user_id, db)
+                                                                                    request.user_id, if_voice, db)
     answer, api_messages, emotion_type = await generate_answer(
         prompt=prompt,
         messages=conversation_history,
