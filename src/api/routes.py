@@ -86,6 +86,7 @@ def generate_prompt(character_id, user_id, if_voice, db):
     ESM_type = None
     if user_id != 'guest' and character_id == 'default':
         dq = DialogueQuery(db)
+        custom_logger.info(f"User history exists: {user_id}")
         conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id, if_voice)
         user_history_exists = len(conversation_history) > 0
         if user_history_exists:
