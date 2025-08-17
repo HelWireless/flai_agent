@@ -120,6 +120,8 @@ def clean_sentence(sentence: str) -> str:
 
 
 def split_message(message: str, count: int) -> List[str]:
+    if not isinstance(message, str):
+        message = str(message)
     message = message.replace('\\"', '#')
 
     if count == 1:
