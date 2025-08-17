@@ -90,19 +90,19 @@ def generate_prompt(character_id, user_id, if_voice, db):
         user_history_exists = len(conversation_history) > 0
         if user_history_exists:
             ESM_type = analyze_ESM_from_history(conversation_history)
-        custom_logger.info(f"User history exists: {user_history_exists}, and ESM type is {ESM_type}")
+        custom_logger.info(f"User history exists: {user_history_exists}, and ESM type is {ESM_type} and character_id is {character_id}")
     elif user_id != 'guest' and character_id != 'default':
         dq = DialogueQuery(db)
         conversation_history, nickname = dq.get_user_third_character_dialogue_history(user_id, character_id)
         user_history_exists = len(conversation_history) > 0
         ESM_type = analyze_ESM_from_history(conversation_history)
-        custom_logger.info(f"User third character history exists: {user_history_exists}, and ESM type is {ESM_type}")
+        custom_logger.info(f"User third character history exists: {user_history_exists}, and ESM type is {ESM_type} and character_id is {character_id}")
     else:
         conversation_history = None
         user_history_exists = False
         ESM_type = None
         nickname = "熟悉的人"
-        custom_logger.info(f"User id is guest: {user_id} ")
+        custom_logger.info(f"User id is guest: {user_id} and character_id is {character_id}")
     prompt, model_name = get_prompt_by_character_id(character_id, user_id, nickname, ESM_type)
     return prompt, conversation_history, user_history_exists, model_name
 
@@ -379,7 +379,7 @@ async def analyze_ESM_from_history(messages, model_name=None, retry=False, parse
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying emotion analysis")
-                return await analyze_emotion_from_history(messages, None, True, parse_retry_count)
+                return await analyze_ESM_from_history(messages, None, True, parse_retry_count)
             else:
                 raise Exception(f"API request failed with status code {response.status_code}")
 
@@ -402,7 +402,7 @@ async def analyze_ESM_from_history(messages, model_name=None, retry=False, parse
                 parse_retry_count += 1
                 if parse_retry_count <= max_parse_retries:
                     custom_logger.warning(f"Emotion JSON parsing failed, retry {parse_retry_count}...")
-                    return await analyze_emotion_from_history(messages,
+                    return await analyze_ESM_from_history(messages,
                                               model_name=None,# 强制更换模型
                                               retry=True,
                                             parse_retry_count=parse_retry_count )
