@@ -383,7 +383,7 @@ def analyze_ESM_from_history(messages, model_name=None, retry=False, parse_retry
         # 解析响应
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
-        custom_logger.info(f"Emotion analysis API response: {response_data}")
+        custom_logger.info(f"Emotion analysis API response: {response_data} and {answer}")
 
         # 解析JSON响应
         max_parse_retries = 3
@@ -395,6 +395,11 @@ def analyze_ESM_from_history(messages, model_name=None, retry=False, parse_retry
                     answer_dict = json.loads(answer)
                     emotion_type = answer_dict.get("emotion_type", "neutral")
                     break  # 解析成功则跳出循环
+                else:
+                    answer_dict = json.loads(answer)
+                    emotion_type = answer_dict["emotion_type"]
+                    custom_logger.info(f"Emotion JSON parsing is: {str(emotion_type)}")
+                    break
             except Exception as e:
                 parse_retry_count += 1
                 if parse_retry_count <= max_parse_retries:
