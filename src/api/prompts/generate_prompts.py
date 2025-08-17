@@ -898,13 +898,13 @@ def get_prompt_by_character_id(character_id, user_id='guest', nickname="熟悉�
         system_prompt = system_prompt.replace("nickname", nickname)
         if EMS_type:
             system_prompt = system_prompt.replace("{emotion_type}",
-                                                  ESM_dict.get(EMS_type, "").get("emotion_type", ""))
+                                                  ESM_dict.get(EMS_type, {}).get("emotion_type", ""))
             system_prompt = system_prompt.replace("{emotion_description}",
-                                                  ESM_dict.get(EMS_type, "").get("emotion_description", ""))
+                                                  ESM_dict.get(EMS_type, {}).get("emotion_description", ""))
             system_prompt = system_prompt.replace("{emotion_reaction}",
-                                                  ESM_dict.get(EMS_type, "").get("emotion_reaction", ""))
+                                                  ESM_dict.get(EMS_type, {}).get("emotion_reaction", ""))
             system_prompt = system_prompt.replace("{emotion_prompt}",
-                                                  ESM_dict.get(EMS_type, "").get("emotion_prompt", ""))
+                                                  ESM_dict.get(EMS_type, {}).get("emotion_prompt", ""))
 
         model_id = None
     else:

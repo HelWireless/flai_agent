@@ -86,8 +86,7 @@ def generate_prompt(character_id, user_id, if_voice, db):
     ESM_type = None
     if user_id != 'guest' and character_id == 'default':
         dq = DialogueQuery(db)
-        custom_logger.info(f"User history exists: {user_id}")
-        conversation_history, nickname = dq.get_user_pillow_dialogue_history(str(user_id), if_voice)
+        conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id, if_voice)
         user_history_exists = len(conversation_history) > 0
         if user_history_exists:
             ESM_type = analyze_ESM_from_history(conversation_history)
@@ -314,7 +313,7 @@ async def analyze_ESM_from_history(messages, model_name=None, retry=False, parse
         model_name = random.choice(['qwen_plus','qwen_max'])
     else:
         if not model_name:
-            model_name = random.choice(model_names)
+            model_name = random.choice(['qwen_plus','qwen_max'])
 
     # model api 配置
     api_base = config[model_name]["base_url"]
