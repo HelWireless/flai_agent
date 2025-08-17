@@ -87,18 +87,22 @@ def generate_prompt(character_id, user_id, if_voice, db):
         dq = DialogueQuery(db)
         conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id, if_voice)
         user_history_exists = len(conversation_history) > 0
-        custom_logger.info(f"User history exists: {user_history_exists}")
+        if user_history_exists:
+            ESM_type = analyze_ESM_from_history(conversation_history)
+        custom_logger.info(f"User history exists: {user_history_exists}, and ESM type is {ESM_type}")
     elif user_id != 'guest' and character_id != 'default':
         dq = DialogueQuery(db)
         conversation_history, nickname = dq.get_user_third_character_dialogue_history(user_id, character_id)
         user_history_exists = len(conversation_history) > 0
-        custom_logger.info(f"User third character history exists: {user_history_exists}")
+        ESM_type = analyze_ESM_from_history(conversation_history)
+        custom_logger.info(f"User third character history exists: {user_history_exists}, and ESM type is {ESM_type}")
     else:
         conversation_history = None
         user_history_exists = False
+        ESM_type = None
         nickname = "熟悉的人"
         custom_logger.info(f"User id is guest: {user_id} ")
-    prompt, model_name = get_prompt_by_character_id(character_id, user_id, nickname)
+    prompt, model_name = get_prompt_by_character_id(character_id, user_id, nickname, ESM_type)
     return prompt, conversation_history, user_history_exists, model_name
 
 
@@ -211,7 +215,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         api_messages.append({"role": "user", "content": user_content})
 
     if "Character not found" in prompt["system_prompt"]:
-        raise HTTPException(status_code=404, detail=f"角色id不存在")
+        return HTTPException(status_code=404, detail=f"角色id不存在")
 
     try:
         # 准备请求数据
@@ -290,6 +294,125 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         answer_result = random.choice(error_responses)
         api_messages.append({"role": "assistant", "content": answer_result})
     return answer_result, api_messages, emotion_type
+
+async def analyze_ESM_from_history(messages, model_name=None, retry=False, parse_retry_count=0):
+    """
+    分析用户历史对话的情绪类型
+
+    Args:
+        messages: 用户历史对话记录
+        model_name: 使用的模型名称
+        retry: 是否重试
+        parse_retry_count: JSON解析重试次数
+
+    Returns:
+        emotion_type: 情绪类型
+    """
+    if retry:
+        model_name = random.choice(['qwen_plus','qwen_max'])
+    else:
+        if not model_name:
+            model_name = random.choice(model_names)
+
+    # model api 配置
+    api_base = config[model_name]["base_url"]
+    model = config[model_name]["model"]
+    api_key = config[model_name]["api_key"]
+
+    api_messages = [{"role": "system", "content": "你是一个优秀的情感分析专家"}]
+
+    # 构建用户内容，包含历史对话
+    user_content = f"""
+    请根据以下对话历史分析用户的情绪状态状态，并只在以下emotion_list列表中选择一个，仅以以下JSON格式返回结果:
+    emotion_list = [
+    'happy', 
+    'admiration', 
+    'anger', 
+    'sadness', 
+    'fear', 
+    'disgust', 
+    'surprise', 
+    'anxiety', 
+    'neutral'
+        ]
+    
+    {{
+        "emotion_type": "emotion_list 的其中之一"
+    }}
+    
+    对话历史:
+    {str(messages)}
+    
+    请分析上述对话中用户的情绪状态，只需返回emotion_type字段。
+    """
+
+    api_messages.append({"role": "user", "content": user_content})
+
+    try:
+        # 准备请求数据
+        request_data = {
+            "model": model,
+            "messages": api_messages,
+            "stream": False,
+            "max_tokens": 512,
+            "temperature": 0.7,
+            "top_p": 0.8,
+            "response_format": {"type": "json_object"}
+        }
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        custom_logger.info(f"Emotion analysis - api_messages: {api_messages} \n retry:{retry}")
+
+        # 创建一个带有重试机制的会话
+        session = create_retry_session()
+
+        # 发送POST请求到api_base
+        response = await make_request(session, api_base, request_data, headers)
+
+        if response.status_code != 200 or response.json().get("error", "") == 'API error':
+            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+            if not retry:
+                # 如果是第一次失败，进行重试
+                custom_logger.info("Retrying emotion analysis")
+                return await analyze_emotion_from_history(messages, None, True, parse_retry_count)
+            else:
+                raise Exception(f"API request failed with status code {response.status_code}")
+
+        # 解析响应
+        response_data = response.json()
+        answer = response_data['choices'][0]['message']['content']
+        custom_logger.info(f"Emotion analysis API response: {response_data}")
+
+        # 解析JSON响应
+        max_parse_retries = 3
+        emotion_type = "neutral"  # 默认情绪类型
+        while parse_retry_count <= max_parse_retries:
+            try:
+                if "json" in answer:
+                    answer = answer.replace("\n", "").replace("\n", "")
+                    answer_dict = json.loads(answer)
+                    emotion_type = answer_dict.get("emotion_type", "neutral")
+                    break  # 解析成功则跳出循环
+            except Exception as e:
+                parse_retry_count += 1
+                if parse_retry_count <= max_parse_retries:
+                    custom_logger.warning(f"Emotion JSON parsing failed, retry {parse_retry_count}...")
+                    return await analyze_emotion_from_history(messages,
+                                              model_name=None,# 强制更换模型
+                                              retry=True,
+                                            parse_retry_count=parse_retry_count )
+                else:
+                    custom_logger.error(f"Final Emotion JSON parsing failed: {str(e)}")
+                    emotion_type = "neutral"
+                    break
+    except Exception as e:
+        custom_logger.error(f"Error analyzing emotion: {str(e)}")
+        emotion_type = "neutral"
+    return emotion_type
 
 
 @router.post("/chat-pillow", response_model=ChatResponse)
