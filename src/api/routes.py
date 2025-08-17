@@ -296,7 +296,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         api_messages.append({"role": "assistant", "content": answer_result})
     return answer_result, api_messages, emotion_type
 
-async def analyze_ESM_from_history(messages, model_name=None, retry=False, parse_retry_count=0):
+def analyze_ESM_from_history(messages, model_name=None, retry=False, parse_retry_count=0):
     """
     分析用户历史对话的情绪类型
 
@@ -379,7 +379,7 @@ async def analyze_ESM_from_history(messages, model_name=None, retry=False, parse
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying emotion analysis")
-                return await analyze_ESM_from_history(messages, None, True, parse_retry_count)
+                return analyze_ESM_from_history(messages, None, True, parse_retry_count)
             else:
                 raise Exception(f"API request failed with status code {response.status_code}")
 
