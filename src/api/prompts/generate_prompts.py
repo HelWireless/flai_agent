@@ -884,8 +884,8 @@ character_user_info = {
 }
 
 
-def get_prompt_by_character_id(character_id, user_id='guest', nickname="熟悉的人",
-                               user_prompt_type="return_json_prompt", EMS_type=None):
+def get_prompt_by_character_id(character_id, user_id='guest', nickname="熟悉的人", EMS_type=None,
+                               user_prompt_type="return_json_prompt"):
     # 获取当前时间并直接格式化，精确到秒
     now = datetime.now()
     formatted_time = now.strftime("%Y年%m月%d日 %H点%M分%S秒")
