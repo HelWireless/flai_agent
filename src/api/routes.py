@@ -83,6 +83,7 @@ def create_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 5
 
 
 def generate_prompt(character_id, user_id, if_voice, db):
+    ESM_type = None
     if user_id != 'guest' and character_id == 'default':
         dq = DialogueQuery(db)
         conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id, if_voice)
