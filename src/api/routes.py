@@ -368,11 +368,8 @@ def analyze_ESM_from_history(messages, model_name=None, retry=False, parse_retry
 
         custom_logger.info(f"Emotion analysis - api_messages: {api_messages} \n retry:{retry}")
 
-        # 创建一个带有重试机制的会话
-        session = create_retry_session()
-
         # 发送POST请求到api_base
-        response = await make_request(session, api_base, request_data, headers)
+        response = requests.post(api_base, json=request_data, headers=headers)
 
         if response.status_code != 200 or response.json().get("error", "") == 'API error':
             custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
@@ -402,10 +399,10 @@ def analyze_ESM_from_history(messages, model_name=None, retry=False, parse_retry
                 parse_retry_count += 1
                 if parse_retry_count <= max_parse_retries:
                     custom_logger.warning(f"Emotion JSON parsing failed, retry {parse_retry_count}...")
-                    return await analyze_ESM_from_history(messages,
-                                              model_name=None,# 强制更换模型
-                                              retry=True,
-                                            parse_retry_count=parse_retry_count )
+                    return analyze_ESM_from_history(messages,
+                                                    model_name=None,  # 强制更换模型
+                                                    retry=True,
+                                                    parse_retry_count=parse_retry_count)
                 else:
                     custom_logger.error(f"Final Emotion JSON parsing failed: {str(e)}")
                     emotion_type = "neutral"
