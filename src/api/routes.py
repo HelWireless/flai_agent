@@ -40,7 +40,8 @@ with open(config_path, "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
 # autdo model api 配置
-model_names = ["autodl", "qwen_plus", "qwen3_32b_custom", "qwen_max", "autodl", "deepseek", "qwen3_32b_custom"]
+model_names = ["autodl", "qwen3_32b_custom", "qwen_max", "autodl", "deepseek", "qwen3_32b_custom", "qwen3-max-preview", "qwen3-coder-plus"]
+
 
 # VectorQuery 配置
 vector_db = VectorQuery(
@@ -193,7 +194,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
                           parse_retry_count=0):
     emotion_type = None
     if retry:
-        model_name = random.choice(['qwen_plus', 'autodl', 'qwen-max', 'qwen3_32b_custom'])
+        model_name = random.choice(['qwen-max', 'qwen3_32b_custom'])
     else:
         if not model_name:
             model_name = random.choice(model_names)
@@ -254,7 +255,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
             else:
                 raise Exception(f"API request failed with status code {response.status_code}")
 
-        custom_logger.info(f"API response: {response.json()}")
+        custom_logger.info(f"API response: {response.json()} \n model name is {model}")
         # 解析响应
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
