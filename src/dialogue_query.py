@@ -75,7 +75,7 @@ class DialogueQuery:
                 WHERE
                     t1.account_id = :user_id
                 AND
-                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 21 DAY)
                     AND
                     t1.type in :type_num
                 ORDER BY
@@ -102,7 +102,7 @@ class DialogueQuery:
                 AND 
                     t1.third_character_id = :character_id
                 AND 
-                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
                 AND
                     t1.type in :type_num
                 ORDER BY
@@ -163,7 +163,7 @@ class DialogueQuery:
 
         # 按照 timestamp 排序并取最近的 6 条对话
         sorted_keys = sorted(temp_dict.keys(), reverse=if_pillow)
-        for key in sorted_keys[:6]:
+        for key in sorted_keys[:7]:
             if temp_dict[key]["user"]:
                 processed_results.append({"role": "user", "content": temp_dict[key]["user"]})
             if temp_dict[key]["assistant"]:
