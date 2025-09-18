@@ -164,7 +164,7 @@ async def llm_generate_opener(openers, prompt, conversation_history, model_name=
         # 发送POST请求到api_base
         response = await make_request(session, api_base, request_data, headers)
         if response.status_code != 200 or response.json().get("error", "") == 'API error':
-            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text} using {model}")
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying without history messages")
