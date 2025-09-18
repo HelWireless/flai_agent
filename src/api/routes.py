@@ -96,7 +96,7 @@ def generate_prompt(character_id, user_id, if_voice, db):
         dq = DialogueQuery(db)
         conversation_history, nickname = dq.get_user_third_character_dialogue_history(user_id, character_id)
         user_history_exists = len(conversation_history) > 0
-        ESM_type = analyze_ESM_from_history(conversation_history)
+        ESM_type = None #analyze_ESM_from_history(conversation_history)
         custom_logger.info(f"User third character history exists: {user_history_exists}, and ESM type is {ESM_type} and character_id is {character_id}")
     else:
         conversation_history = None
