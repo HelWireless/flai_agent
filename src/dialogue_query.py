@@ -75,11 +75,12 @@ class DialogueQuery:
                 WHERE
                     t1.account_id = :user_id
                 AND
-                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 21 DAY)
+                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                     AND
                     t1.type in :type_num
                 ORDER BY
                     t1.create_time DESC, t1.id ASC
+                LIMIT 20
             """),
             {"user_id": user_id, "type_num": type_num}  # 使用参数化查询来防止SQL注入
         )
@@ -102,7 +103,7 @@ class DialogueQuery:
                 AND 
                     t1.third_character_id = :character_id
                 AND 
-                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                    t1.create_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                 AND
                     t1.type in :type_num
                 ORDER BY
