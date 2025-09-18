@@ -23,7 +23,8 @@ except UnicodeDecodeError:
 encoded_password = urllib.parse.quote(config["database"]["password"])
 host = config["database"]["host"]
 username = config["database"]["username"]
-DATABASE_URI = f'mysql+pymysql://{username}:{encoded_password}@{host}/pillow_customer_test'
+database_name = config["database"].get("database_name", "pillow_customer_prod")
+DATABASE_URI = f'mysql+pymysql://{username}:{encoded_password}@{host}/{database_name}'
 engine = create_engine(DATABASE_URI, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

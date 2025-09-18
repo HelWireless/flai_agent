@@ -2,19 +2,31 @@ from typing import List
 import re
 import random
 from collections import Counter
-
-def get_emotion_type(text: str) -> int:
+from src.oss_client import get_oss_bucket
+import uuid
+import time
+from src.custom_logger import custom_logger  # 导入自定义logger
+def get_emotion_type(text: str, emotion_type=None) -> int:
     emotion_keywords = {
-        '开心': ['哈哈', '开心', '高兴', '快乐', '棒', '好', '有趣', '愉快', '甜', '喜欢', '爱', '欢乐', '兴奋', '赞', '爽', '满意', 
-                 '开怀', '乐', '笑', '幸福', '舒心', '轻松', '愉悦', '欣喜', '欢欣', '喜悦', '欢快', '畅快', '美好', '温馨'],
-        '期待': ['期待', '希望', '盼望', '等待', '想要', '充满', '未来', '憧憬', '向往', '渴望', '梦想', '展望', '憧憬', '聊聊', '来说说', '怎么样',
-                 '期盼', '企盼', '盼', '期许', '憧憬', '展望', '畅想', '憧憬', '向往', '渴求', '期望', '期冀', '期盼', '期许'],
-        '生气': ['生气', '操','愤怒', '讨厌', '烦', '恨', '不想', '恼火', '气愤', '不爽', '不满', '不快', '恼怒', '厌恶', '烦躁', '不理', '不搭理',
-                 '恼', '怒', '火大', '气死', '气炸', '恨死', '烦死', '厌烦', '讨厌', '憎恨', '恼怒', '气愤', '恼火', '气恼'],
+        '开心': ['哈哈', '开心', '高兴', '快乐', '棒', '好', '有趣', '愉快', '甜', '喜欢', '爱', '欢乐', '兴奋', '赞',
+                 '爽', '满意',
+                 '开怀', '乐', '笑', '幸福', '舒心', '轻松', '愉悦', '欣喜', '欢欣', '喜悦', '欢快', '畅快', '美好',
+                 '温馨'],
+        '期待': ['期待', '希望', '盼望', '等待', '想要', '充满', '未来', '憧憬', '向往', '渴望', '梦想', '展望', '憧憬',
+                 '聊聊', '来说说', '怎么样',
+                 '期盼', '企盼', '盼', '期许', '憧憬', '展望', '畅想', '憧憬', '向往', '渴求', '期望', '期冀', '期盼',
+                 '期许'],
+        '生气': ['生气', '操', '愤怒', '讨厌', '烦', '恨', '不想', '恼火', '气愤', '不爽', '不满', '不快', '恼怒',
+                 '厌恶', '烦躁', '不理', '不搭理',
+                 '恼', '怒', '火大', '气死', '气炸', '恨死', '烦死', '厌烦', '讨厌', '憎恨', '恼怒', '气愤', '恼火',
+                 '气恼'],
         '伤心': ['伤心', '难过', '悲伤', '哭', '痛苦', '忧伤', '失落', '沮丧', '遗憾', '惆怅', '悲观', '消沉', '绝望',
-                 '心碎', '悲痛', '哀伤', '悲凄', '凄凉', '凄惨', '悲惨', '凄凉', '悲戚', '悲怆', '悲恸', '悲恻', '悲凉'],
-        '惊恐': ['害怕', '恐惧', '惊吓', '可怕', '吓', '惊慌', '担心', '焦虑', '恐慌', '惶恐', '惊骇', '惊惶', '怕怕', '呜呜',
-                 '惊', '骇', '惧', '惶', '惊悚', '惊惧', '惊恐', '惊骇', '惊惶', '惊惧', '惊怖', '惊慌', '惊吓', '惊惧'],
+                 '心碎', '悲痛', '哀伤', '悲凄', '凄凉', '凄惨', '悲惨', '凄凉', '悲戚', '悲怆', '悲恸', '悲恻',
+                 '悲凉'],
+        '惊恐': ['害怕', '恐惧', '惊吓', '可怕', '吓', '惊慌', '担心', '焦虑', '恐慌', '惶恐', '惊骇', '惊惶', '怕怕',
+                 '呜呜',
+                 '惊', '骇', '惧', '惶', '惊悚', '惊惧', '惊恐', '惊骇', '惊惶', '惊惧', '惊怖', '惊慌', '惊吓',
+                 '惊惧'],
         '害羞': ['害羞', '尴尬', '羞涩', '脸红', '不好意思', '腼腆', '羞怯', '难为情', '扭捏', '拘谨',
                  '羞赧', '羞怯', '羞涩', '羞答答', '羞怯怯', '羞答答', '羞赧赧', '羞涩涩', '羞怯怯', '羞答答'],
         '抱抱': ['抱抱', '拥抱', '安慰', '需要', '温暖', '安慰', '呵护', '依偎', '亲密', '体贴', '关爱',
@@ -22,7 +34,7 @@ def get_emotion_type(text: str) -> int:
         '无语': ['无语', '哎，', '不知道说什么', '呵呵', '无话可说', '不知所措', '茫然', '不明白', '困惑', '莫名其妙',
                  '懵', '懵逼', '懵圈', '蒙圈', '蒙蔽', '迷糊', '迷茫', '迷惑', '迷惘', '迷失']
     }
-    
+
     emotion_map = {
         "开心": 2,
         "期待": 6,
@@ -33,7 +45,7 @@ def get_emotion_type(text: str) -> int:
         "抱抱": 3,
         "无语": 4
     }
-    
+
     # 表情符号映射
     emoji_map = {
         '😊': '开心', '😄': '开心', '😃': '开心', '😁': '开心',
@@ -45,42 +57,49 @@ def get_emotion_type(text: str) -> int:
         '🤗': '抱抱',
         '😐': '无语', '😑': '无语', '🙄': '无语'
     }
-    
+    if emotion_type:
+        try:
+            return emotion_map[emotion_type]
+        except Exception as e:
+            print("error is ", e)
+            return get_emotion_type(text)
+
     text = text.lower()
     exclamation_count = text.count('!')
     question_count = text.count('?')
-    
+
     # 词频分析
     word_counts = Counter(re.findall(r'\w+', text))
-    
+
     emotion_scores = {emotion: 0 for emotion in emotion_keywords.keys()}
-    
+
     # 关键词匹配
     for emotion, keywords in emotion_keywords.items():
         for keyword in keywords:
             if keyword in text:
                 emotion_scores[emotion] += text.count(keyword) * 2  # 关键词匹配权重加倍
-    
+
     # 表情符号判断
     for emoji, emotion in emoji_map.items():
         if emoji in text:
             emotion_scores[emotion] += text.count(emoji) * 3  # 表情符号权重更高
-    
+
     # 考虑感叹号和问号
     if exclamation_count > 0:
         emotion_scores['开心'] += exclamation_count
         emotion_scores['生气'] += exclamation_count
     if question_count > 0:
         emotion_scores['期待'] += question_count
-    
+
     # 获取得分最高的情感
     max_emotion = max(emotion_scores, key=emotion_scores.get)
-    
+
     # 如果最高分为0，则返回'无语'
     if emotion_scores[max_emotion] == 0:
         return emotion_map['无语']
-    
+
     return emotion_map[max_emotion]
+
 
 def generate_random_proportions(count: int) -> List[float]:
     """生成count个随机比例，总和为1"""
@@ -90,24 +109,25 @@ def generate_random_proportions(count: int) -> List[float]:
 
 
 def clean_sentence(sentence: str) -> str:
-    # 定义要移除的符号
-    symbols_to_remove = r'[\\"\(\)\[\]\{\}]'
-    # 使用正则表达式替换这些符号为空字符串
+    # 移除中英文括号及其他指定符号
+    symbols_to_remove = r'[\\"‘’“”\(\)（）\[\]\{\}【】]'
     cleaned_sentence = re.sub(symbols_to_remove, '', sentence)
-    # 去除首尾空白字符
     cleaned_sentence = cleaned_sentence.strip()
-    
-    # 去除句子开头到第一个文字之间的所有符号
+
+    # 去除开头到第一个文字或空格前的非文字字符
     cleaned_sentence = re.sub(r'^[^\w\s]+', '', cleaned_sentence)
-    
     return cleaned_sentence
 
 
 def split_message(message: str, count: int) -> List[str]:
+    if not isinstance(message, str):
+        message = str(message)
     message = message.replace('\\"', '#')
 
-    if count <= 1:
+    if count == 1:
         return [clean_sentence(message)]
+    elif count == 0:
+        return [message]
 
     # 生成随机比例
     proportions = generate_random_proportions(count)
@@ -172,6 +192,21 @@ def split_message(message: str, count: int) -> List[str]:
     # print(f"最终结果: {result}")
     return result
 
+
+def upload_to_oss(voice_output_path, user_id):
+    custom_logger.info(f"Uploading voice file to OSS for user: {user_id}")
+    file_key_prefix = "message_chat"
+    file_key = file_key_prefix + f"/{uuid.uuid4()}_{user_id}_{time.time()}.mp3"
+    bucket = get_oss_bucket()
+    try:
+        upload_result = bucket.put_object_from_file(file_key, voice_output_path)
+        if upload_result.status == 200:
+            voice_response_url = f"https://pillow-agent.oss-cn-shanghai.aliyuncs.com/{file_key}"
+            custom_logger.info(f"Voice file uploaded successfully: {voice_response_url}")
+            return file_key
+    except Exception as e:
+        custom_logger.error(f"Error uploading file to OSS: {str(e)}")
+    return None
 
 if __name__ == "__main__":
     long_text = "你刚刚好像在逗我，说要给我奖励，但是我可没那(么容易就范哦) 要奖励也\"可以，“‘k&不过先告诉我，你准备了什么样的奖励呢 期待ing～"
