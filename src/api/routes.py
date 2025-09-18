@@ -170,7 +170,7 @@ async def llm_generate_opener(openers, prompt, conversation_history, model_name=
                 custom_logger.info("Retrying without history messages")
                 return await llm_generate_opener(openers, prompt, conversation_history, 'qwen_max', True)
             else:
-                raise Exception(f"API request failed with status code {response.status_code}")
+                raise Exception(f"API request failed with status code {response.status_code} using {model}")
 
         # 解析响应
         response_data = response.json()
@@ -247,13 +247,13 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         response = await make_request(session, api_base, request_data, headers)
 
         if response.status_code != 200 or response.json().get("error", "") == 'API error':
-            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text} using {model}")
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying without history messages")
                 return await generate_answer(prompt, [], question, False, None, True, parse_retry_count)
             else:
-                raise Exception(f"API request failed with status code {response.status_code}")
+                raise Exception(f"API request failed with status code {response.status_code} using {model}")
 
         custom_logger.info(f"API response: {response.json()} \n model name is {model}")
         # 解析响应
@@ -373,13 +373,13 @@ def analyze_ESM_from_history(messages, model_name=None, retry=False, parse_retry
         response = requests.post(api_base, json=request_data, headers=headers)
 
         if response.status_code != 200 or response.json().get("error", "") == 'API error':
-            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text} using {model}")
             if not retry:
                 # 如果是第一次失败，进行重试
                 custom_logger.info("Retrying emotion analysis")
                 return analyze_ESM_from_history(messages, None, True, parse_retry_count)
             else:
-                raise Exception(f"API request failed with status code {response.status_code}")
+                raise Exception(f"API request failed with status code {response.status_code} using {model}")
 
         # 解析响应
         response_data = response.json()
@@ -614,8 +614,9 @@ async def draw_card(request: DrawCardRequest):
 
     try:
         # 准备请求数据
+        model_name = config[model_id]["model"]
         request_data = {
-            "model": config[model_id]["model"],
+            "model": model_name,
             "messages": api_messages,
             "stream": False,
             "max_tokens": 4096,
@@ -635,7 +636,7 @@ async def draw_card(request: DrawCardRequest):
         response = await make_request(session, config[model_id]["base_url"], request_data, headers)
 
         if response.status_code != 200 or response.json().get("error"):
-            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+            custom_logger.error(f"API request failed with status code {response.status_code}: {response.text} using {model_name} ")
             return HTTPException(status_code=500, detail="调用大模型失败")
 
         response_data = response.json()
