@@ -36,7 +36,7 @@ async def http_exception_handler(request: Request, exc: Exception):
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
+async def unhandled_exception_handler(request: Request, exc: Exception):
     try:
         # 尝试读取请求体，但如果已经读取过会抛出异常
         request_text = await request.body()
