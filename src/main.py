@@ -36,13 +36,26 @@ async def http_exception_handler(request: Request, exc: Exception):
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    request_text = await request.body()
-    custom_logger.error(f"未处理的异常: {exc}, 请求体: {request_text.decode('utf-8')[:100]}")
+async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
+    try:
+        # 尝试读取请求体，但如果已经读取过会抛出异常
+        request_text = await request.body()
+    except RuntimeError:
+        # 如果无法读取请求体，设置为空字符串
+        request_text = b""
+    except Exception:
+        # 处理其他可能的异常
+        request_text = b""
+
+    # 继续处理异常日志记录等
+    custom_logger.error(f"Unhandled exception: {str(exc)}\nRequest: {request_text.decode(errors='ignore')}")
+
+    # 返回适当的响应
     return JSONResponse(
         status_code=500,
-        content={"detail": "服务器内部错误，请稍后再试。"},
+        content={"detail": "Internal server error"}
     )
+
 
 app.include_router(router)
 
