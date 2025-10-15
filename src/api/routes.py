@@ -217,7 +217,7 @@ async def generate_answer(prompt, messages, question, user_history_exists=False,
         api_messages.append({"role": "user", "content": user_content})
 
     if "Character not found" in prompt["system_prompt"]:
-        return HTTPException(status_code=404, detail=f"角色id不存在")
+        raise HTTPException(status_code=404, detail=f"角色id不存在")
 
     try:
         # 准备请求数据
@@ -441,13 +441,23 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
     # context = build_context(search_results)
     prompt, conversation_history, user_history_exists, model_name = generate_prompt(request.character_id,
                                                                                     request.user_id, if_voice, db)
-    answer, api_messages, emotion_type = await generate_answer(
-        prompt=prompt,
-        messages=conversation_history,
-        question=request.message,
-        user_history_exists=user_history_exists,
-        model_name=model_name
-    )
+    try:
+        answer, api_messages, emotion_type = await generate_answer(
+            prompt=prompt,
+            messages=conversation_history,
+            question=request.message,
+            user_history_exists=user_history_exists,
+            model_name=model_name
+        )
+    except HTTPException:
+        # 重新抛出HTTP异常
+        raise
+    except Exception as e:
+        custom_logger.error(f"Error in generate_answer: {str(e)}")
+        # 返回默认错误响应
+        answer = random.choice(error_responses)
+        api_messages = []
+        emotion_type = None
     if answer not in error_responses:
         llm_messages = split_message(answer, request.message_count)
         custom_logger.debug(f"Split answer into {len(llm_messages)} messages")
@@ -548,7 +558,7 @@ async def draw_card(request: DrawCardRequest):
     if request.totalSummary:
         result_summary = request.totalSummary
         if not result_summary:
-            return HTTPException(status_code=500, detail=f"字段缺失: {str(result_summary)}")
+            raise HTTPException(status_code=500, detail=f"字段缺失: {str(result_summary)}")
         system_prompt = character_sys_info.get("fortune_teller_detail", {}).get("sys_prompt", "")
 
         random_color_brief_list = color_descriptions_dict.get(result_summary.get("color"))
@@ -604,7 +614,7 @@ async def draw_card(request: DrawCardRequest):
         """
 
     if not system_prompt:
-        return HTTPException(status_code=404, detail="角色配置不存在")
+        raise HTTPException(status_code=404, detail="角色配置不存在")
     model_id = "qwen_plus"
 
     api_messages = [
@@ -637,7 +647,7 @@ async def draw_card(request: DrawCardRequest):
 
         if response.status_code != 200 or response.json().get("error"):
             custom_logger.error(f"API request failed with status code {response.status_code}: {response.text} using {model_name} ")
-            return HTTPException(status_code=500, detail="调用大模型失败")
+            raise HTTPException(status_code=500, detail="调用大模型失败")
 
         response_data = response.json()
         answer = response_data['choices'][0]['message']['content']
