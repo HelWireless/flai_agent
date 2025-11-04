@@ -54,14 +54,29 @@ def get_llm_service() -> LLMService:
     return LLMService(app_config)
 
 
-def get_memory_service(db: Session = Depends(get_db)) -> MemoryService:
+def get_memory_service(
+    db: Session = Depends(get_db),
+    llm_service: LLMService = Depends(get_llm_service)
+) -> MemoryService:
     """获取记忆服务实例"""
-    # 从配置中获取向量数据库配置（如果有）
+    # 1. 向量数据库配置（额外记忆 - 语义检索）
     vector_config = app_config.get('vector_db', None)
     if vector_config:
         vector_config['enabled'] = vector_config.get('enabled', False)
     
-    return MemoryService(db, vector_config)
+    # 2. 持久化记忆配置（chat_memory 表 - 短期/长期记忆）
+    persistent_memory_config = app_config.get('persistent_memory', {
+        'enabled': True,  # 默认启用
+        'short_term_update_interval': 10,  # 每10轮更新短期记忆
+        'enabled_characters': []  # 空列表表示所有角色都启用，也可以指定 ['default', 'c1s1c1_0001']
+    })
+    
+    return MemoryService(
+        db=db,
+        llm_service=llm_service,
+        vector_config=vector_config,
+        persistent_memory_config=persistent_memory_config
+    )
 
 
 def get_chat_service(
@@ -156,25 +171,41 @@ async def draw_card(
 @router.get("/memory/{user_id}/profile")
 async def get_user_profile(
     user_id: str,
+    character_id: str = "default",
     memory_service: MemoryService = Depends(get_memory_service)
 ):
     """
     获取用户画像
     
-    基于历史对话分析用户特征
+    基于持久化记忆显示用户的短期事件和长期特征
     """
-    return await memory_service.get_user_profile(user_id)
+    return await memory_service.get_user_profile(user_id, character_id)
+
+
+@router.get("/memory/{user_id}/stats")
+async def get_memory_stats(
+    user_id: str,
+    character_id: str = "default",
+    memory_service: MemoryService = Depends(get_memory_service)
+):
+    """
+    获取记忆统计信息
+    
+    显示对话计数、记忆长度、待更新数量等
+    """
+    return await memory_service.get_memory_stats(user_id, character_id)
 
 
 @router.delete("/memory/{user_id}")
 async def clear_user_memory(
     user_id: str,
+    character_id: str = "default",
     memory_service: MemoryService = Depends(get_memory_service)
 ):
     """
     清除用户记忆
     
-    删除用户的对话历史和向量记忆
+    删除持久化记忆和向量记忆
     """
-    success = await memory_service.clear_memory(user_id)
+    success = await memory_service.clear_memory(user_id, character_id)
     return {"success": success, "message": "记忆已清除" if success else "清除失败"}

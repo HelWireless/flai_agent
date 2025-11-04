@@ -38,7 +38,15 @@ deepseek:
   model: "deepseek-chat"
   api_key: "your-deepseek-api-key"
 
-# 向量数据库配置（用于长期记忆，可选）
+# 持久化记忆配置（MySQL chat_memory表 - LLM提取的短期/长期记忆）
+persistent_memory:
+  enabled: true  # 是否启用持久化记忆功能
+  short_term_update_interval: 10  # 每N轮对话更新一次短期记忆
+  enabled_characters:  # 启用记忆的角色列表（空列表=全部启用）
+    # - "default"  # 取消注释以仅对指定角色启用
+    # - "c1s1c1_0001"
+
+# 向量数据库配置（额外记忆 - 语义检索，可选）
 vector_db:
   enabled: false  # 是否启用向量数据库
   url: "http://your-qdrant-url:6333"

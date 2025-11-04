@@ -74,14 +74,15 @@ class ChatService:
                 emotion_type=emotion_type
             )
         
-        # 2. 获取记忆（短期 + 长期）
-        conversation_history, nickname = await self.memory.get_combined_memory(
+        # 2. 获取组合记忆
+        # 2.1 对话历史 + 持久化记忆 + 向量检索
+        conversation_history, nickname, persistent_memory = await self.memory.get_combined_memory(
             user_id=request.user_id,
             current_message=request.message,
             character_id=request.character_id,
             if_voice=request.voice,
-            short_term_limit=7,  # 最近7轮对话
-            long_term_limit=3    # 3个相关历史对话
+            conversation_history_limit=7,  # 最近7轮对话
+            vector_memory_limit=3          # 3个语义相似的历史对话（额外记忆）
         )
         
         user_history_exists = len(conversation_history) > 0
@@ -101,9 +102,21 @@ class ChatService:
         
         # 5. 调用 LLM 生成回答
         try:
-            # 构建用户消息
+            # 构建用户消息（包含对话历史和持久化记忆）
             user_content = prompt["user_prompt"].replace("query", request.message)
+            
+            # 添加对话历史
             user_content = user_content.replace("history_chat", str(conversation_history) if user_history_exists else "None")
+            
+            # 添加持久化记忆上下文（如果有）
+            memory_context = ""
+            if persistent_memory.get("long_term"):
+                memory_context += f"\n\n【用户长期特征】\n{persistent_memory['long_term']}"
+            if persistent_memory.get("short_term"):
+                memory_context += f"\n\n【最近事件】\n{persistent_memory['short_term']}"
+            
+            if memory_context:
+                user_content = f"{user_content}\n{memory_context}"
             
             messages = [
                 {"role": "system", "content": prompt["system_prompt"]},
@@ -141,17 +154,25 @@ class ChatService:
         # 7. 识别情绪
         emotion_type = get_emotion_type(answer, emotion_type_from_llm)
         
-        # 8. 保存到记忆
-        await self.memory.save_conversation(
+        # 8. 保存到记忆（三种记忆）
+        # 这会触发：
+        # - LLM判断记忆类型
+        # - 持久化记忆更新（chat_memory表）
+        # - 向量存储（如果启用）
+        memory_result = await self.memory.save_conversation(
             user_id=request.user_id,
+            character_id=request.character_id,
             user_message=request.message,
             ai_response=answer,
             metadata={
-                "character_id": request.character_id,
                 "emotion_type": emotion_type,
                 "voice": request.voice
             }
         )
+        
+        # 记录记忆处理结果
+        if memory_result:
+            custom_logger.debug(f"Memory save result: {memory_result}")
         
         custom_logger.info(f"Chat processed, emotion: {emotion_type}")
         
