@@ -5,7 +5,7 @@
 database:
   host: "81.68.235.167"
   username: "pillow"
-  password: "1234QWERasdf!@#$"
+  password: "your password"
   database_name: "pillow_customer_test"
 
 # 日志配置
@@ -25,33 +25,33 @@ autodl:
 qwen_turbo:
   base_url: "https://u231521-90d5-6daa9074.westc.gpuhub.com:8443/v1/chat/completions"
   model: "qwen-turbo"
-  api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
+  api_key: "your api key"
 
 qwen_max:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
   model: "qwen-max-latest"
-  api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
+  api_key: "your api key"
 
 qwen3_32b_custom:
     base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
     model: "qwen3-32b-ft-202507311927-b168"
-    api_key: 'sk-cacff6e897a84c3f8a8047e58a227fff'
+    api_key: 'your api key'
 
 qwen_plus:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
   model: "qwen-plus-latest"
-  api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
+  api_key: "your api key"
 
 # 其他模型配置...
 deepseek:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
   model: "deepseek-v3.2-exp"
-  api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
+  api_key: "your api key"
 
 qwen3_coder_plus:
   base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
   model: "qwen3-235b-a22b"
-  api_key: 'sk-cacff6e897a84c3f8a8047e58a227fff'
+  api_key: 'your api key'
 # 持久化记忆配置（MySQL chat_memory表 - LLM提取的短期/长期记忆）
 persistent_memory:
   enabled: true  # 是否启用持久化记忆功能
@@ -73,7 +73,7 @@ vector_db:
 speech_api:
   appid: "6876644863"
   access_token: "SmjmNcd4sPVl5FqLi7U6Gvs8WtF0yMlF"
-  secret_key: "qbQn3ScXJDr4mxUJ22yCgoUqhmW9OmoU"
+  secret_key: "your api key"
   cluster: "volcano_mega"
   voice_type: "S_LDfNJ5E11"
   host: "openspeech.bytedance.com"
@@ -81,6 +81,6 @@ speech_api:
 # OSS配置
 oss_key:
   access_key_id: "LTAI5tQLC1ShqDBV6VKuLhrZ"
-  access_key_secret: "yd4IxfCS977axJtU1D7Q7kOKiC3TTV"
+  access_key_secret: "your api key"
   endpoint: "oss-cn-shanghai.aliyuncs.com"
   bucket_name: "pillow-chat"
