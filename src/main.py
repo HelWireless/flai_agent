@@ -1,36 +1,25 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import uvicorn
 from src.api.routes import router
-from src.custom_logger import *
-def create_app() -> FastAPI:
-    app = FastAPI(title="Pillow Talk", debug=False)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    return app
-
-app = create_app()
+from src.custom_logger import custom_logger
 
 
-@app.on_event("startup")
-async def startup_event():
-    """应用启动事件"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动事件
     custom_logger.info("=" * 60)
     custom_logger.info("🚀 Flai Agent 正在启动...")
     custom_logger.info("=" * 60)
     
-    # 1. 预加载配置
+    # 预加载配置
     from src.core.config_loader import get_config_loader
     config_loader = get_config_loader()
     
     try:
-        # 预加载所有配置到缓存
         config_loader.get_characters()
         config_loader.get_character_openers()
         config_loader.get_emotions()
@@ -41,21 +30,31 @@ async def startup_event():
         custom_logger.error(f"❌ 配置文件加载失败: {e}")
         raise
     
-    # 2. 日志清理已在 custom_logger 初始化时完成
-    
     custom_logger.info("=" * 60)
     custom_logger.info("✅ 应用启动完成")
     custom_logger.info(f"📚 API 文档: http://localhost:8000/docs")
     custom_logger.info("=" * 60)
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭事件"""
+    
+    yield  # 应用运行
+    
+    # 关闭事件
     custom_logger.info("=" * 60)
     custom_logger.info("👋 Flai Agent 正在关闭...")
     custom_logger.info("=" * 60)
-    # 清理资源（如需要）
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="Pillow Talk", debug=False, lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    return app
+
+app = create_app()
 
 
 async def set_body(request: Request):
