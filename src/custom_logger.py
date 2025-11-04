@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from loguru import logger
 import yaml
+from datetime import datetime, timedelta
+import os
 
 
 class InterceptHandler(logging.Handler):
@@ -52,6 +54,84 @@ class CustomizeLogger:
         return logger
 
     @classmethod
+    def get_weekly_log_path(cls):
+        """
+        获取按周划分的日志路径
+        
+        规则：
+        - 每周一个日志文件（周一到周日）
+        - 文件名：开始日期_结束日期.log
+        - 按开始日期的年月归档：logs/YYYY-MM/YYYY-MM-DD_YYYY-MM-DD.log
+        """
+        now = datetime.now()
+        
+        # 计算本周的开始日期（周一）
+        weekday = now.weekday()  # 0=Monday, 6=Sunday
+        week_start = now - timedelta(days=weekday)
+        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # 计算本周的结束日期（周日）
+        week_end = week_start + timedelta(days=6)
+        
+        # 格式化日期
+        start_date_str = week_start.strftime("%Y-%m-%d")
+        end_date_str = week_end.strftime("%Y-%m-%d")
+        
+        # 按开始日期的年月创建文件夹
+        year_month = week_start.strftime("%Y-%m")
+        
+        # 构建日志路径
+        log_dir = Path("logs") / year_month
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 文件名：开始日期_结束日期.log
+        log_filename = f"{start_date_str}_{end_date_str}.log"
+        
+        return str(log_dir / log_filename)
+    
+    @classmethod
+    def cleanup_old_logs(cls, retention_months=6):
+        """
+        清理超过保留期的日志
+        
+        Args:
+            retention_months: 保留月数，默认6个月
+        """
+        logs_dir = Path("logs")
+        if not logs_dir.exists():
+            return 0
+        
+        # 计算截止日期（保留最近N个月）
+        cutoff_date = datetime.now() - timedelta(days=retention_months * 30)
+        cutoff_month = cutoff_date.strftime("%Y-%m")
+        
+        deleted_count = 0
+        
+        # 遍历 logs 目录下的所有月份文件夹
+        for month_dir in logs_dir.iterdir():
+            if not month_dir.is_dir():
+                continue
+            
+            # 检查文件夹名是否是月份格式 (YYYY-MM)
+            if month_dir.name.count('-') != 1:
+                continue
+            
+            try:
+                # 比较月份，删除早于截止月份的目录
+                if month_dir.name < cutoff_month:
+                    print(f"清理旧日志目录: {month_dir}")
+                    import shutil
+                    shutil.rmtree(month_dir)
+                    deleted_count += 1
+            except Exception as e:
+                print(f"清理日志目录失败 {month_dir}: {e}")
+        
+        if deleted_count > 0:
+            print(f"已清理 {deleted_count} 个旧日志目录（{retention_months}个月前）")
+        
+        return deleted_count
+
+    @classmethod
     def customize_logging(cls,
             filepath: Path,
             level: str,
@@ -59,7 +139,9 @@ class CustomizeLogger:
             retention: str,
             format: str
     ):
-
+        # 使用自定义的日志路径（按周划分）
+        weekly_log_path = cls.get_weekly_log_path()
+        
         logger.remove()
         logger.add(
             sys.stdout,
@@ -69,8 +151,8 @@ class CustomizeLogger:
             format=format
         )
         logger.add(
-            str(filepath),
-            rotation=rotation,
+            weekly_log_path,
+            rotation="1 week",  # 每周轮转
             retention=retention,
             enqueue=True,
             backtrace=True,
@@ -85,6 +167,9 @@ class CustomizeLogger:
                      ]:
             _logger = logging.getLogger(_log)
             _logger.handlers = [InterceptHandler()]
+        
+        # 启动时清理旧日志
+        cls.cleanup_old_logs(retention_months=6)
 
         return logger.bind(request_id=None, method=None)
 

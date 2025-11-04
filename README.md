@@ -86,7 +86,11 @@ flai_agent/
 │   └── config.yaml.example   # 配置模板
 ├── data/                      # 数据文件
 │   └── sensitive_words.txt   # 敏感词列表
-├── logs/                      # 运行时日志
+├── logs/                      # 运行时日志（按周划分，按月归档）
+│   ├── 2025-10/              # 2025年10月的日志
+│   │   └── 2025-10-27_2025-11-02.log
+│   └── 2025-11/              # 2025年11月的日志
+│       └── 2025-11-03_2025-11-09.log
 ├── scripts/                   # 工具脚本
 │   ├── log_extractor.py      # 日志提取工具
 │   └── log_extractor.sh
@@ -129,14 +133,32 @@ flai_agent/
 
 编辑 `config/prompts/characters.json` 和 `config/prompts/character_openers.json`，添加新的角色配置。
 
-### 日志查看
+### 日志管理
 
+日志按周划分，自动按月归档到文件夹：
+- **文件夹**：`logs/YYYY-MM/` (按开始日期的月份)
+- **文件名**：`YYYY-MM-DD_YYYY-MM-DD.log` (周一到周日)
+- **自动清理**：超过6个月的日志会在服务启动时自动清理
+
+示例：
+```
+logs/
+├── 2025-10/
+│   └── 2025-10-27_2025-11-02.log  (跨月的周，按开始日期归档到10月)
+└── 2025-11/
+    └── 2025-11-03_2025-11-09.log
+```
+
+查看日志：
 ```bash
-# 实时查看日志
-tail -f logs/app.log
+# 查看当前周的日志
+tail -f logs/$(date +%Y-%m)/*.log
+
+# 或查看最新的日志文件
+tail -f $(ls -t logs/*/*.log | head -1)
 
 # 提取指定时间段日志
-./scripts/log_extractor.sh "2025-11-04 10:00" "2025-11-04 11:00" logs/app.log
+./scripts/log_extractor.sh "2025-11-04 10:00" "2025-11-04 11:00" logs/2025-11/*.log
 ```
 
 ### 常用命令
