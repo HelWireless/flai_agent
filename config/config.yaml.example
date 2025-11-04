@@ -45,7 +45,7 @@ qwen_plus:
 # 其他模型配置...
 deepseek:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-  model: "deepseek-v3.1"
+  model: "deepseek-v3.2-exp"
   api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
 
 qwen3_coder_plus:
