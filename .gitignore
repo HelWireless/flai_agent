@@ -168,3 +168,8 @@ cython_debug/
 actions/
 output.txt
 src/*.yaml
+
+# Project specific - Runtime logs
+nohup.out
+logs/*.log
+logs/*.out

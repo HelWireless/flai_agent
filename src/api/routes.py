@@ -7,7 +7,6 @@ from src.dialogue_query import *
 from sqlalchemy.orm import Session
 from src.content_filter import *
 from src.utils import get_emotion_type, split_message, upload_to_oss
-from src.vector_query import VectorQuery
 import yaml
 from typing import List, Dict
 import os
@@ -42,30 +41,9 @@ with open(config_path, "r", encoding="utf-8") as config_file:
 # autdo model api 配置
 model_names = ["autodl", "qwen3_32b_custom", "qwen_max", "autodl", "deepseek", "qwen3_32b_custom", "qwen3_max_preview", "qwen3_coder_plus"]
 
-
-# VectorQuery 配置
-vector_db = VectorQuery(
-    url=config["qdrant"]["url"],
-    api_key=config["qdrant"]["api_key"],
-    collection_name=config["qdrant"]["collection_name"],
-    embedding_api_key=config["qdrant"]["embedding_api_key"]
-)
-
 cf = ContentFilter(additional_keywords=key_words)
 
 
-# def get_embedding(text: str) -> List[float]:
-#     custom_logger.info(f"Getting embedding for text: {text[:50]}...")
-#     embedding = openai.Embedding.create(input=text, model=EMBEDDING_MODEL)["data"][0]["embedding"]
-#     custom_logger.debug(f"Embedding generated successfully")
-#     return embedding
-
-
-def build_context(search_results: List[Dict]) -> str:
-    custom_logger.info(f"Building context from {len(search_results)} search results")
-    context = "\n".join([hit.payload["text"] for hit in search_results])
-    custom_logger.debug(f"Context built: {context[:100]}...")
-    return context
 
 
 def create_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(500, 502, 504)):
@@ -436,9 +414,6 @@ async def chat_pillow(request: ChatRequest, db: Session = Depends(get_db)):
             emotion_type=emotion_type
         )
 
-    # query_embedding = get_embedding(request.message)
-    # search_results = vector_db.search_similar(query_embedding, limit=5)
-    # context = build_context(search_results)
     prompt, conversation_history, user_history_exists, model_name = generate_prompt(request.character_id,
                                                                                     request.user_id, if_voice, db)
     try:
