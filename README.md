@@ -5,12 +5,14 @@ AI对话代理服务，基于FastAPI构建，支持多角色对话、情绪分�
 ## 📋 功能特性
 
 - 🤖 多角色AI对话系统
+- 🧠 **长短期记忆**（支持语义检索）
 - 😊 智能情绪识别与分析
 - 🔊 文字转语音（TTS）
 - 🎴 占卜抽卡功能
 - 🛡️ 敏感内容过滤
 - 💾 对话历史记录
 - ☁️ OSS云存储集成
+- 🔥 配置热更新
 
 ## 🚀 快速开始
 
@@ -19,6 +21,7 @@ AI对话代理服务，基于FastAPI构建，支持多角色对话、情绪分�
 - Python 3.8+
 - MySQL 数据库
 - 阿里云OSS（用于语音文件存储）
+- Qdrant 向量数据库（可选，用于长期记忆功能）
 
 ### 2. 使用 UV 构建环境
 
@@ -122,6 +125,37 @@ flai_agent/
 - **ReDoc**：http://localhost:8000/redoc
 
 ## 🛠️ 开发说明
+
+### 架构说明
+
+项目采用分层架构：
+- **API层**（`routes.py`）- 纯路由定义，参数验证
+- **服务层**（`services/`）- 业务逻辑，LLM调用
+- **核心层**（`core/`）- 通用功能，数据查询
+- **配置层**（`config/`）- JSON配置，支持热更新
+
+### 长短期记忆功能
+
+**短期记忆**（MySQL）：
+- 最近7轮对话
+- 按时间顺序
+- 保持对话连贯性
+
+**长期记忆**（向量数据库，可选）：
+- 语义相似的3个历史对话
+- 基于Embedding向量检索
+- 跨时间关联，提供个性化
+
+**启用长期记忆**：
+1. 安装向量数据库依赖：`uv pip install qdrant-client`
+2. 在 `src/config.yaml` 中配置：
+   ```yaml
+   vector_db:
+     enabled: true
+     url: "http://localhost:6333"
+     collection_name: "conversations"
+     embedding_api_key: "your-key"
+   ```
 
 ### 配置热更新
 

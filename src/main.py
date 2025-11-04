@@ -18,6 +18,46 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+@app.on_event("startup")
+async def startup_event():
+    """应用启动事件"""
+    custom_logger.info("=" * 60)
+    custom_logger.info("🚀 Flai Agent 正在启动...")
+    custom_logger.info("=" * 60)
+    
+    # 1. 预加载配置
+    from src.core.config_loader import get_config_loader
+    config_loader = get_config_loader()
+    
+    try:
+        # 预加载所有配置到缓存
+        config_loader.get_characters()
+        config_loader.get_character_openers()
+        config_loader.get_emotions()
+        config_loader.get_responses()
+        config_loader.get_constants()
+        custom_logger.info("✅ 配置文件加载完成")
+    except Exception as e:
+        custom_logger.error(f"❌ 配置文件加载失败: {e}")
+        raise
+    
+    # 2. 日志清理已在 custom_logger 初始化时完成
+    
+    custom_logger.info("=" * 60)
+    custom_logger.info("✅ 应用启动完成")
+    custom_logger.info(f"📚 API 文档: http://localhost:8000/docs")
+    custom_logger.info("=" * 60)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭事件"""
+    custom_logger.info("=" * 60)
+    custom_logger.info("👋 Flai Agent 正在关闭...")
+    custom_logger.info("=" * 60)
+    # 清理资源（如需要）
+
+
 async def set_body(request: Request):
     receive_ = await request._receive()
     async def receive():

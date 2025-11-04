@@ -38,12 +38,14 @@ deepseek:
   model: "deepseek-chat"
   api_key: "your-deepseek-api-key"
 
-# 向量数据库配置（如需要）
-qdrant:
+# 向量数据库配置（用于长期记忆，可选）
+vector_db:
+  enabled: false  # 是否启用向量数据库
   url: "http://your-qdrant-url:6333"
   api_key: "your-qdrant-api-key"
-  collection_name: "your-collection"
+  collection_name: "conversations"
   embedding_api_key: "your-embedding-api-key"
+  embedding_url: "https://api.siliconflow.cn/v1/embeddings"
 
 # 语音合成API配置
 speech_api:
