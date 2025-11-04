@@ -11,7 +11,7 @@ class ContentFilter:
 
     def load_sensitive_words(self) -> List[str]:
         # 获取项目根目录
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         # 构建敏感词文件路径
         config_path = os.path.join(project_root, "data", "sensitive_words.txt")
 

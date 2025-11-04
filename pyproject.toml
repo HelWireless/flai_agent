@@ -3,7 +3,7 @@ name = "flai-agent"
 version = "1.0.0"
 description = "AI对话代理服务，支持多角色对话、情绪分析、语音合成"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     # FastAPI Web Framework
     "fastapi>=0.114.0",
@@ -52,6 +52,9 @@ vector = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [tool.ruff]
 line-length = 120

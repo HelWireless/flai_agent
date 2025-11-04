@@ -60,7 +60,7 @@ class VoiceService:
             custom_logger.error("Failed to upload voice file to OSS")
             raise HTTPException(status_code=500, detail="Failed to upload voice file to OSS")
         
-        voice_response_url = f"https://pillow.fanwoon.com/{file_key}"
+        voice_response_url = f"https://pillow-chat.oss-cn-shanghai.aliyuncs.com/{file_key}"
         custom_logger.info(f"Voice file uploaded successfully: {voice_response_url}")
         
         return Text2VoiceResponse(

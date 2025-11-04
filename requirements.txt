@@ -32,5 +32,4 @@ python-dateutil==2.9.0.post0
 
 # Vector Database (Optional - for long-term memory)
 # Uncomment if you want to enable vector database for semantic search
-# qdrant-client>=1.11.0
-
+qdrant-client>=1.11.0

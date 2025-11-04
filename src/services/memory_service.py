@@ -115,7 +115,7 @@ class MemoryService:
         user_id: str,
         current_message: str,
         limit: int = 3
-    ) -> List[Dict]:
+    ) -> Tuple[List[Dict], bool]:
         """
         获取向量检索记忆（语义相似的历史对话 - 额外记忆）
         
@@ -127,10 +127,10 @@ class MemoryService:
             limit: 返回数量
         
         Returns:
-            相关的历史对话列表
+            (相关的历史对话列表, 是否需要跳过存储)
         """
         if user_id == 'guest':
-            return []
+            return [], False
         
         # 使用向量数据库搜索相似对话
         similar_conversations = await self.vector_store.search_similar_conversations(
@@ -138,6 +138,12 @@ class MemoryService:
             query_text=current_message,
             limit=limit
         )
+        
+        # 检查是否有高度相似的对话（超过阈值则认为是重复内容）
+        should_skip_storage = False
+        if similar_conversations and similar_conversations[0]["score"] >= 0.96:
+            should_skip_storage = True
+            custom_logger.debug(f"Found highly similar conversation (score: {similar_conversations[0]['score']}) - will skip storage")
         
         # 转换为对话格式
         vector_memory = []
@@ -147,7 +153,7 @@ class MemoryService:
                 {"role": "assistant", "content": conv["ai_response"]}
             ])
         
-        return vector_memory
+        return vector_memory, should_skip_storage
     
     async def get_combined_memory(
         self,
@@ -157,7 +163,7 @@ class MemoryService:
         if_voice: bool = False,
         conversation_history_limit: int = 7,
         vector_memory_limit: int = 3
-    ) -> Tuple[List[Dict], str, Dict[str, str]]:
+    ) -> Tuple[List[Dict], str, Dict[str, str], bool]:
         """
         获取组合记忆（对话历史 + 持久化记忆 + 向量检索）
         
@@ -170,20 +176,36 @@ class MemoryService:
             vector_memory_limit: 向量检索数量
         
         Returns:
-            (对话历史, 用户昵称, 持久化记忆)
+            (对话历史, 用户昵称, 持久化记忆, 是否需要跳过向量存储)
         """
+        import time
+        start_time = time.time()
+        custom_logger.info(f"Starting to get combined memory for user {user_id}")
+        
         # 1. 获取对话历史（MySQL t_dialogue）
+        history_start_time = time.time()
         conversation_history, nickname = await self.get_short_term_memory(
             user_id, character_id, if_voice, conversation_history_limit
         )
+        history_end_time = time.time()
+        history_duration = history_end_time - history_start_time
+        custom_logger.info(f"Short-term memory retrieval completed in {history_duration:.2f} seconds")
         
         # 2. 获取持久化记忆（MySQL chat_memory - 短期和长期记忆）
+        persistent_start_time = time.time()
         persistent_memory = await self.get_persistent_memory(user_id, character_id)
+        persistent_end_time = time.time()
+        persistent_duration = persistent_end_time - persistent_start_time
+        custom_logger.info(f"Persistent memory retrieval completed in {persistent_duration:.2f} seconds")
         
         # 3. 获取向量检索记忆（Qdrant - 额外记忆，可选）
-        vector_memory = await self.get_vector_memory(
+        vector_start_time = time.time()
+        vector_memory, skip_vector_storage = await self.get_vector_memory(
             user_id, current_message, vector_memory_limit
         )
+        vector_end_time = time.time()
+        vector_duration = vector_end_time - vector_start_time
+        custom_logger.info(f"Vector memory retrieval completed in {vector_duration:.2f} seconds")
         
         # 4. 组合记忆
         # 向量记忆 + 对话历史（向量记忆在前，作为额外参考）
@@ -197,7 +219,11 @@ class MemoryService:
             f"long:{len(persistent_memory.get('long_term', ''))} chars)"
         )
         
-        return combined_history, nickname, persistent_memory
+        end_time = time.time()
+        total_duration = end_time - start_time
+        custom_logger.info(f"Total combined memory retrieval completed in {total_duration:.2f} seconds")
+        
+        return combined_history, nickname, persistent_memory, skip_vector_storage
     
     async def save_conversation(
         self,
@@ -205,7 +231,8 @@ class MemoryService:
         character_id: str,
         user_message: str,
         ai_response: str,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        skip_vector_storage: bool = False
     ) -> Dict:
         """
         保存对话（三种存储）
@@ -220,16 +247,22 @@ class MemoryService:
             user_message: 用户消息
             ai_response: AI回复
             metadata: 元数据
+            skip_vector_storage: 是否跳过向量存储（当已检测到高度相似内容时）
         
         Returns:
             保存结果
         """
+        import time
+        start_time = time.time()
+        custom_logger.info(f"Starting to save conversation for user {user_id}")
+        
         if user_id == 'guest':
             return {"saved": False, "message": "访客不保存记忆"}
         
         results = {}
         
         # 1. 持久化记忆处理（LLM判断 + MySQL chat_memory）
+        persistent_start_time = time.time()
         if self.persistent_memory:
             persistent_result = await self.persistent_memory.process_conversation_memory(
                 user_id=user_id,
@@ -238,9 +271,13 @@ class MemoryService:
                 ai_response=ai_response
             )
             results["persistent_memory"] = persistent_result
+        persistent_end_time = time.time()
+        persistent_duration = persistent_end_time - persistent_start_time
+        custom_logger.info(f"Persistent memory saving completed in {persistent_duration:.2f} seconds")
         
         # 2. 向量存储（额外记忆 - 语义检索）
-        if self.vector_store.enabled:
+        vector_start_time = time.time()
+        if self.vector_store.enabled and not skip_vector_storage:
             metadata = metadata or {}
             metadata['timestamp'] = datetime.now().isoformat()
             metadata['character_id'] = character_id
@@ -252,6 +289,15 @@ class MemoryService:
                 metadata=metadata
             )
             results["vector_memory"] = {"saved": vector_saved}
+        elif skip_vector_storage:
+            results["vector_memory"] = {"saved": False, "reason": "High similarity detected, storage skipped"}
+        vector_end_time = time.time()
+        vector_duration = vector_end_time - vector_start_time
+        custom_logger.info(f"Vector memory saving completed in {vector_duration:.2f} seconds")
+        
+        end_time = time.time()
+        total_duration = end_time - start_time
+        custom_logger.info(f"Total conversation saving completed in {total_duration:.2f} seconds")
         
         return results
     

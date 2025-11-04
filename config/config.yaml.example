@@ -1,71 +1,86 @@
-# 配置文件模板
-# 使用方法：复制此文件为 src/config.yaml 并填入实际配置
+# 配置文件
+# 从 config.yaml.example 复制而来
 
 # 数据库配置
 database:
-  host: "your-database-host"
-  username: "your-username"
-  password: "your-password"
-  database_name: "pillow_customer_prod"
+  host: "81.68.235.167"
+  username: "pillow"
+  password: "1234QWERasdf!@#$"
+  database_name: "pillow_customer_test"
 
 # 日志配置
 logger:
   path: "logs/app.log"
   level: "INFO"
   rotation: "500 MB"
-  retention: "30 days"
+  retention: "60 days"
   format: "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 
 # 模型API配置示例
 autodl:
-  base_url: "https://your-api-url/v1/chat/completions"
-  model: "your-model-name"
-  api_key: "your-api-key"
+  base_url: "https://u231521-90d5-6daa9074.westc.gpuhub.com:8443/v1/chat/completions"
+  model: "qwen"
+  api_key: ""
+
+qwen_turbo:
+  base_url: "https://u231521-90d5-6daa9074.westc.gpuhub.com:8443/v1/chat/completions"
+  model: "qwen-turbo"
+  api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
 
 qwen_max:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-  model: "qwen-max"
-  api_key: "your-qwen-api-key"
+  model: "qwen-max-latest"
+  api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
+
+qwen3_32b_custom:
+    base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
+    model: "qwen3-32b-ft-202507311927-b168"
+    api_key: 'sk-cacff6e897a84c3f8a8047e58a227fff'
 
 qwen_plus:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-  model: "qwen-plus"
-  api_key: "your-qwen-api-key"
+  model: "qwen-plus-latest"
+  api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
 
 # 其他模型配置...
 deepseek:
-  base_url: "https://api.deepseek.com/v1/chat/completions"
-  model: "deepseek-chat"
-  api_key: "your-deepseek-api-key"
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+  model: "deepseek-v3.1"
+  api_key: "sk-cacff6e897a84c3f8a8047e58a227fff"
 
+qwen3_coder_plus:
+  base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
+  model: "qwen3-235b-a22b"
+  api_key: 'sk-cacff6e897a84c3f8a8047e58a227fff'
 # 持久化记忆配置（MySQL chat_memory表 - LLM提取的短期/长期记忆）
 persistent_memory:
   enabled: true  # 是否启用持久化记忆功能
   short_term_update_interval: 10  # 每N轮对话更新一次短期记忆
   enabled_characters:  # 启用记忆的角色列表（空列表=全部启用）
-    # - "default"  # 取消注释以仅对指定角色启用
+     - "default"  # 取消注释以仅对指定角色启用
     # - "c1s1c1_0001"
 
 # 向量数据库配置（额外记忆 - 语义检索，可选）
 vector_db:
-  enabled: false  # 是否启用向量数据库
-  url: "http://your-qdrant-url:6333"
-  api_key: "your-qdrant-api-key"
-  collection_name: "conversations"
-  embedding_api_key: "your-embedding-api-key"
-  embedding_url: "https://api.siliconflow.cn/v1/embeddings"
+  enabled: true  # 是否启用向量数据库
+  url: "http://47.103.39.33:6333"
+  api_key: ""
+  collection_name: "pillow_test"
+  embedding_api_key: ""
+  embedding_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
 
 # 语音合成API配置
 speech_api:
-  appid: "your-appid"
-  access_token: "your-access-token"
-  cluster: "your-cluster"
-  voice_type: "your-voice-type"
+  appid: "6876644863"
+  access_token: "SmjmNcd4sPVl5FqLi7U6Gvs8WtF0yMlF"
+  secret_key: "qbQn3ScXJDr4mxUJ22yCgoUqhmW9OmoU"
+  cluster: "volcano_mega"
+  voice_type: "S_LDfNJ5E11"
+  host: "openspeech.bytedance.com"
 
 # OSS配置
 oss_key:
-  access_key_id: "your-access-key-id"
-  access_key_secret: "your-access-key-secret"
+  access_key_id: "LTAI5tQLC1ShqDBV6VKuLhrZ"
+  access_key_secret: "yd4IxfCS977axJtU1D7Q7kOKiC3TTV"
   endpoint: "oss-cn-shanghai.aliyuncs.com"
-  bucket_name: "your-bucket-name"
-
+  bucket_name: "pillow-chat"

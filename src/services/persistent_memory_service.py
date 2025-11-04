@@ -8,6 +8,7 @@ from sqlalchemy.exc import OperationalError, DBAPIError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from datetime import datetime
 from collections import defaultdict
+import asyncio
 
 from ..custom_logger import custom_logger
 from .memory_classifier import MemoryClassifier
@@ -17,7 +18,7 @@ class PersistentMemoryService:
     """持久化记忆服务 - 管理MySQL中的chat_memory表"""
     
     # 类级别的短期记忆缓存（内存中）
-    _short_term_cache = defaultdict(lambda: {"memories": [], "count": 0})
+    _short_term_cache = defaultdict(lambda: {"memories": [], "count": 0, "dialogues": []})
     
     def __init__(self, db: Session, llm_service, config: Optional[Dict] = None):
         """
@@ -30,10 +31,11 @@ class PersistentMemoryService:
         """
         self.db = db
         self.classifier = MemoryClassifier(llm_service)
+        self.llm_service = llm_service
         self.config = config or {}
         
         # 配置参数
-        self.short_term_update_interval = self.config.get('short_term_update_interval', 10)  # 每10轮更新
+        self.short_term_update_interval = self.config.get('short_term_update_interval', 7)  # 每7轮更新
         self.enabled_characters = self.config.get('enabled_characters', [])  # 启用记忆的角色列表
         self.global_enabled = self.config.get('enabled', True)  # 全局开关
     
@@ -230,7 +232,7 @@ class PersistentMemoryService:
         2. 使用 LLM 判断记忆类型
         3. 根据类型处理：
            - none: 仅计数器+1
-           - short_term: 缓存，累积10轮后批量更新
+           - short_term: 缓存，累积7轮后批量更新
            - long_term: 立即更新到MySQL
         
         Args:
@@ -242,6 +244,10 @@ class PersistentMemoryService:
         Returns:
             处理结果字典
         """
+        import time
+        start_time = time.time()
+        custom_logger.info(f"Starting to process conversation memory for user {user_id}")
+        
         # 1. 检查记忆功能是否启用
         if not self.is_memory_enabled(character_id):
             return {
@@ -260,22 +266,38 @@ class PersistentMemoryService:
         
         try:
             # 确保记录存在
+            record_start_time = time.time()
             memory = self.query_with_retry(self.db, self._get_memory_record, user_id, character_id)
             if not memory:
                 self.query_with_retry(self.db, self._create_memory_record, user_id, character_id)
                 memory = self.query_with_retry(self.db, self._get_memory_record, user_id, character_id)
+            record_end_time = time.time()
+            record_duration = record_end_time - record_start_time
+            custom_logger.info(f"Memory record retrieval/creation completed in {record_duration:.2f} seconds")
         except Exception as e:
             custom_logger.error(f"Failed to get/create memory record: {e}")
             return {"memory_enabled": False, "error": str(e)}
         
         # 2. 使用 LLM 判断记忆类型
+        classification_start_time = time.time()
         classification = await self.classifier.classify_memory_type(
             user_message=user_message,
             ai_response=ai_response
         )
+        classification_end_time = time.time()
+        classification_duration = classification_end_time - classification_start_time
+        custom_logger.info(f"Memory classification completed in {classification_duration:.2f} seconds")
         
-        memory_type = classification["memory_type"]
+        # 根据新的分类结果确定记忆类型
+        is_long = classification["is_long"]
         memory_content = classification["memory_content"]
+        
+        if is_long == "yes":
+            memory_type = "long_term"
+        elif is_long == "no":
+            memory_type = "none"
+        else:
+            memory_type = "none"
         
         custom_logger.info(
             f"Memory classification for user {user_id}: "
@@ -286,9 +308,27 @@ class PersistentMemoryService:
         if memory_type == "none":
             # 不需要记忆，但计数器+1
             try:
+                increment_start_time = time.time()
                 self.query_with_retry(self.db, self._increment_conversation_count, user_id, character_id)
             except Exception as e:
                 custom_logger.error(f"Failed to increment count: {e}")
+            
+            # 将对话添加到短期记忆缓存中用于后续摘要
+            cache_key = f"{user_id}:{character_id}"
+            self._short_term_cache[cache_key]["dialogues"].append({
+                "user": user_message,
+                "ai": ai_response
+            })
+            
+            # 检查是否需要生成短期记忆摘要
+            self._short_term_cache[cache_key]["count"] += 1
+            if self._short_term_cache[cache_key]["count"] >= self.short_term_update_interval:
+                # 异步生成摘要
+                asyncio.create_task(self._generate_short_term_summary(user_id, character_id, cache_key))
+            
+            increment_end_time = time.time()
+            increment_duration = increment_end_time - increment_start_time
+            custom_logger.info(f"Memory increment completed in {increment_duration:.2f} seconds")
             
             return {
                 "memory_enabled": True,
@@ -297,16 +337,30 @@ class PersistentMemoryService:
             }
         
         elif memory_type == "short_term":
-            # 短期记忆：缓存，10轮后批量更新
-            return await self._handle_short_term_memory(
+            # 短期记忆：缓存，7轮后批量更新
+            short_term_start_time = time.time()
+            result = await self._handle_short_term_memory(
                 user_id, character_id, memory_content
             )
+            short_term_end_time = time.time()
+            short_term_duration = short_term_end_time - short_term_start_time
+            custom_logger.info(f"Short-term memory handling completed in {short_term_duration:.2f} seconds")
+            return result
         
         elif memory_type == "long_term":
             # 长期记忆：立即更新
-            return await self._handle_long_term_memory(
+            long_term_start_time = time.time()
+            result = await self._handle_long_term_memory(
                 user_id, character_id, memory_content
             )
+            long_term_end_time = time.time()
+            long_term_duration = long_term_end_time - long_term_start_time
+            custom_logger.info(f"Long-term memory handling completed in {long_term_duration:.2f} seconds")
+            return result
+        
+        end_time = time.time()
+        total_duration = end_time - start_time
+        custom_logger.info(f"Total conversation memory processing completed in {total_duration:.2f} seconds")
         
         return {"memory_enabled": True, "memory_type": memory_type}
     
@@ -322,7 +376,7 @@ class PersistentMemoryService:
         策略：
         1. 将新记忆加入缓存
         2. 计数器+1
-        3. 如果达到10轮，批量更新到MySQL并清空缓存
+        3. 如果达到7轮，批量更新到MySQL并清空缓存
         
         Args:
             user_id: 用户ID
@@ -348,10 +402,10 @@ class PersistentMemoryService:
         
         # 2. 检查是否需要更新到数据库
         if count >= self.short_term_update_interval:
-            # 达到10轮，批量更新
+            # 达到7轮，批量更新
             return await self._flush_short_term_cache(user_id, robot_id, cache_key)
         else:
-            # 还没到10轮，继续缓存（但仍要增加数据库计数器）
+            # 还没到7轮，继续缓存（但仍要增加数据库计数器）
             try:
                 self.query_with_retry(self.db, self._increment_conversation_count, user_id, robot_id)
             except Exception as e:
@@ -429,7 +483,7 @@ class PersistentMemoryService:
             )
             
             # 清空缓存
-            self._short_term_cache[cache_key] = {"memories": [], "count": 0}
+            self._short_term_cache[cache_key] = {"memories": [], "count": 0, "dialogues": []}
             
             return {
                 "memory_enabled": True,
@@ -446,6 +500,111 @@ class PersistentMemoryService:
                 "error": str(e),
                 "message": "短期记忆更新失败"
             }
+    
+    async def _generate_short_term_summary(
+        self,
+        user_id: str,
+        robot_id: str,
+        cache_key: str
+    ):
+        """
+        异步生成短期记忆摘要
+        
+        Args:
+            user_id: 用户ID
+            robot_id: 机器人ID
+            cache_key: 缓存键
+        """
+        try:
+            # 获取缓存的对话
+            cached_dialogues = self._short_term_cache[cache_key]["dialogues"]
+            
+            if not cached_dialogues:
+                return
+            
+            # 构建对话历史字符串
+            dialogue_history = "\n".join([
+                f"用户: {dialogue['user']}\nAI: {dialogue['ai']}" 
+                for dialogue in cached_dialogues
+            ])
+            
+            # 获取现有短期记忆
+            memory = self.query_with_retry(self.db, self._get_memory_record, user_id, robot_id)
+            existing_short_term = memory["short_term_memory"] if memory else ""
+            
+            # 构建提示词
+            system_prompt = """你是一个专业的记忆总结专家。你的任务是将用户的多轮对话内容总结成简洁的一句话摘要。
+要求：
+1. 只输出总结内容，不要添加任何其他文字
+2. 摘要要简洁明了，突出对话的核心内容
+3. 如果对话内容无特殊意义，可以输出"日常对话"
+"""
+            
+            user_prompt = f"""请将以下对话历史总结成一句话：
+
+现有短期记忆: {existing_short_term}
+
+对话历史:
+{dialogue_history}
+
+请提供简洁的一句话摘要，输出json格式的结果：
+{{
+    "summary": "总结内容"
+}}
+"""
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            
+            # 调用LLM生成摘要
+            summary_result = await self.llm_service.chat_completion(
+                messages=messages,
+                model_pool=["qwen_plus"],
+                temperature=0.3,
+                max_tokens=100,
+                parse_json=True,
+                retry_on_error=True
+            )
+            
+            summary_content = summary_result.get("summary", "日常对话")
+            
+            # 添加时间戳
+            timestamp = datetime.now().strftime("%Y-%m-%d")
+            summary_with_time = f"[{timestamp}] {summary_content}"
+            
+            # 合并到现有短期记忆
+            if existing_short_term:
+                combined = f"{existing_short_term}\n{summary_with_time}"
+            else:
+                combined = summary_with_time
+            
+            # 限制短期记忆总长度（保留最后5000字符）
+            if len(combined) > 5000:
+                combined = combined[-5000:]
+            
+            # 更新数据库
+            self.query_with_retry(
+                self.db, 
+                self._update_short_term_memory, 
+                user_id, 
+                robot_id, 
+                combined,
+                len(cached_dialogues)  # 增加相应的对话计数
+            )
+            
+            custom_logger.info(
+                f"Short-term memory summary generated for {cache_key}: "
+                f"{len(cached_dialogues)} dialogues → summary: {summary_content[:50]}..."
+            )
+            
+            # 清空对话缓存并重置计数器
+            self._short_term_cache[cache_key]["dialogues"] = []
+            self._short_term_cache[cache_key]["count"] = 0
+            
+        except Exception as e:
+            custom_logger.error(f"Failed to generate short-term summary: {e}")
     
     async def _handle_long_term_memory(
         self,
@@ -548,7 +707,7 @@ class PersistentMemoryService:
     
     async def force_flush_short_term(self, user_id: str, robot_id: str) -> Dict:
         """
-        强制刷新短期记忆缓存（不等10轮）
+        强制刷新短期记忆缓存（不等7轮）
         
         Args:
             user_id: 用户ID
@@ -559,10 +718,21 @@ class PersistentMemoryService:
         """
         cache_key = f"{user_id}:{robot_id}"
         
-        if cache_key not in self._short_term_cache or not self._short_term_cache[cache_key]["memories"]:
+        if cache_key not in self._short_term_cache or (
+                not self._short_term_cache[cache_key]["memories"] and 
+                not self._short_term_cache[cache_key]["dialogues"]):
             return {"message": "无待更新的短期记忆"}
         
-        return await self._flush_short_term_cache(user_id, robot_id, cache_key)
+        # 刷新常规短期记忆
+        result = {}
+        if self._short_term_cache[cache_key]["memories"]:
+            result = await self._flush_short_term_cache(user_id, robot_id, cache_key)
+        
+        # 生成对话摘要
+        if self._short_term_cache[cache_key]["dialogues"]:
+            await self._generate_short_term_summary(user_id, robot_id, cache_key)
+        
+        return result or {"message": "已处理短期记忆刷新"}
     
     async def clear_memory(self, user_id: str, robot_id: str) -> bool:
         """

@@ -33,7 +33,7 @@ router = APIRouter(
 
 # 加载应用配置
 current_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(os.path.dirname(current_dir), "config.yaml")
+config_path = os.path.join(os.path.dirname(os.path.dirname(current_dir)), "config", "config.yaml")
 
 with open(config_path, "r", encoding="utf-8") as config_file:
     app_config = yaml.safe_load(config_file)
@@ -148,7 +148,11 @@ async def generate_character_opener(
     - 返回预设开场白
     - 或基于历史生成新开场白
     """
-    return await chat_service.generate_opener(request)
+    try:
+        return await chat_service.generate_opener(request)
+    except Exception as e:
+        custom_logger.error(f"Error in generate_character_opener: {str(e)}")
+        raise
 
 
 @router.post("/draw-card", response_model=DrawCardResponse)

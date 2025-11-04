@@ -30,7 +30,7 @@ class DialogueQuery:
     def _load_config(self):
         """加载数据库配置（测试模式）"""
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        config_path = os.path.join(project_root, "config.yaml")
+        config_path = os.path.join(project_root, "config", "config.yaml")
         
         try:
             with open(config_path, "r", encoding="utf-8") as config_file:

@@ -189,5 +189,5 @@ class CustomizeLogger:
             print(f"文件编码错误,请确保 {config_path} 使用 UTF-8 编码")
 
 
-config_path = Path(__file__).with_name('config.yaml')
+config_path = Path(__file__).parent.parent / "config" / "config.yaml"
 custom_logger = CustomizeLogger.make_logger(config_path=config_path)

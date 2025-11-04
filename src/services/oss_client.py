@@ -6,7 +6,7 @@ from ..custom_logger import custom_logger
 
 def get_oss_bucket():
     # 配置文件在 src/ 目录
-    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.yaml")
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "config.yaml")
     with open(config_path, "r", encoding="utf-8") as config_file:
         config = yaml.safe_load(config_file)
     
