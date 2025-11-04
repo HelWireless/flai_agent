@@ -20,93 +20,81 @@ AI对话代理服务，基于FastAPI构建，支持多角色对话、情绪分�
 - MySQL 数据库
 - 阿里云OSS（用于语音文件存储）
 
-### 2. 安装依赖
+### 2. 使用 UV 构建环境
 
-**推荐使用 UV（极快！⚡）**：
-
+**安装 UV**：
 ```bash
-# 安装 uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 创建虚拟环境并安装依赖
-uv venv
-source .venv/bin/activate  # Linux/macOS
-uv pip install -r requirements.txt
-
-# 或者使用 pyproject.toml
-uv pip install -e .
 ```
 
-**使用传统 pip**：
-
+**创建虚拟环境并安装依赖**：
 ```bash
-pip install -r requirements.txt
-```
+# 创建虚拟环境
+uv venv
 
-> 💡 **提示**：使用 uv 可以让依赖安装速度提升 10-100 倍！详见 [UV_SETUP.md](UV_SETUP.md)
+# 激活环境
+source .venv/bin/activate  # Linux/macOS
+# 或 .venv\Scripts\activate  # Windows
+
+# 安装依赖
+uv pip install -r requirements.txt
+```
 
 ### 3. 配置文件
 
-复制配置模板并修改：
-
 ```bash
+# 复制配置模板
 cp config/config.yaml.example src/config.yaml
+
+# 编辑配置文件，填入实际的数据库、API密钥等信息
+vim src/config.yaml
 ```
 
-编辑 `src/config.yaml`，填入你的配置信息：
-- 数据库连接信息
-- API密钥（模型API、语音API等）
-- OSS配置
+### 4. 启动项目
 
-### 4. 运行服务
-
-**使用 UV（推荐）**：
-
+**开发模式（推荐）**：
 ```bash
-# 开发模式（自动使用虚拟环境）
+# 方式1：UV 自动管理环境（无需手动激活）
 uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
-# 或激活环境后运行
+# 方式2：激活环境后运行
 source .venv/bin/activate
 uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**传统方式**：
-
+**生产模式（后台运行）**：
 ```bash
-# 开发模式
-python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
-
-# 生产模式（后台运行）
-nohup python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 > logs/app.log 2>&1 &
+source .venv/bin/activate
+nohup uvicorn src.main:app --host 0.0.0.0 --port 8000 > logs/app.log 2>&1 &
 ```
 
-服务将在 `http://localhost:8000` 启动
-
-API文档：`http://localhost:8000/docs`
+**访问服务**：
+- API 文档：http://localhost:8000/docs
+- 交互式文档：http://localhost:8000/redoc
 
 ## 📁 项目结构
 
 ```
 flai_agent/
 ├── config/                    # 配置文件
-│   └── prompts/              # Prompt配置（JSON格式）
-│       ├── characters.json   # 角色系统配置
-│       ├── character_openers.json  # 角色开场白
-│       ├── emotions.json     # 情绪配置
-│       ├── responses.json    # 回复配置
-│       └── constants.json    # 常量配置
+│   ├── prompts/              # Prompt配置（JSON格式，支持热更新）
+│   │   ├── characters.json   # 角色系统配置
+│   │   ├── character_openers.json  # 角色开场白
+│   │   ├── emotions.json     # 情绪配置
+│   │   ├── responses.json    # 回复配置
+│   │   └── constants.json    # 常量配置
+│   └── config.yaml.example   # 配置模板
 ├── data/                      # 数据文件
 │   └── sensitive_words.txt   # 敏感词列表
 ├── logs/                      # 运行时日志
 ├── scripts/                   # 工具脚本
-│   ├── log_extractor.py      # Python日志提取工具
-│   └── log_extractor.sh      # Shell日志提取工具
+│   ├── log_extractor.py      # 日志提取工具
+│   └── log_extractor.sh
 ├── src/                       # 源代码
 │   ├── api/                  # API层
 │   │   └── routes.py         # API路由定义
 │   ├── core/                 # 核心业务逻辑
-│   │   ├── config_loader.py  # 配置加载器
+│   │   ├── config_loader.py  # 配置加载器（支持热更新）
 │   │   ├── content_filter.py # 内容过滤
 │   │   └── dialogue_query.py # 对话查询
 │   ├── services/             # 第三方服务
@@ -117,62 +105,25 @@ flai_agent/
 │   ├── utils.py              # 工具函数
 │   ├── custom_logger.py      # 日志配置
 │   └── main.py               # 应用入口
-├── requirements.txt           # 依赖列表
-├── .gitignore
-└── README.md
+├── pyproject.toml            # 项目配置
+├── requirements.txt          # 依赖列表
+└── .gitignore
 ```
 
-## 🔧 API接口
+## 🔧 API 文档
 
-### 1. 对话接口
+启动服务后，访问 Swagger 文档查看所有 API 接口的详细使用方法：
 
-```http
-POST /pillow/chat-pillow
-```
-
-**请求参数**：
-```json
-{
-  "user_id": "string",
-  "message": "string",
-  "message_count": 1,
-  "character_id": "default",
-  "voice": false
-}
-```
-
-**响应**：
-```json
-{
-  "user_id": "string",
-  "llm_message": ["string"],
-  "emotion_type": 2
-}
-```
-
-### 2. 文字转语音
-
-```http
-POST /pillow/text2voice
-```
-
-### 3. 角色开场白
-
-```http
-POST /pillow/character_opener
-```
-
-### 4. 占卜抽卡
-
-```http
-POST /pillow/draw-card
-```
+- **Swagger UI**：http://localhost:8000/docs
+- **ReDoc**：http://localhost:8000/redoc
 
 ## 🛠️ 开发说明
 
 ### 配置热更新
 
-配置文件支持热更新，修改 `config/prompts/*.json` 后会自动生效，无需重启服务。
+配置文件支持热更新，修改以下文件后会自动生效，无需重启服务：
+- `config/prompts/*.json` - 所有 Prompt 配置
+- `data/sensitive_words.txt` - 敏感词列表
 
 ### 添加新角色
 
@@ -188,10 +139,19 @@ tail -f logs/app.log
 ./scripts/log_extractor.sh "2025-11-04 10:00" "2025-11-04 11:00" logs/app.log
 ```
 
+### 常用命令
+
+```bash
+# 添加新依赖
+source .venv/bin/activate
+uv pip install package-name
+pip freeze > requirements.txt
+
+# 查看已安装的包
+source .venv/bin/activate
+pip list
+```
+
 ## 📝 许可证
 
 本项目为个人项目。
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request。
