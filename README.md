@@ -134,28 +134,28 @@ flai_agent/
 - **核心层**（`core/`）- 通用功能，数据查询
 - **配置层**（`config/`）- JSON配置，支持热更新
 
-### 长短期记忆功能
+### 三层记忆系统
 
-**短期记忆**（MySQL）：
-- 最近7轮对话
-- 按时间顺序
-- 保持对话连贯性
+本项目实现智能的三层记忆架构：
 
-**长期记忆**（向量数据库，可选）：
-- 语义相似的3个历史对话
-- 基于Embedding向量检索
-- 跨时间关联，提供个性化
+1. **对话历史**（MySQL）- 最近7轮对话，保持连贯性
+2. **持久化记忆**（MySQL chat_memory表）- LLM自动提取用户特征
+   - 短期记忆：最近事件（"我昨天吃了火锅"）→ 10轮批量更新
+   - 长期记忆：用户偏好（"我喜欢吃辣的"）→ 立即更新
+3. **额外记忆**（Qdrant，可选）- 语义相似的历史对话检索
 
-**启用长期记忆**：
-1. 安装向量数据库依赖：`uv pip install qdrant-client`
-2. 在 `src/config.yaml` 中配置：
-   ```yaml
-   vector_db:
-     enabled: true
-     url: "http://localhost:6333"
-     collection_name: "conversations"
-     embedding_api_key: "your-key"
-   ```
+**配置示例**：
+```yaml
+# 持久化记忆（默认启用）
+persistent_memory:
+  enabled: true
+  short_term_update_interval: 10
+  enabled_characters: []  # 空=全部启用，或指定角色
+
+# 向量检索（可选）
+vector_db:
+  enabled: false  # 改为 true 启用
+```
 
 ### 配置热更新
 
