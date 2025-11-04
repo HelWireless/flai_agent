@@ -2,7 +2,7 @@ from typing import List
 import re
 import random
 from collections import Counter
-from src.oss_client import get_oss_bucket
+from src.services.oss_client import get_oss_bucket
 import uuid
 import time
 from src.custom_logger import custom_logger  # 导入自定义logger

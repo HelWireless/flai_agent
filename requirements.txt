@@ -1,0 +1,32 @@
+# FastAPI Web Framework
+fastapi==0.114.0
+uvicorn==0.30.6
+starlette==0.38.5
+
+# Database
+sqlalchemy==2.0.34
+pymysql==1.1.1
+
+# Data Validation
+pydantic==2.9.1
+pydantic-core==2.23.3
+
+# HTTP Clients
+requests==2.32.3
+httpx==0.27.2
+
+# Logging
+loguru==0.7.2
+
+# Configuration
+pyyaml==6.0.2
+
+# Cloud Services
+oss2==2.19.0
+
+# Retry Logic
+tenacity==8.5.0
+
+# Utils
+python-dateutil==2.9.0.post0
+

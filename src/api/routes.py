@@ -3,15 +3,15 @@ import json
 from fastapi import APIRouter, HTTPException, Depends
 from src.schemas import *
 from src.database import get_db
-from src.dialogue_query import *
+from src.core.dialogue_query import *
 from sqlalchemy.orm import Session
-from src.content_filter import *
+from src.core.content_filter import *
 from src.utils import get_emotion_type, split_message, upload_to_oss
 import yaml
 from typing import List, Dict
 import os
 import uuid
-from src.speech_api import SpeechAPI
+from src.services.speech_api import SpeechAPI
 
 from src.custom_logger import custom_logger  # 导入自定义logger
 import random
@@ -21,8 +21,8 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from functools import partial
 from datetime import datetime
-from src.api.prompts.character_other_info import *
-from src.api.prompts.generate_prompts import *
+from src.core.config_loader import get_config_loader
+from src.api.prompts.generate_prompts import get_prompt_by_character_id
 
 router = APIRouter(
     prefix="/pillow",
@@ -38,8 +38,19 @@ config_path = os.path.join(os.path.dirname(current_dir), "config.yaml")
 with open(config_path, "r", encoding="utf-8") as config_file:
     config = yaml.safe_load(config_file)
 
+# 加载配置
+config_loader = get_config_loader()
+constants = config_loader.get_constants()
+responses_config = config_loader.get_responses()
+
 # autdo model api 配置
 model_names = ["autodl", "qwen3_32b_custom", "qwen_max", "autodl", "deepseek", "qwen3_32b_custom", "qwen3_max_preview", "qwen3_coder_plus"]
+
+# 从配置加载
+key_words = constants.get('key_words', [])
+error_responses = responses_config.get('error_responses', [])
+SENSITIVE_RESPONSES = responses_config.get('sensitive_responses', [])
+characters_opener = config_loader.get_character_openers()
 
 cf = ContentFilter(additional_keywords=key_words)
 
@@ -82,6 +93,7 @@ def generate_prompt(character_id, user_id, if_voice, db):
         ESM_type = None
         nickname = "熟悉的人"
         custom_logger.info(f"User id is guest: {user_id} and character_id is {character_id}")
+    
     prompt, model_name = get_prompt_by_character_id(character_id, user_id, nickname, ESM_type)
     return prompt, conversation_history, user_history_exists, model_name
 

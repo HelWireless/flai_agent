@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 import yaml
 import urllib
-from src.custom_logger import custom_logger  # 导入自定义logger
+from ..custom_logger import custom_logger  # 导入自定义logger
 
 
 class DialogueQuery:

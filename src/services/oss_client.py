@@ -2,11 +2,11 @@ from pathlib import Path
 import os
 import yaml
 import oss2
-from src.custom_logger import *
+from ..custom_logger import custom_logger
 
 def get_oss_bucket():
-
-    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+    # 配置文件在 src/ 目录
+    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.yaml")
     with open(config_path, "r", encoding="utf-8") as config_file:
         config = yaml.safe_load(config_file)
     

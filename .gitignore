@@ -171,5 +171,8 @@ src/*.yaml
 
 # Project specific - Runtime logs
 nohup.out
-logs/*.log
-logs/*.out
+logs/*
+!logs/.gitkeep
+
+# Config files (keep templates only)
+config/config.yaml

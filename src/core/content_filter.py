@@ -10,10 +10,10 @@ class ContentFilter:
         self.keyword_pattern = re.compile("|".join(map(re.escape, self.keywords)), re.IGNORECASE)
 
     def load_sensitive_words(self) -> List[str]:
-        # 获取当前脚本的目录
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        # 构建config.yaml的绝对路径
-        config_path = os.path.join(current_dir, "sensitive_word_data_v2.txt")
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # 构建敏感词文件路径
+        config_path = os.path.join(project_root, "data", "sensitive_words.txt")
 
         with open(config_path, 'r', encoding='utf-8') as file:
             return [line.strip() for line in file if line.strip()]
