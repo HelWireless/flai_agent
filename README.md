@@ -1,6 +1,3 @@
-cargo install uv
-cargo install uv
-cargo install uv
 # Flai Agent
 
 AI对话代理服务，基于FastAPI构建，支持多角色对话、情绪分析、语音合成等功能。
@@ -21,7 +18,7 @@ AI对话代理服务，基于FastAPI构建，支持多角色对话、情绪分�
 
 ### 1. 环境要求
 
-- Python 3.8+
+- Python 3.11+
 - MySQL 数据库
 - 阿里云OSS（用于语音文件存储）
 - Qdrant 向量数据库（可选，用于长期记忆功能）
@@ -31,6 +28,12 @@ AI对话代理服务，基于FastAPI构建，支持多角色对话、情绪分�
 **安装 UV**：
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Windows 用户可以使用以下命令**：
+```powershell
+# 在 PowerShell 中安装
+winget install astral-sh.uv
 ```
 
 **创建虚拟环境并安装依赖**：
@@ -89,7 +92,7 @@ flai_agent/
 │   │   ├── emotions.json     # 情绪配置
 │   │   ├── responses.json    # 回复配置
 │   │   └── constants.json    # 常量配置
-│   └── config.yaml.example   # 配置模板
+│   └── llm_params.json       # LLM参数配置
 ├── data/                      # 数据文件
 │   └── sensitive_words.txt   # 敏感词列表
 ├── logs/                      # 运行时日志（按周划分，按月归档）
@@ -102,19 +105,32 @@ flai_agent/
 │   └── log_extractor.sh
 ├── src/                       # 源代码
 │   ├── api/                  # API层
+│   │   ├── prompts/
+│   │   │   └── generate_prompts.py
 │   │   └── routes.py         # API路由定义
 │   ├── core/                 # 核心业务逻辑
 │   │   ├── config_loader.py  # 配置加载器（支持热更新）
 │   │   ├── content_filter.py # 内容过滤
 │   │   └── dialogue_query.py # 对话查询
-│   ├── services/             # 第三方服务
-│   │   ├── oss_client.py     # OSS客户端
-│   │   └── speech_api.py     # 语音API
+│   ├── models/               # 数据模型
+│   │   └── chat_memory.py    # 聊天记忆模型
+│   ├── services/             # 服务层
+│   │   ├── chat_service.py        # 聊天服务
+│   │   ├── emotion_service.py     # 情绪服务
+│   │   ├── fortune_service.py     # 占卜服务
+│   │   ├── llm_service.py         # LLM服务
+│   │   ├── memory_classifier.py   # 记忆分类器
+│   │   ├── memory_service.py      # 记忆服务
+│   │   ├── oss_client.py          # OSS客户端
+│   │   ├── persistent_memory_service.py  # 持久化记忆服务
+│   │   ├── speech_api.py          # 语音API
+│   │   ├── vector_store.py        # 向量存储
+│   │   └── voice_service.py       # 语音服务
+│   ├── custom_logger.py      # 自定义日志配置
 │   ├── database.py           # 数据库配置
-│   ├── schemas.py            # 数据模型
-│   ├── utils.py              # 工具函数
-│   ├── custom_logger.py      # 日志配置
-│   └── main.py               # 应用入口
+│   ├── main.py               # 应用入口
+│   ├── schemas.py            # 数据模型定义
+│   └── utils.py              # 工具函数
 ├── pyproject.toml            # 项目配置
 ├── requirements.txt          # 依赖列表
 └── .gitignore
@@ -143,7 +159,7 @@ flai_agent/
 
 1. **对话历史**（MySQL）- 最近7轮对话，保持连贯性
 2. **持久化记忆**（MySQL chat_memory表）- LLM自动提取用户特征
-   - 短期记忆：最近事件（"我昨天吃了火锅"）→ 10轮批量更新
+   - 短期记忆：最近事件（"我昨天吃了火锅"）→ 每10轮对话批量更新
    - 长期记忆：用户偏好（"我喜欢吃辣的"）→ 立即更新
 3. **额外记忆**（Qdrant，可选）- 语义相似的历史对话检索
 
@@ -164,6 +180,7 @@ vector_db:
 
 配置文件支持热更新，修改以下文件后会自动生效，无需重启服务：
 - `config/prompts/*.json` - 所有 Prompt 配置
+- `config/llm_params.json` - LLM 参数配置
 - `data/sensitive_words.txt` - 敏感词列表
 
 ### 添加新角色
