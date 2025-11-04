@@ -22,9 +22,28 @@ AI对话代理服务，基于FastAPI构建，支持多角色对话、情绪分�
 
 ### 2. 安装依赖
 
+**推荐使用 UV（极快！⚡）**：
+
+```bash
+# 安装 uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 创建虚拟环境并安装依赖
+uv venv
+source .venv/bin/activate  # Linux/macOS
+uv pip install -r requirements.txt
+
+# 或者使用 pyproject.toml
+uv pip install -e .
+```
+
+**使用传统 pip**：
+
 ```bash
 pip install -r requirements.txt
 ```
+
+> 💡 **提示**：使用 uv 可以让依赖安装速度提升 10-100 倍！详见 [UV_SETUP.md](UV_SETUP.md)
 
 ### 3. 配置文件
 
@@ -40,6 +59,19 @@ cp config/config.yaml.example src/config.yaml
 - OSS配置
 
 ### 4. 运行服务
+
+**使用 UV（推荐）**：
+
+```bash
+# 开发模式（自动使用虚拟环境）
+uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+
+# 或激活环境后运行
+source .venv/bin/activate
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**传统方式**：
 
 ```bash
 # 开发模式

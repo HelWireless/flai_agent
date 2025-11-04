@@ -2,6 +2,12 @@
 
 ## 第一次使用新版本？跟着这个清单走！
 
+### ✅ 步骤 0：安装 UV（推荐，极快！⚡）
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 ### ✅ 步骤 1：检查配置文件
 
 ```bash
@@ -13,12 +19,30 @@ cp config/config.yaml.example src/config.yaml
 
 ### ✅ 步骤 2：安装依赖
 
+**使用 UV（推荐，快 10-100 倍！）**：
+```bash
+# 一条命令创建环境并安装依赖
+uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
+```
+
+**使用 pip**：
 ```bash
 pip install -r requirements.txt
 ```
 
 ### ✅ 步骤 3：启动服务
 
+**使用 UV**：
+```bash
+# 方式1：uv 自动管理环境
+uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+
+# 方式2：激活环境后运行
+source .venv/bin/activate
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**传统方式**：
 ```bash
 # 开发模式（带热重载）
 python3 -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
