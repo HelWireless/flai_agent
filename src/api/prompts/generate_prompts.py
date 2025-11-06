@@ -113,7 +113,7 @@ character_sys_info = {
 
                 }
     ,
-    # 占卜师翻译成英文是
+    #
     "fortune_teller_detail": {
         "sys_prompt": """
                         /nothinking
@@ -194,6 +194,8 @@ character_sys_info = {
                         你会首先按照user的输入给出结果的总览（以下为举例）：
                         <input>
                         今天的幸运数字：188
+                        转运的关键动作：整理桌面
+                        强运的日常小食：烤红薯
                         </input>
                         
                         <total>
