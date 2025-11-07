@@ -549,6 +549,34 @@ async def generate_character_opener(request: GenerateOpenerRequest, db: Session 
 async def draw_card(request: DrawCardRequest):
     custom_logger.info(f"Received draw card request for user: {request.userId}")
 
+    # 预定义的动作和小食列表
+    ACTION_LIST = [
+        "深呼吸三次", "腹式呼吸", "呼气六秒", "大口吸气", "举起双手",
+        "推眼镜", "擦镜片", "整理衣领", "转笔", "摸头发", "看手表", "伸懒腰",
+        "清嗓子", "捏眉心", "调整坐姿", "慢走十分钟", "深蹲十次", "开合跳十个",
+        "眼保健操", "倒立10s", "原地踏步1分钟", "脚踝舒展一下", "手腕转动一下",
+        "踮起脚尖", "膝盖弯曲", "擦黑板", "翻开书", "敲5下键盘", "点击鼠标",
+        "抬头望望天", "喝口水", "整理课桌", "整理书架", "整理雨伞", "整理手机"
+    ]
+
+    REFRESHMENT_LIST = [
+        "烤鹰嘴豆", "海苔苏打饼", "香辣锅巴", "黄瓜酸奶杯", "芝士脆片", "冷冻酸奶蓝莓",
+        "香蕉冰淇淋", "肉桂苹果片", "椰枣夹杏仁", "蜜糖苏打饼", "火腿乳酪卷",
+        "花生酱香蕉吐司", "牛油果蘸酱油", "毛豆拼盘", "西瓜菲达沙拉杯", "微波苹果片",
+        "酸奶蘸一切", "芒果辣椒粉", "自制爆米花", "棉花糖夹心苏打饼", "苹果", "香蕉",
+        "橙子", "蓝莓", "草莓", "葡萄", "西瓜", "菠萝", "芒果", "猕猴桃", "桃子",
+        "李子", "樱桃", "梨", "石榴", "柚子", "木瓜", "牛油果", "火龙果", "山竹",
+        "巧克力蛋糕", "冰淇淋", "布丁", "马卡龙", "提拉米苏", "芝士蛋糕", "苹果派",
+        "布朗尼", "曲奇饼干", "泡芙", "慕斯", "甜甜圈", "华夫饼", "松饼", "奶昔",
+        "糖果", "果冻", "磅蛋糕", "法式吐司", "焦糖布丁", "抹茶拿铁", "水果塔",
+        "可丽饼", "意式奶冻", "糯米糍", "豆沙包", "鸡蛋布丁", "巧克力慕斯", "水果沙拉",
+        "椰汁西米露", "双皮奶", "姜撞奶", "芝麻糊", "杏仁豆腐", "酒酿圆子", "龟苓膏",
+        "绿豆汤", "红豆汤", "桂花糕", "凤梨酥", "黑糖珍珠奶茶"
+    ]
+    # 随机选择动作和小食
+    random_action = random.choice(ACTION_LIST)
+    random_refreshment = random.choice(REFRESHMENT_LIST)
+
     def get_random_color(color_map_dict):
         items = list(color_map_dict.items())
         color_name, hex_code = random.choice(items)
@@ -606,11 +634,14 @@ async def draw_card(request: DrawCardRequest):
                              "colorBrief": "",
                              "luckNum": luckNum,
                              "number": random_num,
-                             "brief": brief
+                             "brief": brief,
+
                              }
         # 构建用户输入
         user_content = f"""
             今天的幸运数字：{random_num}
+            转运的关键动作：{random_action}
+            强运的日常小食：{random_refreshment}
         """
 
     if not system_prompt:
