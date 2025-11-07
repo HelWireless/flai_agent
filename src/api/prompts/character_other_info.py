@@ -321,7 +321,7 @@ error_responses = [
 ]
 
 # 关键词过滤
-key_words = ["关键词1", "关键词2", "关键词3"]
+key_words = ["抽烟", "吸烟", "未成年"]
 
 # 颜色映射字典
 color_map_dict = {
