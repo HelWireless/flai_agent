@@ -68,7 +68,10 @@ class DrawCardRequest(BaseModel):
     totalSummary: Optional[Dict[str, Any]] = None  # 修改为字典类型
     
     model_config = ConfigDict(
-        populate_by_name=True
+        populate_by_name=True,
+        # 添加额外配置确保在不同部署环境下的一致性
+        from_attributes=True,
+        extra="forbid"
     )
 
 
