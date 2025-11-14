@@ -32,7 +32,7 @@ class FortuneService:
         # 加载常量配置
         constants = config_loader.get_constants()
         self.color_map_dict = constants.get('color_map', {})
-        self.color_descriptions_dict = constants.get('color_descriptions', {})
+        self.color_descriptions_dict = constants.get('color_descriptions_dict', {})
         # 加载动作和小食列表
         self.action_list = constants.get('action_list', [])
         self.refreshment_list = constants.get('refreshment_list', [])
