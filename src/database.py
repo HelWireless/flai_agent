@@ -7,7 +7,7 @@ import urllib
 # 获取当前脚本的目录
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # 构建config.yaml的绝对路径
-config_path = os.path.join(current_dir, "config.yaml")
+config_path = os.path.join(os.path.dirname(current_dir), "config", "config.yaml")
 
 try:
     with open(config_path, "r", encoding="utf-8") as config_file:

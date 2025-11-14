@@ -1,0 +1,56 @@
+{
+  "model_pools": {
+    "chat": [
+      "autodl",
+      "qwen3_32b_custom",
+      "qwen_max",
+      "deepseek"
+    ],
+    "emotion": [
+      "qwen_plus",
+      "qwen_max"
+    ],
+    "opener": [
+      "qwen_max"
+    ],
+    "fortune": [
+      "qwen_plus"
+    ]
+  },
+  "parameters": {
+    "chat": {
+      "temperature": 0.9,
+      "top_p": 0.85,
+      "max_tokens": 2048,
+      "enable_thinking": false,
+      "presence_penalty": 1.0,
+      "response_format": "json_object"
+    },
+    "emotion_analysis": {
+      "temperature": 0.7,
+      "top_p": 0.8,
+      "max_tokens": 512,
+      "response_format": "json_object"
+    },
+    "opener_generation": {
+      "temperature": 0.65,
+      "top_p": 0.9,
+      "max_tokens": 2048,
+      "response_format": "json_object"
+    },
+    "fortune_telling": {
+      "temperature": 0.65,
+      "top_p": 0.8,
+      "max_tokens": 4096,
+      "enable_thinking": false,
+      "presence_penalty": 1.0,
+      "response_format": "json_object"
+    }
+  },
+  "retry": {
+    "max_retries": 3,
+    "backoff_factor": 0.3,
+    "status_forcelist": [500, 502, 504]
+  }
+}
+

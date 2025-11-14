@@ -2,7 +2,7 @@ from typing import List
 import re
 import random
 from collections import Counter
-from src.oss_client import get_oss_bucket
+from src.services.oss_client import get_oss_bucket
 import uuid
 import time
 from src.custom_logger import custom_logger  # 导入自定义logger
@@ -201,7 +201,7 @@ def upload_to_oss(voice_output_path, user_id):
     try:
         upload_result = bucket.put_object_from_file(file_key, voice_output_path)
         if upload_result.status == 200:
-            voice_response_url = f"https://pillow-agent.oss-cn-shanghai.aliyuncs.com/{file_key}"
+            voice_response_url = f"https://pillow-chat.oss-cn-shanghai.aliyuncs.com/{file_key}"
             custom_logger.info(f"Voice file uploaded successfully: {voice_response_url}")
             return file_key
     except Exception as e:

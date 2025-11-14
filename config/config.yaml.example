@@ -1,0 +1,86 @@
+# 配置文件
+# 从 config.yaml.example 复制而来
+
+# 数据库配置
+database:
+  host: "81.68.235.167"
+  username: "pillow"
+  password: "your password"
+  database_name: "pillow_customer_test"
+
+# 日志配置
+logger:
+  path: "logs/app.log"
+  level: "INFO"
+  rotation: "500 MB"
+  retention: "60 days"
+  format: "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+
+# 模型API配置示例
+autodl:
+  base_url: "https://u231521-90d5-6daa9074.westc.gpuhub.com:8443/v1/chat/completions"
+  model: "qwen"
+  api_key: ""
+
+qwen_turbo:
+  base_url: "https://u231521-90d5-6daa9074.westc.gpuhub.com:8443/v1/chat/completions"
+  model: "qwen-turbo"
+  api_key: "your api key"
+
+qwen_max:
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+  model: "qwen-max-latest"
+  api_key: "your api key"
+
+qwen3_32b_custom:
+    base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
+    model: "qwen3-32b-ft-202507311927-b168"
+    api_key: 'your api key'
+
+qwen_plus:
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+  model: "qwen-plus-latest"
+  api_key: "your api key"
+
+# 其他模型配置...
+deepseek:
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+  model: "deepseek-v3.2-exp"
+  api_key: "your api key"
+
+qwen3_coder_plus:
+  base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
+  model: "qwen3-235b-a22b"
+  api_key: 'your api key'
+# 持久化记忆配置（MySQL chat_memory表 - LLM提取的短期/长期记忆）
+persistent_memory:
+  enabled: true  # 是否启用持久化记忆功能
+  short_term_update_interval: 10  # 每N轮对话更新一次短期记忆
+  enabled_characters:  # 启用记忆的角色列表（空列表=全部启用）
+     - "default"  # 取消注释以仅对指定角色启用
+    # - "c1s1c1_0001"
+
+# 向量数据库配置（额外记忆 - 语义检索，可选）
+vector_db:
+  enabled: true  # 是否启用向量数据库
+  url: "http://47.103.39.33:6333"
+  api_key: ""
+  collection_name: "pillow_test"
+  embedding_api_key: ""
+  embedding_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
+
+# 语音合成API配置
+speech_api:
+  appid: "6876644863"
+  access_token: "SmjmNcd4sPVl5FqLi7U6Gvs8WtF0yMlF"
+  secret_key: "your api key"
+  cluster: "volcano_mega"
+  voice_type: "S_LDfNJ5E11"
+  host: "openspeech.bytedance.com"
+
+# OSS配置
+oss_key:
+  access_key_id: "LTAI5tQLC1ShqDBV6VKuLhrZ"
+  access_key_secret: "your api key"
+  endpoint: "oss-cn-shanghai.aliyuncs.com"
+  bucket_name: "pillow-chat"

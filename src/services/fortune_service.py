@@ -1,0 +1,231 @@
+"""
+占卜服务 - 处理占卜抽卡相关的业务逻辑
+"""
+import json
+import random
+from typing import Dict, Optional
+
+from fastapi import HTTPException
+
+from ..schemas import DrawCardRequest, DrawCardResponse
+from ..custom_logger import custom_logger
+from ..core.config_loader import get_config_loader
+from .llm_service import LLMService
+
+
+class FortuneService:
+    """占卜业务服务"""
+    
+    def __init__(self, llm_service: LLMService, config: Dict, config_loader):
+        """
+        初始化占卜服务
+        
+        Args:
+            llm_service: LLM服务
+            config: 应用配置
+            config_loader: 配置加载器
+        """
+        self.llm = llm_service
+        self.config = config
+        self.config_loader = config_loader
+        
+        # 加载常量配置
+        constants = config_loader.get_constants()
+        self.color_map_dict = constants.get('color_map', {})
+        self.color_descriptions_dict = constants.get('color_descriptions', {})
+        # 加载动作和小食列表
+        self.action_list = constants.get('action_list', [])
+        self.refreshment_list = constants.get('refreshment_list', [])
+        
+        # 加载角色配置
+        characters = config_loader.get_characters()
+        self.character_sys_info = characters.get('characters', {})
+    
+    def _get_random_color(self) -> tuple:
+        """
+        获取随机颜色
+        
+        Returns:
+            (颜色名称, 颜色代码)
+        """
+        items = list(self.color_map_dict.items())
+        color_name, hex_code = random.choice(items)
+        return color_name, hex_code
+    
+    async def generate_card(self, request: DrawCardRequest) -> DrawCardResponse:
+        """
+        生成占卜卡片
+        
+        Args:
+            request: 抽卡请求
+        
+        Returns:
+            卡片响应
+        """
+        custom_logger.info(f"Generating card for user: {request.userId}")
+        
+        # 区分是详细模式还是摘要模式
+        if request.totalSummary:
+            return await self._generate_detail_card(request.totalSummary)
+        else:
+            return await self._generate_summary_card()
+    
+    async def _generate_detail_card(self, total_summary: Dict) -> DrawCardResponse:
+        """
+        生成详细占卜卡片（基于已有摘要）
+        
+        Args:
+            total_summary: 摘要信息
+        
+        Returns:
+            详细卡片
+        """
+        if not total_summary:
+            raise HTTPException(status_code=500, detail="字段缺失")
+        
+        # 获取占卜师提示词
+        system_prompt = self.character_sys_info.get("fortune_teller_detail", {}).get("sys_prompt", "")
+        if not system_prompt:
+            raise HTTPException(status_code=404, detail="占卜师配置不存在")
+        
+        # 获取颜色描述
+        color = total_summary.get("color")
+        random_color_brief_list = self.color_descriptions_dict.get(color, [""])
+        random_color_brief = random.choice(random_color_brief_list) if random_color_brief_list else ""
+        
+        # 构建用户输入
+        user_content = f"""
+{{  
+    "luckNum": {total_summary.get("luckNum")},
+    "luck": "{total_summary.get("luck")}",
+    "luckBrief": "",
+    "number": {total_summary.get("number")},
+    "numberBrief": "",
+    "action": "{total_summary.get("action")}",
+    "actionBrief": "",
+    "refreshment": "{total_summary.get("refreshment")}",
+    "refreshmentBrief": ""
+}}
+"""
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ]
+        
+        try:
+            # 调用 LLM
+            result = await self.llm.chat_completion(
+                messages=messages,
+                model_name="qwen_plus",
+                temperature=0.65,
+                top_p=0.8,
+                max_tokens=4096,
+                response_format="json_object",
+                parse_json=True,
+                retry_on_error=False
+            )
+            
+            # 补充颜色信息
+            result.update({
+                "color": color,
+                "hex": total_summary.get("hex"),
+                "colorBrief": random_color_brief,
+                "brief": total_summary.get("brief")
+            })
+            
+            # 补充缺失字段
+            result = {key: result.get(key, "") for key in DrawCardResponse.__fields__.keys()}
+            result.update({"brief": result["brief"].replace("未知之地二", result["luck"])})
+            
+            return DrawCardResponse(**result)
+            
+        except Exception as e:
+            custom_logger.error(f"Error generating detail card: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
+    
+    async def _generate_summary_card(self) -> DrawCardResponse:
+        """
+        生成摘要占卜卡片
+        
+        Returns:
+            摘要卡片
+        """
+        # 随机选择动作和小食
+        random_action = random.choice(self.action_list)
+        random_refreshment = random.choice(self.refreshment_list)
+        
+        # 获取占卜师提示词
+        fortune_config = self.character_sys_info.get("fortune_teller_summary", {})
+        system_prompt = fortune_config.get("sys_prompt", "")
+        
+        if not system_prompt:
+            raise HTTPException(status_code=404, detail="占卜师配置不存在")
+        
+        # 生成随机参数
+        unknown_place_one_list = fortune_config.get("unknown_place_one_list", [""])
+        unknown_place_one = random.choice(unknown_place_one_list) if unknown_place_one_list else ""
+        
+        brief_list = fortune_config.get("brief", [""])
+        brief = random.choice(brief_list) if brief_list else ""
+        brief = brief.replace("未知之地一", unknown_place_one)
+        
+        # 生成随机数据
+        raise_num = round(random.uniform(12, 30), 1)
+        random_num = random.randint(1, 99)
+        brief = brief.replace("神秘数字", str(raise_num))
+        
+        # 获取随机颜色
+        color_name, hex_code = self._get_random_color()
+        
+        # 随机幸运值（0-5，概率分布不均）
+        luckNum = random.choices(
+            [0.0, 1.0, 2.0, 3.0, 4.0, 5.0], 
+            [0.06, 0.30, 0.25, 0.20, 0.15, 0.04]
+        )[0]
+        
+        # 构建用户输入
+        user_content = f"""
+            今天的幸运数字：{random_num}
+            转运的关键动作：{random_action}
+            强运的日常小食：{random_refreshment}
+        """
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ]
+        
+        try:
+            # 调用 LLM
+            result = await self.llm.chat_completion(
+                messages=messages,
+                model_name="qwen_plus",
+                temperature=0.65,
+                top_p=0.8,
+                max_tokens=4096,
+                response_format="json_object",
+                parse_json=True,
+                retry_on_error=False
+            )
+            
+            # 补充基础信息
+            result.update({
+                "color": color_name,
+                "hex": hex_code,
+                "colorBrief": "",
+                "luckNum": luckNum,
+                "number": random_num,
+                "brief": brief,
+                "action": random_action,
+                "refreshment": random_refreshment
+            })
+            
+            # 补充缺失字段
+            result = {key: result.get(key, "") for key in DrawCardResponse.__fields__.keys()}
+            
+            return DrawCardResponse(**result)
+            
+        except Exception as e:
+            custom_logger.error(f"Error generating summary card: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")

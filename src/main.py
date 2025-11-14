@@ -1,11 +1,50 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import uvicorn
 from src.api.routes import router
-from src.custom_logger import *
+from src.custom_logger import custom_logger
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动事件
+    custom_logger.info("=" * 60)
+    custom_logger.info("🚀 Flai Agent 正在启动...")
+    custom_logger.info("=" * 60)
+    
+    # 预加载配置
+    from src.core.config_loader import get_config_loader
+    config_loader = get_config_loader()
+    
+    try:
+        config_loader.get_characters()
+        config_loader.get_character_openers()
+        config_loader.get_emotions()
+        config_loader.get_responses()
+        config_loader.get_constants()
+        custom_logger.info("✅ 配置文件加载完成")
+    except Exception as e:
+        custom_logger.error(f"❌ 配置文件加载失败: {e}")
+        raise
+    
+    custom_logger.info("=" * 60)
+    custom_logger.info("✅ 应用启动完成")
+    custom_logger.info(f"📚 API 文档: http://localhost:8000/docs")
+    custom_logger.info("=" * 60)
+    
+    yield  # 应用运行
+    
+    # 关闭事件
+    custom_logger.info("=" * 60)
+    custom_logger.info("👋 Flai Agent 正在关闭...")
+    custom_logger.info("=" * 60)
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Pillow Talk", debug=False)
+    app = FastAPI(title="Pillow Talk", debug=False, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -17,32 +56,36 @@ def create_app() -> FastAPI:
 
 app = create_app()
 
-
-async def set_body(request: Request):
-    receive_ = await request._receive()
-    async def receive():
-        return receive_
-    request._receive = receive
-
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: Exception):
-    await set_body(request)
-    request_text = (await request.body()).decode("utf-8")[:100]  # 安全读取 body 并限制长度
-    custom_logger.error(f'请求发生异常，记录request的请求体如下:{request_text},exc:{exc}')
+async def http_exception_handler(request: Request, exc: HTTPException):
+    custom_logger.error(f'Request exception: {exc.status_code}: {exc.detail}')
     return JSONResponse(
-        status_code=exc.status_code if isinstance(exc, HTTPException) else 500,
+        status_code=exc.status_code,
         content={"detail": exc.detail}
     )
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    request_text = await request.body()
-    custom_logger.error(f"未处理的异常: {exc}, 请求体: {request_text.decode('utf-8')[:100]}")
+    try:
+        # 尝试读取请求体，但如果已经读取过会抛出异常
+        request_text = await request.body()
+    except RuntimeError:
+        # 如果无法读取请求体，设置为空字符串
+        request_text = b""
+    except Exception:
+        # 处理其他可能的异常
+        request_text = b""
+
+    # 继续处理异常日志记录等
+    custom_logger.error(f"Unhandled exception: {str(exc)}\nRequest: {request_text.decode(errors='ignore')}")
+
+    # 返回适当的响应
     return JSONResponse(
         status_code=500,
-        content={"detail": "服务器内部错误，请稍后再试。"},
+        content={"detail": "Internal server error"}
     )
+
 
 app.include_router(router)
 
