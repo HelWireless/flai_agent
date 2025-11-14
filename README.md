@@ -26,14 +26,26 @@ AI对话代理服务，基于FastAPI构建，支持多角色对话、情绪分�
 ### 2. 使用 UV 构建环境
 
 **安装 UV**：
+
+**Linux/macOS 用户**：
 ```bash
+# 使用官方安装脚本（推荐）
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 或使用 pipx 安装
+pipx install uv
+
+# 或使用 pip 安装
+pip install uv
 ```
 
 **Windows 用户可以使用以下命令**：
 ```powershell
 # 在 PowerShell 中安装
 winget install astral-sh.uv
+
+# 或使用官方安装脚本
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 **创建虚拟环境并安装依赖**：
@@ -43,7 +55,7 @@ uv venv
 
 # 激活环境
 source .venv/bin/activate  # Linux/macOS
-# 或 .venv\Scripts\activate  # Windows
+# 或 .venv\Scripts\Activate.ps1  # Windows
 
 # 安装依赖
 uv pip install -r requirements.txt
@@ -53,10 +65,10 @@ uv pip install -r requirements.txt
 
 ```bash
 # 复制配置模板
-cp config/config.yaml.example src/config.yaml
+cp config/config.yaml.example config/config.yaml
 
 # 编辑配置文件，填入实际的数据库、API密钥等信息
-vim src/config.yaml
+vim config/config.yaml
 ```
 
 ### 4. 启动项目
@@ -64,17 +76,25 @@ vim src/config.yaml
 **开发模式（推荐）**：
 ```bash
 # 方式1：UV 自动管理环境（无需手动激活）
-uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+uv run python src/main.py
 
 # 方式2：激活环境后运行
-source .venv/bin/activate
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+source .venv/bin/activate  # Linux/macOS
+# 或 .venv\Scripts\Activate.ps1  # Windows
+python src/main.py
 ```
 
-**生产模式（后台运行）**：
+**生产模式（高级配置）**：
 ```bash
-source .venv/bin/activate
-nohup uvicorn src.main:app --host 0.0.0.0 --port 8000 > logs/app.log 2>&1 &
+# 使用 uvicorn 高级配置运行（多进程、代理头等）
+source .venv/bin/activate  # Linux/macOS
+# 或 .venv\Scripts\Activate.ps1  # Windows
+
+# 使用高级配置运行
+uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 3 --proxy-headers --forwarded-allow-ips="*"
+
+# 后台运行
+nohup uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 3 --proxy-headers --forwarded-allow-ips="*" > logs/app.log 2>&1 &
 ```
 
 **访问服务**：
@@ -164,7 +184,7 @@ flai_agent/
 3. **额外记忆**（Qdrant，可选）- 语义相似的历史对话检索
 
 **配置示例**：
-```yaml
+```
 # 持久化记忆（默认启用）
 persistent_memory:
   enabled: true
