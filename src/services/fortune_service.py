@@ -33,6 +33,9 @@ class FortuneService:
         constants = config_loader.get_constants()
         self.color_map_dict = constants.get('color_map', {})
         self.color_descriptions_dict = constants.get('color_descriptions', {})
+        # 加载动作和小食列表
+        self.action_list = constants.get('action_list', [])
+        self.refreshment_list = constants.get('refreshment_list', [])
         
         # 加载角色配置
         characters = config_loader.get_characters()
@@ -148,6 +151,10 @@ class FortuneService:
         Returns:
             摘要卡片
         """
+        # 随机选择动作和小食
+        random_action = random.choice(self.action_list)
+        random_refreshment = random.choice(self.refreshment_list)
+        
         # 获取占卜师提示词
         fortune_config = self.character_sys_info.get("fortune_teller_summary", {})
         system_prompt = fortune_config.get("sys_prompt", "")
@@ -178,7 +185,11 @@ class FortuneService:
         )[0]
         
         # 构建用户输入
-        user_content = f"今天的幸运数字：{random_num}"
+        user_content = f"""
+            今天的幸运数字：{random_num}
+            转运的关键动作：{random_action}
+            强运的日常小食：{random_refreshment}
+        """
         
         messages = [
             {"role": "system", "content": system_prompt},
@@ -205,7 +216,9 @@ class FortuneService:
                 "colorBrief": "",
                 "luckNum": luckNum,
                 "number": random_num,
-                "brief": brief
+                "brief": brief,
+                "action": random_action,
+                "refreshment": random_refreshment
             })
             
             # 补充缺失字段
@@ -216,4 +229,3 @@ class FortuneService:
         except Exception as e:
             custom_logger.error(f"Error generating summary card: {str(e)}")
             raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
-
