@@ -64,8 +64,12 @@ class GenerateOpenerResponse(BaseModel):
 
 # 在 src/schemas.py 中添加或修改 DrawCardRequest
 class DrawCardRequest(BaseModel):
-    userId: str
+    user_id: str = Field(alias="userId")
     totalSummary: Optional[Dict[str, Any]] = None  # 修改为字典类型
+    
+    model_config = ConfigDict(
+        populate_by_name=True
+    )
 
 
 class DrawCardResponse(BaseModel):
