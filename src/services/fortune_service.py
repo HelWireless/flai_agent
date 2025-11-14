@@ -102,19 +102,15 @@ class FortuneService:
         
         custom_logger.info(f"[draw-card:detail] Selected color brief: {random_color_brief}")
         
-        # 构建用户输入
+        # 构建更简化的用户输入 (只包含需要AI生成的部分)
         user_content = f"""
-{{  
-    "luckNum": {total_summary.get("luckNum")},
-    "luck": "{total_summary.get("luck")}",
-    "luckBrief": "",
-    "number": {total_summary.get("number")},
-    "numberBrief": "",
-    "action": "{total_summary.get("action")}",
-    "actionBrief": "",
-    "refreshment": "{total_summary.get("refreshment")}",
-    "refreshmentBrief": ""
-}}
+根据以下信息生成详细占卜解读：
+运势: {total_summary.get("luck")}
+幸运数字: {total_summary.get("number")}
+转运动作: {total_summary.get("action")}
+幸运小食: {total_summary.get("refreshment")}
+
+请用JSON格式返回，只包含luckBrief, numberBrief, actionBrief, refreshmentBrief四个字段。
 """
         
         messages = [
@@ -123,31 +119,35 @@ class FortuneService:
         ]
         
         try:
-            # 调用 LLM
-            custom_logger.info("[draw-card:detail] LLM request to qwen_plus: 2 messages")
+            # 调用 LLM，使用更快速的模型
+            custom_logger.info("[draw-card:detail] LLM request to qwen_turbo: 2 messages")
             result = await self.llm.chat_completion(
                 messages=messages,
-                model_name="qwen_plus",
-                temperature=0.65,
-                top_p=0.8,
-                max_tokens=4096,
+                model_name="qwen_turbo",
+                temperature=0.7,
+                top_p=0.9,
+                max_tokens=2048,
                 response_format="json_object",
                 parse_json=True,
                 retry_on_error=False
             )
             custom_logger.info("[draw-card:detail] LLM response received from qwen_plus")
             
-            # 补充颜色信息
+            # 补充可以直接获取的信息
             result.update({
                 "color": color,
                 "hex": total_summary.get("hex"),
                 "colorBrief": random_color_brief,
-                "brief": total_summary.get("brief")
+                "brief": total_summary.get("brief", "").replace("未知之地二", total_summary.get("luck", "")),
+                "luckNum": total_summary.get("luckNum"),
+                "luck": total_summary.get("luck"),
+                "number": total_summary.get("number"),
+                "action": total_summary.get("action"),
+                "refreshment": total_summary.get("refreshment")
             })
             
             # 补充缺失字段
             result = {key: result.get(key, "") for key in DrawCardResponse.__fields__.keys()}
-            result.update({"brief": result["brief"].replace("未知之地二", result["luck"])})
             
             custom_logger.info("[draw-card:detail] Card generation completed successfully")
             return DrawCardResponse(**result)
