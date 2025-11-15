@@ -4,6 +4,7 @@
 from typing import List, Dict, Optional
 import requests
 import json
+import urllib3
 from ..custom_logger import custom_logger, debug_log
 
 
@@ -24,9 +25,14 @@ class VectorStore:
                 from qdrant_client import QdrantClient
                 from qdrant_client.http import models
                 
+                # 禁用SSL警告，因为我们可能使用自签名证书
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                
                 # 检查是否使用HTTPS连接
                 qdrant_url = config.get('url')
                 is_https = qdrant_url.startswith('https://') if qdrant_url else False
+                
+                custom_logger.info(f"Initializing vector store - URL: {qdrant_url}, HTTPS: {is_https}")
                 
                 # 根据URL类型决定是否需要SSL配置
                 if is_https:
@@ -34,14 +40,15 @@ class VectorStore:
                         url=qdrant_url,
                         api_key=config.get('api_key'),
                         https=True,
-                        verify=False  # 如果证书有问题，可以选择忽略验证
+                        verify=False  # 忽略SSL证书验证
                     )
                 else:
-                    # HTTP连接不需要SSL
+                    # HTTP连接明确指定不需要HTTPS
                     self.client = QdrantClient(
                         url=qdrant_url,
                         api_key=config.get('api_key'),
-                        https=False
+                        https=False,
+                        prefer_grpc=False  # 使用HTTP而不是gRPC
                     )
                     
                 self.collection_name = config.get('collection_name', 'conversations')
@@ -49,10 +56,18 @@ class VectorStore:
                 self.embedding_url = config.get('embedding_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings')
                 self.embedding_model = config.get('embedding_model', 'text-embedding-v4')  # 获取配置的嵌入模型
                 
+                # 测试连接
+                try:
+                    # 尝试获取集合信息来测试连接
+                    collections = self.client.get_collections()
+                    custom_logger.info(f"Vector store connection successful. Available collections: {[c.name for c in collections.collections]}")
+                except Exception as conn_err:
+                    custom_logger.warning(f"Vector store connection test failed: {conn_err}")
+                
                 custom_logger.info(f"Vector store enabled: {self.collection_name}")
                 debug_log(f"Vector store configuration - URL: {qdrant_url}, Collection: {self.collection_name}, Embedding Model: {self.embedding_model}")
-            except ImportError:
-                custom_logger.warning("qdrant-client not installed, vector store disabled")
+            except ImportError as e:
+                custom_logger.warning(f"qdrant-client not installed, vector store disabled: {e}")
                 self.enabled = False
             except Exception as e:
                 custom_logger.error(f"Vector store initialization failed: {e}")
