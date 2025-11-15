@@ -32,7 +32,7 @@ class FortuneService:
         # 加载常量配置
         constants = config_loader.get_constants()
         self.color_map_dict = constants.get('color_map', {})
-        self.color_descriptions_dict = constants.get('color_descriptions', {})
+        self.color_descriptions_dict = constants.get('color_descriptions_dict', {})
         # 加载动作和小食列表
         self.action_list = constants.get('action_list', [])
         self.refreshment_list = constants.get('refreshment_list', [])
@@ -62,14 +62,16 @@ class FortuneService:
         Returns:
             卡片响应
         """
-        custom_logger.info(f"Generating card for user: {request.userId}")
+        custom_logger.info(f"[draw-card] Generating card for user: {request.user_id}")
         
         # 区分是详细模式还是摘要模式
         if request.totalSummary:
+            custom_logger.info("[draw-card] Request type: Detailed card generation")
             return await self._generate_detail_card(request.totalSummary)
         else:
+            custom_logger.info("[draw-card] Request type: Summary card generation")
             return await self._generate_summary_card()
-    
+
     async def _generate_detail_card(self, total_summary: Dict) -> DrawCardResponse:
         """
         生成详细占卜卡片（基于已有摘要）
@@ -80,6 +82,8 @@ class FortuneService:
         Returns:
             详细卡片
         """
+        custom_logger.info("[draw-card:detail] Starting detailed card generation")
+        
         if not total_summary:
             raise HTTPException(status_code=500, detail="字段缺失")
         
@@ -90,22 +94,23 @@ class FortuneService:
         
         # 获取颜色描述
         color = total_summary.get("color")
+        custom_logger.info(f"[draw-card:detail] Color from summary: {color}")
         random_color_brief_list = self.color_descriptions_dict.get(color, [""])
+        custom_logger.info(f"[draw-card:detail] Color descriptions available: {len(self.color_descriptions_dict)}")
+        custom_logger.info(f"[draw-card:detail] Color brief options: {random_color_brief_list}")
         random_color_brief = random.choice(random_color_brief_list) if random_color_brief_list else ""
         
-        # 构建用户输入
+        custom_logger.info(f"[draw-card:detail] Selected color brief: {random_color_brief}")
+        
+        # 构建更简化的用户输入 (只包含需要AI生成的部分)
         user_content = f"""
-{{  
-    "luckNum": {total_summary.get("luckNum")},
-    "luck": "{total_summary.get("luck")}",
-    "luckBrief": "",
-    "number": {total_summary.get("number")},
-    "numberBrief": "",
-    "action": "{total_summary.get("action")}",
-    "actionBrief": "",
-    "refreshment": "{total_summary.get("refreshment")}",
-    "refreshmentBrief": ""
-}}
+根据以下信息生成详细占卜解读：
+运势: {total_summary.get("luck")}
+幸运数字: {total_summary.get("number")}
+转运动作: {total_summary.get("action")}
+幸运小食: {total_summary.get("refreshment")}
+
+请用JSON格式返回，只包含luckBrief, numberBrief, actionBrief, refreshmentBrief四个字段。
 """
         
         messages = [
@@ -114,36 +119,43 @@ class FortuneService:
         ]
         
         try:
-            # 调用 LLM
+            # 调用 LLM，使用更快速的模型
+            custom_logger.info("[draw-card:detail] LLM request to qwen_turbo: 2 messages")
             result = await self.llm.chat_completion(
                 messages=messages,
-                model_name="qwen_plus",
-                temperature=0.65,
-                top_p=0.8,
-                max_tokens=4096,
+                model_name="qwen_turbo",
+                temperature=0.7,
+                top_p=0.9,
+                max_tokens=2048,
                 response_format="json_object",
                 parse_json=True,
                 retry_on_error=False
             )
+            custom_logger.info("[draw-card:detail] LLM response received from qwen_plus")
             
-            # 补充颜色信息
+            # 补充可以直接获取的信息
             result.update({
                 "color": color,
                 "hex": total_summary.get("hex"),
                 "colorBrief": random_color_brief,
-                "brief": total_summary.get("brief")
+                "brief": total_summary.get("brief", "").replace("未知之地二", total_summary.get("luck", "")),
+                "luckNum": total_summary.get("luckNum"),
+                "luck": total_summary.get("luck"),
+                "number": total_summary.get("number"),
+                "action": total_summary.get("action"),
+                "refreshment": total_summary.get("refreshment")
             })
             
             # 补充缺失字段
             result = {key: result.get(key, "") for key in DrawCardResponse.__fields__.keys()}
-            result.update({"brief": result["brief"].replace("未知之地二", result["luck"])})
             
+            custom_logger.info("[draw-card:detail] Card generation completed successfully")
             return DrawCardResponse(**result)
             
         except Exception as e:
-            custom_logger.error(f"Error generating detail card: {str(e)}")
+            custom_logger.error(f"[draw-card:detail] Error generating detail card: {str(e)}")
             raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
-    
+
     async def _generate_summary_card(self) -> DrawCardResponse:
         """
         生成摘要占卜卡片
@@ -151,9 +163,14 @@ class FortuneService:
         Returns:
             摘要卡片
         """
+        custom_logger.info("[draw-card:summary] Starting summary card generation")
+        
         # 随机选择动作和小食
         random_action = random.choice(self.action_list)
         random_refreshment = random.choice(self.refreshment_list)
+        
+        custom_logger.info(f"[draw-card:summary] Selected action: {random_action}")
+        custom_logger.info(f"[draw-card:summary] Selected refreshment: {random_refreshment}")
         
         # 获取占卜师提示词
         fortune_config = self.character_sys_info.get("fortune_teller_summary", {})
@@ -177,6 +194,7 @@ class FortuneService:
         
         # 获取随机颜色
         color_name, hex_code = self._get_random_color()
+        custom_logger.info(f"[draw-card:summary] Selected color: {color_name}, hex: {hex_code}")
         
         # 随机幸运值（0-5，概率分布不均）
         luckNum = random.choices(
@@ -198,6 +216,7 @@ class FortuneService:
         
         try:
             # 调用 LLM
+            custom_logger.info("[draw-card:summary] LLM request to qwen_plus: 2 messages")
             result = await self.llm.chat_completion(
                 messages=messages,
                 model_name="qwen_plus",
@@ -208,6 +227,7 @@ class FortuneService:
                 parse_json=True,
                 retry_on_error=False
             )
+            custom_logger.info("[draw-card:summary] LLM response received from qwen_plus")
             
             # 补充基础信息
             result.update({
@@ -224,8 +244,9 @@ class FortuneService:
             # 补充缺失字段
             result = {key: result.get(key, "") for key in DrawCardResponse.__fields__.keys()}
             
+            custom_logger.info("[draw-card:summary] Card generation completed successfully")
             return DrawCardResponse(**result)
             
         except Exception as e:
-            custom_logger.error(f"Error generating summary card: {str(e)}")
+            custom_logger.error(f"[draw-card:summary] Error generating summary card: {str(e)}")
             raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")

@@ -56,6 +56,14 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
+[tool.uv]
+index-url = "https://mirrors.aliyun.com/pypi/simple/"
+extra-index-url = [
+    "https://pypi.tuna.tsinghua.edu.cn/simple/",
+    "https://mirrors.ustc.edu.cn/pypi/web/simple/",
+    "https://pypi.org/simple/"
+]
+
 [tool.ruff]
 line-length = 120
 target-version = "py38"
@@ -67,4 +75,3 @@ ignore = ["E501"]
 [tool.black]
 line-length = 120
 target-version = ['py38']
-
