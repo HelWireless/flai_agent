@@ -30,6 +30,7 @@ class VectorStore:
                 self.collection_name = config.get('collection_name', 'conversations')
                 self.embedding_api_key = config.get('embedding_api_key')
                 self.embedding_url = config.get('embedding_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings')
+                self.embedding_model = config.get('embedding_model', 'text-embedding-v2')  # 获取配置的嵌入模型
                 
                 custom_logger.info(f"Vector store enabled: {self.collection_name}")
             except ImportError:
@@ -47,20 +48,21 @@ class VectorStore:
         if not self.enabled:
             return []
         
-        payload = {
-            "model": "text-embedding-v2",
-            "input": text
-        }
-        headers = {
-            "Authorization": f"Bearer {self.embedding_api_key}",
-            "Content-Type": "application/json"
-        }
-        
         try:
-            response = requests.post(self.embedding_url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            return data['data'][0]['embedding']
+            import dashscope
+            from http import HTTPStatus
+            
+            dashscope.api_key = self.embedding_api_key
+            response = dashscope.TextEmbedding.call(
+                model=self.embedding_model,  # 使用配置中指定的模型
+                input=text
+            )
+            
+            if response.status_code == HTTPStatus.OK:
+                return response.output['embeddings'][0]['embedding']
+            else:
+                custom_logger.error(f"Embedding generation failed: {response}")
+                return []
         except Exception as e:
             custom_logger.error(f"Embedding generation failed: {e}")
             return []
