@@ -15,6 +15,7 @@ logger:
   rotation: "500 MB"
   retention: "60 days"
   format: "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+  debug_mode: false  # 调试模式开关，开启后将输出更详细的日志
 
 # 模型API配置示例
 autodl:
@@ -68,6 +69,7 @@ vector_db:
   collection_name: "pillow_test"
   embedding_api_key: ""
   embedding_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
+  embedding_model: "text-embedding-v4"  # 指定使用text-embedding-v4模型
 
 # 语音合成API配置
 speech_api:

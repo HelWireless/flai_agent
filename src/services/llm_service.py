@@ -198,6 +198,10 @@ class LLMService:
         
         custom_logger.info(f"LLM request to {model_name}: {len(messages)} messages")
         
+        # 在调试模式下记录完整的消息内容
+        from .custom_logger import debug_log
+        debug_log(f"Full messages sent to LLM: {messages}")
+
         # 4. 调用 API（带重试）
         try:
             response = await self._make_request(
@@ -224,7 +228,7 @@ class LLMService:
                         top_p=top_p,
                         max_tokens=max_tokens,
                         parse_json=parse_json,
-                        retry_on_error=False,  # 避免无限重试
+                        retry_on_error=False,
                         fallback_response=fallback_response
                     )
                 else:
@@ -238,10 +242,17 @@ class LLMService:
             
             custom_logger.info(f"LLM response received from {model_name}")
             
+            # 在调试模式下记录完整的响应内容
+            debug_log(f"Full LLM response: {response_data}")
+            
             # 6. JSON 解析（如果需要）
             if parse_json:
                 try:
                     parsed_data = await self._parse_json_response(content)
+                    
+                    # 在调试模式下记录解析后的数据
+                    debug_log(f"Parsed JSON response: {parsed_data}")
+                    
                     return parsed_data
                 except json.JSONDecodeError as e:
                     # JSON 解析失败，重试
