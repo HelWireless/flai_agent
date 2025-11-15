@@ -3,7 +3,8 @@
 """
 from typing import List, Dict, Optional
 import requests
-from ..custom_logger import custom_logger
+import json
+from ..custom_logger import custom_logger, debug_log
 
 
 class VectorStore:
@@ -49,6 +50,7 @@ class VectorStore:
                 self.embedding_model = config.get('embedding_model', 'text-embedding-v4')  # 获取配置的嵌入模型
                 
                 custom_logger.info(f"Vector store enabled: {self.collection_name}")
+                debug_log(f"Vector store configuration - URL: {qdrant_url}, Collection: {self.collection_name}, Embedding Model: {self.embedding_model}")
             except ImportError:
                 custom_logger.warning("qdrant-client not installed, vector store disabled")
                 self.enabled = False
@@ -68,6 +70,8 @@ class VectorStore:
             import dashscope
             from http import HTTPStatus
             
+            debug_log(f"Generating embedding for text: {text[:100]}...")  # 只显示前100个字符
+            
             dashscope.api_key = self.embedding_api_key
             response = dashscope.TextEmbedding.call(
                 model=self.embedding_model,  # 使用配置中指定的模型
@@ -75,7 +79,9 @@ class VectorStore:
             )
             
             if response.status_code == HTTPStatus.OK:
-                return response.output['embeddings'][0]['embedding']
+                embedding = response.output['embeddings'][0]['embedding']
+                debug_log(f"Embedding generated successfully, dimension: {len(embedding)}")
+                return embedding
             else:
                 custom_logger.error(f"Embedding generation failed: {response}")
                 return []
@@ -103,6 +109,7 @@ class VectorStore:
         import time
         start_time = time.time()
         custom_logger.info(f"Starting to search similar conversations for user {user_id}")
+        debug_log(f"Search query text: {query_text}")
         
         if not self.enabled:
             return []
@@ -142,7 +149,7 @@ class VectorStore:
             conversion_start_time = time.time()
             conversations = []
             for result in results:
-                conversations.append({
+                conversation_data = {
                     "score": result.score,
                     "user_message": result.payload.get("user_message", ""),
                     "ai_response": result.payload.get("ai_response", ""),
@@ -150,12 +157,16 @@ class VectorStore:
                         k: v for k, v in result.payload.items() 
                         if k not in ["user_id", "user_message", "ai_response", "text"]
                     }
-                })
+                }
+                conversations.append(conversation_data)
+                debug_log(f"Found similar conversation - Score: {result.score:.4f}, User: {conversation_data['user_message'][:50]}...")
+            
             conversion_end_time = time.time()
             conversion_duration = conversion_end_time - conversion_start_time
             custom_logger.info(f"Results conversion completed in {conversion_duration:.2f} seconds")
             
             custom_logger.debug(f"Found {len(conversations)} similar conversations for user {user_id}")
+            debug_log(f"Total similar conversations found: {len(conversations)}")
             
             end_time = time.time()
             total_duration = end_time - start_time
@@ -188,6 +199,7 @@ class VectorStore:
         import time
         start_time = time.time()
         custom_logger.info(f"Starting to store conversation for user {user_id}")
+        debug_log(f"Storing conversation - User: {user_message}, AI: {ai_response[:100]}...")  # 只显示AI回复的前100个字符
         
         if not self.enabled:
             return False
@@ -196,6 +208,7 @@ class VectorStore:
             # 合并用户消息和AI回复作为检索文本
             combine_start_time = time.time()
             combined_text = f"用户: {user_message}\nAI: {ai_response}"
+            debug_log(f"Combined text for storage: {combined_text[:200]}...")  # 只显示前200个字符
             
             # 检查是否已存在相似内容（去重）
             similar_conversations = await self.search_similar_conversations(
@@ -207,6 +220,7 @@ class VectorStore:
             # 如果最相似的对话超过阈值，则认为是重复内容，不存储
             if similar_conversations and similar_conversations[0]["score"] >= 0.96:
                 custom_logger.debug(f"Conversation is too similar (score: {similar_conversations[0]['score']}) to existing content, skipping storage")
+                debug_log(f"Skipping storage due to high similarity: {similar_conversations[0]['score']:.4f}")
                 return False
             combine_end_time = time.time()
             combine_duration = combine_end_time - combine_start_time
@@ -230,6 +244,8 @@ class VectorStore:
                 **(metadata or {})
             }
             
+            debug_log(f"Payload for storage: {json.dumps(payload, ensure_ascii=False)[:300]}...")  # 只显示前300个字符
+            
             # 存储到向量数据库
             store_start_time = time.time()
             from qdrant_client.http import models
@@ -250,6 +266,7 @@ class VectorStore:
             custom_logger.info(f"Vector storage completed in {store_duration:.2f} seconds")
             
             custom_logger.debug(f"Conversation stored to vector DB for user {user_id}")
+            debug_log(f"Conversation successfully stored with point ID: {point_id}")
             
             end_time = time.time()
             total_duration = end_time - start_time
