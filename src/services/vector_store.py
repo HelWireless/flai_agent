@@ -30,7 +30,7 @@ class VectorStore:
                 self.collection_name = config.get('collection_name', 'conversations')
                 self.embedding_api_key = config.get('embedding_api_key')
                 self.embedding_url = config.get('embedding_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings')
-                self.embedding_model = config.get('embedding_model', 'text-embedding-v2')  # 获取配置的嵌入模型
+                self.embedding_model = config.get('embedding_model', 'text-embedding-v4')  # 获取配置的嵌入模型
                 
                 custom_logger.info(f"Vector store enabled: {self.collection_name}")
             except ImportError:
