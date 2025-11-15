@@ -23,10 +23,26 @@ class VectorStore:
                 from qdrant_client import QdrantClient
                 from qdrant_client.http import models
                 
-                self.client = QdrantClient(
-                    url=config.get('url'),
-                    api_key=config.get('api_key')
-                )
+                # 检查是否使用HTTPS连接
+                qdrant_url = config.get('url')
+                is_https = qdrant_url.startswith('https://') if qdrant_url else False
+                
+                # 根据URL类型决定是否需要SSL配置
+                if is_https:
+                    self.client = QdrantClient(
+                        url=qdrant_url,
+                        api_key=config.get('api_key'),
+                        https=True,
+                        verify=False  # 如果证书有问题，可以选择忽略验证
+                    )
+                else:
+                    # HTTP连接不需要SSL
+                    self.client = QdrantClient(
+                        url=qdrant_url,
+                        api_key=config.get('api_key'),
+                        https=False
+                    )
+                    
                 self.collection_name = config.get('collection_name', 'conversations')
                 self.embedding_api_key = config.get('embedding_api_key')
                 self.embedding_url = config.get('embedding_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings')
