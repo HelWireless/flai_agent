@@ -8,6 +8,8 @@ import yaml
 from datetime import datetime, timedelta
 import os
 
+# 全局变量，用于控制是否启用调试模式
+DEBUG_MODE = False
 
 class InterceptHandler(logging.Handler):
     loglevel_mapping = {
@@ -53,13 +55,18 @@ class CustomizeLogger:
             return cls.customize_logging_default()
             
         logging_config = config.get('logger')
+        
+        # 设置全局调试模式
+        global DEBUG_MODE
+        DEBUG_MODE = logging_config.get('debug_mode', False)
 
         logger = cls.customize_logging(
             Path(logging_config.get('path', 'logs/app.log')),
             level=logging_config.get('level', 'INFO'),
             retention=logging_config.get('retention', '60 days'),
             rotation=logging_config.get('rotation', '500 MB'),
-            format=logging_config.get('format', '<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>')
+            format=logging_config.get('format', '<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'),
+            debug_mode=DEBUG_MODE
         )
         return logger
 
@@ -183,17 +190,21 @@ class CustomizeLogger:
             level: str,
             rotation: str,
             retention: str,
-            format: str
+            format: str,
+            debug_mode: bool = False
     ):
         # 使用自定义的日志路径（按周划分）
         weekly_log_path = cls.get_weekly_log_path()
         
         logger.remove()
+        # 根据调试模式设置日志级别
+        log_level = "DEBUG" if debug_mode else level.upper()
+        
         logger.add(
             sys.stdout,
             enqueue=True,
             backtrace=True,
-            level=level.upper(),
+            level=log_level,
             format=format
         )
         logger.add(
@@ -202,7 +213,7 @@ class CustomizeLogger:
             retention=retention,
             enqueue=True,
             backtrace=True,
-            level=level.upper(),
+            level=log_level,
             format=format
         )
         logging.basicConfig(handlers=[InterceptHandler()], level=0)
@@ -234,6 +245,14 @@ class CustomizeLogger:
         except UnicodeDecodeError:
             print(f"文件编码错误,请确保 {config_path} 使用 UTF-8 编码")
         return None
+
+def debug_log(message: str):
+    """
+    调试日志函数，只有在调试模式下才会输出日志
+    """
+    global DEBUG_MODE
+    if DEBUG_MODE:
+        custom_logger.debug(f"[DEBUG] {message}")
 
 
 # 更可靠地构建config.yaml的绝对路径
