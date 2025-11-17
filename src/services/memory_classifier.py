@@ -61,7 +61,6 @@ class MemoryClassifier:
 
         user_content = f"""
 用户消息：{user_message}
-AI回复：{ai_response}
 """
         
         messages = [
