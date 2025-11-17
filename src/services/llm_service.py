@@ -10,9 +10,7 @@ from functools import partial
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-
-from ..custom_logger import custom_logger
-
+from ..custom_logger import custom_logger, debug_log
 
 class LLMService:
     """统一的 LLM 调用服务"""
@@ -197,9 +195,9 @@ class LLMService:
         }
         
         custom_logger.info(f"LLM request to {model_name}: {len(messages)} messages")
-        
+
         # 在调试模式下记录完整的消息内容
-        from .custom_logger import debug_log
+
         debug_log(f"Full messages sent to LLM: {messages}")
 
         # 4. 调用 API（带重试）
