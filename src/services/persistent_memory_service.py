@@ -353,7 +353,7 @@ class PersistentMemoryService:
             long_term_start_time = time.time()
             # 异步处理长期记忆，不等待完成
             asyncio.create_task(self._handle_long_term_memory_async(
-                user_id, character_id, user_message, ai_response
+                user_id, character_id, memory_content
             ))
             long_term_end_time = time.time()
             long_term_duration = long_term_end_time - long_term_start_time
@@ -618,8 +618,7 @@ class PersistentMemoryService:
         self,
         user_id: str,
         character_id: str,
-        user_message: str,
-        ai_response: str
+        memory_content: str
     ):
         """
         异步处理长期记忆
@@ -627,27 +626,14 @@ class PersistentMemoryService:
         Args:
             user_id: 用户ID
             character_id: 角色ID
-            user_message: 用户消息
-            ai_response: AI回复
+            memory_content: 需要存储的记忆内容
         """
         try:
-            # 使用分类器判断是否需要长期记忆
-            classification = await self.classifier.classify_memory_type(
-                user_message=user_message,
-                ai_response=ai_response
+            # 直接处理长期记忆
+            await self._handle_long_term_memory(
+                user_id, character_id, memory_content
             )
-            
-            is_long = classification["is_long"]
-            memory_content = classification["memory_content"]
-            
-            if is_long == "yes" and memory_content:
-                # 处理长期记忆
-                await self._handle_long_term_memory(
-                    user_id, character_id, memory_content
-                )
-                custom_logger.info(f"Long-term memory async update completed for user {user_id}")
-            else:
-                custom_logger.info(f"No long-term memory needed for user {user_id}")
+            custom_logger.info(f"Long-term memory async update completed for user {user_id}")
         except Exception as e:
             custom_logger.error(f"Failed to async update long-term memory for user {user_id}: {e}")
 
@@ -710,7 +696,7 @@ class PersistentMemoryService:
             timestamp = datetime.now().strftime("%Y-%m-%d")
             new_memory_entry = {
                 "time": timestamp,
-                "content": user_message + "\n" + ai_response
+                "content": memory_content
             }
             
             # 使用LLM合并和总结记忆
@@ -737,7 +723,7 @@ class PersistentMemoryService:
             )
             
             custom_logger.info(
-                f"Long-term memory updated for user {user_id}: {user_message[:50]}..."
+                f"Long-term memory updated for user {user_id}: {memory_content[:50]}..."
             )
             
             return {
