@@ -146,6 +146,12 @@ class ChatService:
                 {"role": "user", "content": user_content}
             ]
             
+            # 在调试模式下记录发送给LLM的完整消息
+            from ..custom_logger import debug_log
+            debug_log(f"Sending messages to LLM - System: {prompt['system_prompt'][:200]}...")
+            debug_log(f"Sending messages to LLM - User Content: {user_content[:500]}...")
+            debug_log(f"Sending messages to LLM - Full Messages: {messages}")
+
             # 调用 LLM
             result = await self.llm.chat_completion(
                 messages=messages,
@@ -163,6 +169,9 @@ class ChatService:
             answer = result.get("answer", random.choice(self.error_responses))
             emotion_type_from_llm = result.get("emotion_type")
             
+            # 在调试模式下记录LLM的响应
+            debug_log(f"LLM Response: {result}")
+
         except Exception as e:
             custom_logger.error(f"Error generating answer: {str(e)}")
             answer = random.choice(self.error_responses)
