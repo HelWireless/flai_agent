@@ -96,6 +96,7 @@ class VectorStore:
             if response.status_code == HTTPStatus.OK:
                 embedding = response.output['embeddings'][0]['embedding']
                 debug_log(f"Embedding generated successfully, dimension: {len(embedding)}")
+                # 在debug模式下不再显示具体的向量值
                 return embedding
             else:
                 custom_logger.error(f"Embedding generation failed: {response}")
