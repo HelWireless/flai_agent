@@ -348,15 +348,22 @@ class PersistentMemoryService:
             return result
         
         elif memory_type == "long_term":
-            # 长期记忆：立即更新
+            # 长期记忆：异步更新，立即返回结果
             long_term_start_time = time.time()
-            result = await self._handle_long_term_memory(
-                user_id, character_id, memory_content
-            )
+            # 异步处理长期记忆，不等待完成
+            asyncio.create_task(self._handle_long_term_memory_async(
+                user_id, character_id, user_message, ai_response
+            ))
             long_term_end_time = time.time()
             long_term_duration = long_term_end_time - long_term_start_time
-            custom_logger.info(f"Long-term memory handling completed in {long_term_duration:.2f} seconds")
-            return result
+            custom_logger.info(f"Long-term memory async task created in {long_term_duration:.2f} seconds")
+            # 立即返回结果，不等待长期记忆处理完成
+            return {
+                "memory_enabled": True,
+                "memory_type": "long_term",
+                "updated": True,
+                "message": "长期记忆正在后台更新"
+            }
         
         end_time = time.time()
         total_duration = end_time - start_time
@@ -606,6 +613,43 @@ class PersistentMemoryService:
         except Exception as e:
             custom_logger.error(f"Failed to generate short-term summary: {e}")
     
+    async def _handle_long_term_memory_async(
+        self,
+        user_id: str,
+        character_id: str,
+        user_message: str,
+        ai_response: str
+    ):
+        """
+        异步处理长期记忆
+        
+        Args:
+            user_id: 用户ID
+            character_id: 角色ID
+            user_message: 用户消息
+            ai_response: AI回复
+        """
+        try:
+            # 使用分类器判断是否需要长期记忆
+            classification = await self.classifier.classify_memory_type(
+                user_message=user_message,
+                ai_response=ai_response
+            )
+            
+            is_long = classification["is_long"]
+            memory_content = classification["memory_content"]
+            
+            if is_long == "yes" and memory_content:
+                # 处理长期记忆
+                await self._handle_long_term_memory(
+                    user_id, character_id, memory_content
+                )
+                custom_logger.info(f"Long-term memory async update completed for user {user_id}")
+            else:
+                custom_logger.info(f"No long-term memory needed for user {user_id}")
+        except Exception as e:
+            custom_logger.error(f"Failed to async update long-term memory for user {user_id}: {e}")
+
     async def _handle_long_term_memory(
         self,
         user_id: str,
@@ -634,14 +678,53 @@ class PersistentMemoryService:
             
             existing_long_term = memory["long_term_memory"] or ""
             
-            # 追加到长期记忆（带时间戳）
-            timestamp = datetime.now().strftime("%Y-%m-%d")
-            new_memory = f"[{timestamp}] {memory_content}"
-            
+            # 解析现有长期记忆为结构化数据
+            existing_memories = []
             if existing_long_term:
-                combined = f"{existing_long_term}\n{new_memory}"
-            else:
-                combined = new_memory
+                try:
+                    # 尝试解析为JSON数组格式
+                    existing_memories = json.loads(existing_long_term)
+                except json.JSONDecodeError:
+                    # 如果不是JSON格式，按行分割处理旧格式
+                    lines = existing_long_term.strip().split('\n')
+                    for line in lines:
+                        # 尝试提取时间戳和内容
+                        if line.startswith('[') and ']' in line:
+                            # 格式如: [2025-11-17] 内容
+                            end_bracket = line.find(']')
+                            timestamp = line[1:end_bracket]
+                            content = line[end_bracket + 2:]
+                            existing_memories.append({
+                                "time": timestamp,
+                                "content": content
+                            })
+                        else:
+                            # 没有时间戳的旧内容
+                            existing_memories.append({
+                                "time": "unknown",
+                                "content": line
+                            })
+            
+            # 添加新记忆（带时间戳）
+            timestamp = datetime.now().strftime("%Y-%m-%d")
+            new_memory_entry = {
+                "time": timestamp,
+                "content": user_message + "\n" + ai_response
+            }
+            
+            # 使用LLM合并和总结记忆
+            updated_memories = await self._summarize_memories(
+                existing_memories, 
+                new_memory_entry, 
+                user_id
+            )
+            
+            # 保持最多5条记忆
+            if len(updated_memories) > 5:
+                updated_memories = updated_memories[-5:]
+            
+            # 转换为JSON字符串存储
+            combined = json.dumps(updated_memories, ensure_ascii=False, indent=2)
             
             # 更新数据库
             self.query_with_retry(
@@ -653,13 +736,14 @@ class PersistentMemoryService:
             )
             
             custom_logger.info(
-                f"Long-term memory updated for user {user_id}: {memory_content[:50]}..."
+                f"Long-term memory updated for user {user_id}: {user_message[:50]}..."
             )
             
             return {
                 "memory_enabled": True,
                 "memory_type": "long_term",
                 "updated": True,
+                "structured_memories": updated_memories,
                 "message": "长期记忆已立即更新"
             }
         except Exception as e:
@@ -669,6 +753,106 @@ class PersistentMemoryService:
                 "error": str(e),
                 "message": "长期记忆更新失败"
             }
+    
+    async def _summarize_memories(
+        self,
+        existing_memories: List[Dict],
+        new_memory: Dict,
+        user_id: str
+    ) -> List[Dict]:
+        """
+        使用LLM合并和总结记忆
+        
+        Args:
+            existing_memories: 现有记忆列表
+            new_memory: 新记忆
+            user_id: 用户ID
+            
+        Returns:
+            更新后的记忆列表
+        """
+        # 构建系统提示
+        system_prompt = """你是一个专业的记忆管理专家。你的任务是帮助AI助手管理用户的长期记忆。
+
+你需要：
+1. 分析用户的现有记忆和新信息
+2. 判断新信息是否与现有记忆重复
+3. 如果重复，更新现有记忆条目并更新时间戳
+4. 如果不重复，添加为新记忆
+5. 如果现有记忆超过5条，合并最相关的记忆条目
+
+请以严格的JSON数组格式返回结果，每个记忆条目包含"time"和"content"字段。
+
+示例输出格式：
+[
+  {"time": "2025-11-17", "content": "用户爱吃香蕉"},
+  {"time": "2025-11-18", "content": "用户希望被称呼为小甜心"},
+  {"time": "2025-11-21", "content": "用户喜欢尿床和吃香蕉"}
+]
+
+注意事项：
+1. 保持最多5个记忆条目
+2. 确保时间戳是最新的
+3. 合并相关或重复的信息
+4. 只输出JSON，不要添加解释文字
+"""
+
+        # 构建用户提示
+        user_prompt = f"""用户ID: {user_id}
+
+现有记忆:
+{json.dumps(existing_memories, ensure_ascii=False, indent=2)}
+
+新记忆:
+{json.dumps(new_memory, ensure_ascii=False, indent=2)}
+
+请根据以上信息更新记忆列表:
+"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        try:
+            result = await self.llm_service.chat_completion(
+                messages=messages,
+                model_pool=["qwen_plus", "qwen_max"],
+                temperature=0.3,
+                top_p=0.8,
+                max_tokens=500,
+                response_format="json_object",
+                parse_json=True,
+                retry_on_error=True
+            )
+            
+            # 验证返回结果
+            if isinstance(result, list):
+                # 确保每个条目都有必要的字段
+                validated_memories = []
+                for item in result:
+                    if isinstance(item, dict) and "time" in item and "content" in item:
+                        validated_memories.append({
+                            "time": str(item["time"]),
+                            "content": str(item["content"])
+                        })
+                return validated_memories[:5]  # 最多5条
+            
+            # 如果解析失败，回退到简单添加方式
+            custom_logger.warning("Memory summarization failed, falling back to simple addition")
+            
+        except Exception as e:
+            custom_logger.error(f"Memory summarization failed: {e}")
+        
+        # 出错时的回退方案：简单添加新记忆
+        updated_memories = existing_memories.copy()
+        updated_memories.append(new_memory)
+        
+        # 保持最多5条记忆
+        if len(updated_memories) > 5:
+            updated_memories = updated_memories[-5:]
+            
+        return updated_memories
     
     async def get_memory_context(
         self,
