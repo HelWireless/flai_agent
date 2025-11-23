@@ -2,7 +2,7 @@
 API 路由定义
 纯路由层，只负责接收请求和返回响应，业务逻辑在服务层
 """
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 import json
 
@@ -24,8 +24,6 @@ from src.custom_logger import custom_logger
 
 import yaml
 import os
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 
 # 创建路由器
 router = APIRouter(
@@ -101,29 +99,6 @@ def get_fortune_service(
 def get_voice_service() -> VoiceService:
     """获取语音服务实例"""
     return VoiceService(app_config)
-
-
-# ==================== 异常处理 ====================
-
-@router.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """处理请求验证错误，记录请求内容"""
-    try:
-        # 尝试读取请求体
-        body = await request.body()
-        try:
-            body_json = json.loads(body.decode('utf-8'))
-            custom_logger.info(f"Validation error for request: {body_json}")
-        except:
-            custom_logger.info(f"Validation error for request (raw): {body.decode('utf-8') if body else 'Empty body'}")
-    except Exception as e:
-        custom_logger.error(f"Error reading request body in validation exception handler: {e}")
-    
-    custom_logger.error(f"Validation error: {exc}")
-    return JSONResponse(
-        status_code=422,
-        content={"detail": exc.errors()}
-    )
 
 
 # ==================== API 路由 ====================

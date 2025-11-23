@@ -6,7 +6,7 @@ import uvicorn
 from src.api.routes import router
 from src.custom_logger import custom_logger
 import json
-from fastapi import BackgroundTasks
+from fastapi.exceptions import RequestValidationError
 
 
 @asynccontextmanager
@@ -54,6 +54,26 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        """处理请求验证错误，记录请求内容"""
+        try:
+            # 尝试读取请求体
+            body = await request.body()
+            try:
+                body_json = json.loads(body.decode('utf-8'))
+                custom_logger.info(f"Validation error for request: {body_json}")
+            except:
+                custom_logger.info(f"Validation error for request (raw): {body.decode('utf-8') if body else 'Empty body'}")
+        except Exception as e:
+            custom_logger.error(f"Error reading request body in validation exception handler: {e}")
+        
+        custom_logger.error(f"Validation error: {exc}")
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors()}
+        )
     
     @app.middleware("http")
     async def log_all_requests(request: Request, call_next):
