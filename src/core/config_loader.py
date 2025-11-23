@@ -71,9 +71,9 @@ class ConfigLoader:
         """获取角色开场白配置"""
         return self.get('character_openers', reload)
     
-    def get_emotions(self, reload: bool = False) -> Dict[str, Any]:
-        """获取情绪配置"""
-        return self.get('emotions', reload)
+    def get_emotion_states(self, reload: bool = False) -> Dict[str, Any]:
+        """获取情绪状态配置"""
+        return self.get('emotion_states', reload)
     
     def get_responses(self, reload: bool = False) -> Dict[str, list]:
         """获取回复配置"""

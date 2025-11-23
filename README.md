@@ -109,7 +109,7 @@ flai_agent/
 │   ├── prompts/              # Prompt配置（JSON格式，支持热更新）
 │   │   ├── characters.json   # 角色系统配置
 │   │   ├── character_openers.json  # 角色开场白
-│   │   ├── emotions.json     # 情绪配置
+│   │   ├── emotion_states.json     # 情绪状态配置
 │   │   ├── responses.json    # 回复配置
 │   │   └── constants.json    # 常量配置
 │   └── llm_params.json       # LLM参数配置
@@ -195,6 +195,21 @@ persistent_memory:
 vector_db:
   enabled: false  # 改为 true 启用
 ```
+
+### 情绪处理系统
+
+本项目采用多层次的情绪处理机制：
+
+1. **情绪状态**：系统内部维护的情绪状态，如 'happy', 'anger', 'sadness' 等
+2. **情绪表现**：根据情绪状态生成的外在表现描述，如 "快乐"、"气愤" 等
+3. **情绪编码**：最终用于接口返回的数字编码，如 1、6 等
+
+情绪处理流程：
+1. 系统获取当前的内在情绪状态（如 'happy'）
+2. 通过 `emotion_states.json` 配置将内在情绪映射为外在表现描述（如 "快乐"）
+3. 将情绪信息嵌入到提示词中，引导LLM生成具有相应情绪色彩的回复
+4. LLM在生成回复时可能会返回情绪类型（如"开心"）
+5. 系统通过 `get_emotion_type` 函数将情绪表现转换为数字编码
 
 ### 配置热更新
 

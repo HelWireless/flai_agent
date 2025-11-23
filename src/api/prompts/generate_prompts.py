@@ -26,10 +26,10 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
     
     # 获取配置
     characters_config = loader.get_characters()
-    emotions_config = loader.get_emotions()
+    emotion_states_config = loader.get_emotion_states()
     
     character_sys_info = characters_config.get('characters', {})
-    ESM_dict = emotions_config
+    ESM_dict = emotion_states_config
     world_background = characters_config.get('world_background', '')
     guidance = characters_config.get('guidance', '')
     
@@ -90,4 +90,3 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
     character_prompt = {"system_prompt": system_prompt, "user_prompt": user_prompt}
     
     return character_prompt, model_id
-

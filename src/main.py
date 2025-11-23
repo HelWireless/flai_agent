@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     try:
         config_loader.get_characters()
         config_loader.get_character_openers()
-        config_loader.get_emotions()
+        config_loader.get_emotion_states()
         config_loader.get_responses()
         config_loader.get_constants()
         custom_logger.info("✅ 配置文件加载完成")
