@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from src.api.routes import router
 from src.custom_logger import custom_logger
+import json
 
 
 @asynccontextmanager
@@ -52,6 +53,27 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        # 记录请求信息
+        if "/chat-pillow" in str(request.url):
+            try:
+                # 读取请求体
+                body = await request.body()
+                # 尝试解析为JSON
+                try:
+                    body_json = json.loads(body.decode('utf-8'))
+                    custom_logger.info(f"Chat request received: {body_json}")
+                except:
+                    # 如果不是JSON格式，记录原始内容
+                    custom_logger.info(f"Chat request received (raw): {body.decode('utf-8') if body else 'Empty body'}")
+            except Exception as e:
+                custom_logger.error(f"Error reading request body: {e}")
+        
+        response = await call_next(request)
+        return response
+    
     return app
 
 app = create_app()
