@@ -39,7 +39,7 @@ class VoiceService:
         )
         
         # 1. 初始化语音 API
-        speech_api = SpeechAPI(self.config["speech_api"], str(request.user_id))
+        speech_api = SpeechAPI(self.config["speech_api"], request.user_id)
         request_body = speech_api.generate_request_body(request.text)
         
         # 2. 生成语音文件
@@ -55,7 +55,7 @@ class VoiceService:
             raise HTTPException(status_code=500, detail=f"Failed to generate voice: {str(e)}")
         
         # 3. 上传到 OSS
-        file_key = upload_to_oss(voice_output_path, str(request.user_id))
+        file_key = upload_to_oss(voice_output_path, request.user_id)
         if not file_key:
             custom_logger.error("Failed to upload voice file to OSS")
             raise HTTPException(status_code=500, detail="Failed to upload voice file to OSS")
@@ -64,8 +64,7 @@ class VoiceService:
         custom_logger.info(f"Voice file uploaded successfully: {voice_response_url}")
         
         return Text2VoiceResponse(
-            user_id=int(request.user_id),
-            text_id=int(request.text_id),
+            user_id=request.user_id,
+            text_id=request.text_id,
             url=voice_response_url
         )
-

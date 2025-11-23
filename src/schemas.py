@@ -39,13 +39,13 @@ class ChatResponse(BaseModel):
     emotion_type: int
 
 class Text2Voice(BaseModel):
-    user_id: int
-    text_id: int
+    user_id: str
+    text_id: str
     text: str
 
 class Text2VoiceResponse(BaseModel):
-    user_id: int
-    text_id: int
+    user_id: str
+    text_id: str
     url: str
 
 
