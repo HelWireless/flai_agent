@@ -14,7 +14,7 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动事件
     custom_logger.info("=" * 60)
-    custom_logger.info("🚀 Flai Agent 正在启动...")
+    custom_logger.info("🚀 深壤 Agent 正在启动...")
     custom_logger.info("=" * 60)
     
     # 预加载配置
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     
     # 关闭事件
     custom_logger.info("=" * 60)
-    custom_logger.info("👋 Flai Agent 正在关闭...")
+    custom_logger.info("👋 深壤 Agent 正在关闭...")
     custom_logger.info("=" * 60)
 
 
