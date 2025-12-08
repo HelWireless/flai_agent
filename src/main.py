@@ -7,6 +7,7 @@ from src.api.routes import router
 from src.custom_logger import custom_logger
 import json
 from fastapi.exceptions import RequestValidationError
+import logging
 
 
 @asynccontextmanager
@@ -46,6 +47,11 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # 控制第三方库的日志级别，避免在生产环境输出过多调试信息
+    logging.getLogger("httpx").setLevel(logging.INFO)
+    logging.getLogger("urllib3").setLevel(logging.INFO)
+    logging.getLogger("dashscope").setLevel(logging.INFO)
+    
     app = FastAPI(title="Pillow Talk", debug=False, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,

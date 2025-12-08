@@ -144,9 +144,9 @@ class VectorStore:
             # 搜索
             search_start_time = time.time()
             from qdrant_client.http import models
-            results = self.client.search(
+            results = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
+                query=query_vector,
                 query_filter=models.Filter(
                     must=[
                         models.FieldCondition(
@@ -156,7 +156,7 @@ class VectorStore:
                     ]
                 ),
                 limit=limit
-            )
+            ).points  # 直接获取points属性
             search_end_time = time.time()
             search_duration = search_end_time - search_start_time
             custom_logger.info(f"Vector search completed in {search_duration:.2f} seconds")
@@ -164,7 +164,9 @@ class VectorStore:
             # 转换结果
             conversion_start_time = time.time()
             conversations = []
-            for result in results:
+            # 处理查询结果，新版本返回的是QueryResponse对象
+            points = results.points if hasattr(results, 'points') else results
+            for result in points:
                 conversation_data = {
                     "score": result.score,
                     "user_message": result.payload.get("user_message", ""),
