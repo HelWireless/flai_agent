@@ -2,8 +2,9 @@
 API 路由定义
 纯路由层，只负责接收请求和返回响应，业务逻辑在服务层
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
+import json
 
 from src.schemas import (
     ChatRequest, ChatResponse,
@@ -104,7 +105,8 @@ def get_voice_service() -> VoiceService:
 
 @router.post("/chat-pillow", response_model=ChatResponse)
 async def chat_pillow(
-    request: ChatRequest,
+    chat_request: ChatRequest,
+    request: Request,  # 添加Request参数用于记录
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """
@@ -117,7 +119,12 @@ async def chat_pillow(
     - 生成AI回复
     - 保存对话到记忆
     """
-    return await chat_service.process_chat(request)
+    # 记录请求内容
+    custom_logger.info(f"Processing chat request: user_id={chat_request.user_id}, "
+                      f"message='{chat_request.message}', message_count={chat_request.message_count}, "
+                      f"character_id={chat_request.character_id}, voice={chat_request.voice}")
+    
+    return await chat_service.process_chat(chat_request)
 
 
 @router.post("/text2voice", response_model=Text2VoiceResponse)

@@ -10,6 +10,7 @@ from functools import partial
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import urllib3
 from ..custom_logger import custom_logger, debug_log
 
 class LLMService:
@@ -25,16 +26,21 @@ class LLMService:
         self.config = config
         self.session = self._create_retry_session()
     
-    def _create_retry_session(self, retries=3, backoff_factor=0.3, 
+    def _create_retry_session(self, retries=5, backoff_factor=1.0, 
                               status_forcelist=(500, 502, 504)):
         """创建带重试机制的 HTTP 会话"""
         session = requests.Session()
+        # 禁用SSL警告
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
         retry = Retry(
             total=retries,
             read=retries,
             connect=retries,
             backoff_factor=backoff_factor,
             status_forcelist=status_forcelist,
+            # 添加对SSL错误的重试
+            allowed_methods=frozenset(['HEAD', 'GET', 'PUT', 'DELETE', 'OPTIONS', 'TRACE', 'POST'])
         )
         adapter = HTTPAdapter(max_retries=retry)
         session.mount('http://', adapter)
@@ -113,8 +119,8 @@ class LLMService:
             json.JSONDecodeError: 解析失败
         """
         try:
-            # 清理可能的 markdown 代码块
-            if "```json" in response_text:
+            # 清理可能的代码块
+            if "``json" in response_text:
                 response_text = response_text.replace("```json\n", "").replace("\n```", "")
             
             return json.loads(response_text)

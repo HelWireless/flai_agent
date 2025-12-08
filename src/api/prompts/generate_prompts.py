@@ -26,10 +26,10 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
     
     # 获取配置
     characters_config = loader.get_characters()
-    emotions_config = loader.get_emotions()
+    emotion_states_config = loader.get_emotion_states()
     
     character_sys_info = characters_config.get('characters', {})
-    ESM_dict = emotions_config
+    ESM_dict = emotion_states_config
     world_background = characters_config.get('world_background', '')
     guidance = characters_config.get('guidance', '')
     
@@ -73,7 +73,7 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
                             ```json
                             {
                             "emotion_type":  "开心",   // your now emotion,choose one in ["开心","期待","生气","伤心","惊恐","害羞","抱抱","无语","其他"]
-                            "answer": "xxxx"          // your answer to the question
+                            "answer": "好的，我现在好开心呀~！"          // your answer to the question
                             }
                             ```
                             
@@ -90,4 +90,3 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
     character_prompt = {"system_prompt": system_prompt, "user_prompt": user_prompt}
     
     return character_prompt, model_id
-
