@@ -229,6 +229,11 @@ class FortuneService:
             )
             custom_logger.info("[draw-card:summary] LLM response received from qwen_plus")
             
+            # 确保 result 是字典类型，而不是列表
+            if isinstance(result, list):
+                # 如果是列表，取第一个元素或者创建空字典
+                result = result[0] if result else {}
+            
             # 补充基础信息
             result.update({
                 "color": color_name,
