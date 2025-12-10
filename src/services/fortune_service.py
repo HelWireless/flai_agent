@@ -133,6 +133,11 @@ class FortuneService:
             )
             custom_logger.info("[draw-card:detail] LLM response received from qwen_plus")
             
+            # 检查返回结果是否有效
+            if not result or not isinstance(result, dict):
+                custom_logger.error("[draw-card:detail] Invalid response format from LLM")
+                raise HTTPException(status_code=500, detail="生成卡片失败: LLM返回无效格式")
+            
             # 补充可以直接获取的信息
             result.update({
                 "color": color,
@@ -228,6 +233,11 @@ class FortuneService:
                 retry_on_error=False
             )
             custom_logger.info("[draw-card:summary] LLM response received from qwen_plus")
+            
+            # 检查返回结果是否有效
+            if not result or not isinstance(result, dict):
+                custom_logger.error("[draw-card:summary] Invalid response format from LLM")
+                raise HTTPException(status_code=500, detail="生成卡片失败: LLM返回无效格式")
             
             # 确保 result 是字典类型，而不是列表
             if isinstance(result, list):

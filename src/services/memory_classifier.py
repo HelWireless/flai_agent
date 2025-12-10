@@ -80,6 +80,14 @@ class MemoryClassifier:
                 retry_on_error=True
             )
             
+            # 检查结果是否为空
+            if not result or "content" in result and not result["content"]:
+                custom_logger.warning("Empty response received from LLM for memory classification")
+                return {
+                    "is_long": "unknown",
+                    "memory_content": ""
+                }
+            
             # 验证返回格式
             is_long = result.get("is_long", "unknown")
             if is_long not in ["yes", "no", "unknown"]:
