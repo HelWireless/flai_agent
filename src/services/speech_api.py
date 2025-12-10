@@ -2,7 +2,7 @@ import base64
 import uuid
 import requests
 from time import time
-from src.custom_logger import custom_logger  # 导入自定义logger
+from ..custom_logger import custom_logger  # 导入自定义logger
 
 class SpeechAPI:
     def __init__(self, config_, user_id=uuid.uuid4()):

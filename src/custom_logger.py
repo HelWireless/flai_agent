@@ -5,7 +5,11 @@ import sys
 from pathlib import Path
 from loguru import logger
 import yaml
+from datetime import datetime, timedelta
+import os
 
+# 全局变量，用于控制是否启用调试模式
+DEBUG_MODE = False
 
 class InterceptHandler(logging.Handler):
     loglevel_mapping = {
@@ -39,17 +43,146 @@ class CustomizeLogger:
 
     @classmethod
     def make_logger(cls, config_path: Path):
+        # 确保配置文件存在，如果不存在则使用默认配置
+        if not config_path.exists():
+            print(f"警告: 无法找到配置文件 {config_path}，将使用默认日志配置")
+            # 使用默认配置
+            return cls.customize_logging_default()
+        
         config = cls.load_logging_config(config_path)
+        if config is None:
+            print("警告: 配置文件加载失败，将使用默认日志配置")
+            return cls.customize_logging_default()
+            
         logging_config = config.get('logger')
+        
+        # 设置全局调试模式
+        global DEBUG_MODE
+        DEBUG_MODE = logging_config.get('debug_mode', False)
 
         logger = cls.customize_logging(
-            Path(logging_config.get('path')),
-            level=logging_config.get('level'),
-            retention=logging_config.get('retention'),
-            rotation=logging_config.get('rotation'),
-            format=logging_config.get('format')
+            Path(logging_config.get('path', 'logs/app.log')),
+            level=logging_config.get('level', 'INFO'),
+            retention=logging_config.get('retention', '60 days'),
+            rotation=logging_config.get('rotation', '500 MB'),
+            format=logging_config.get('format', '<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'),
+            debug_mode=DEBUG_MODE
         )
         return logger
+
+    @classmethod
+    def customize_logging_default(cls):
+        """默认日志配置"""
+        logger.remove()
+        logger.add(
+            sys.stdout,
+            enqueue=True,
+            backtrace=True,
+            level="INFO",
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+        )
+        
+        # 确保logs目录存在
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        
+        logger.add(
+            "logs/app.log",
+            rotation="500 MB",
+            retention="60 days",
+            enqueue=True,
+            backtrace=True,
+            level="INFO",
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+        )
+        logging.basicConfig(handlers=[InterceptHandler()], level=0)
+        logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
+        for _log in ['uvicorn',
+                    #  'uvicorn.error', # uvicorn.error 应该是继承过 uvicorn，而 uvicorn 有默认的propagate msg 的行为，注销即可；解决日志重复出现的问题
+                     'fastapi'
+                     ]:
+            _logger = logging.getLogger(_log)
+            _logger.handlers = [InterceptHandler()]
+        
+        return logger.bind(request_id=None, method=None)
+
+    @classmethod
+    def get_weekly_log_path(cls):
+        """
+        获取按周划分的日志路径
+        
+        规则：
+        - 每周一个日志文件（周一到周日）
+        - 文件名：开始日期_结束日期.log
+        - 按开始日期的年月归档：logs/YYYY-MM/YYYY-MM-DD_YYYY-MM-DD.log
+        """
+        now = datetime.now()
+        
+        # 计算本周的开始日期（周一）
+        weekday = now.weekday()  # 0=Monday, 6=Sunday
+        week_start = now - timedelta(days=weekday)
+        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # 计算本周的结束日期（周日）
+        week_end = week_start + timedelta(days=6)
+        
+        # 格式化日期
+        start_date_str = week_start.strftime("%Y-%m-%d")
+        end_date_str = week_end.strftime("%Y-%m-%d")
+        
+        # 按开始日期的年月创建文件夹
+        year_month = week_start.strftime("%Y-%m")
+        
+        # 构建日志路径
+        log_dir = Path("logs") / year_month
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 文件名：开始日期_结束日期.log
+        log_filename = f"{start_date_str}_{end_date_str}.log"
+        
+        return str(log_dir / log_filename)
+    
+    @classmethod
+    def cleanup_old_logs(cls, retention_months=6):
+        """
+        清理超过保留期的日志
+        
+        Args:
+            retention_months: 保留月数，默认6个月
+        """
+        logs_dir = Path("logs")
+        if not logs_dir.exists():
+            return 0
+        
+        # 计算截止日期（保留最近N个月）
+        cutoff_date = datetime.now() - timedelta(days=retention_months * 30)
+        cutoff_month = cutoff_date.strftime("%Y-%m")
+        
+        deleted_count = 0
+        
+        # 遍历 logs 目录下的所有月份文件夹
+        for month_dir in logs_dir.iterdir():
+            if not month_dir.is_dir():
+                continue
+            
+            # 检查文件夹名是否是月份格式 (YYYY-MM)
+            if month_dir.name.count('-') != 1:
+                continue
+            
+            try:
+                # 比较月份，删除早于截止月份的目录
+                if month_dir.name < cutoff_month:
+                    print(f"清理旧日志目录: {month_dir}")
+                    import shutil
+                    shutil.rmtree(month_dir)
+                    deleted_count += 1
+            except Exception as e:
+                print(f"清理日志目录失败 {month_dir}: {e}")
+        
+        if deleted_count > 0:
+            print(f"已清理 {deleted_count} 个旧日志目录（{retention_months}个月前）")
+        
+        return deleted_count
 
     @classmethod
     def customize_logging(cls,
@@ -57,24 +190,30 @@ class CustomizeLogger:
             level: str,
             rotation: str,
             retention: str,
-            format: str
+            format: str,
+            debug_mode: bool = False
     ):
-
+        # 使用自定义的日志路径（按周划分）
+        weekly_log_path = cls.get_weekly_log_path()
+        
         logger.remove()
+        # 根据调试模式设置日志级别
+        log_level = "DEBUG" if debug_mode else level.upper()
+        
         logger.add(
             sys.stdout,
             enqueue=True,
             backtrace=True,
-            level=level.upper(),
+            level=log_level,
             format=format
         )
         logger.add(
-            str(filepath),
-            rotation=rotation,
+            weekly_log_path,
+            rotation="1 week",  # 每周轮转
             retention=retention,
             enqueue=True,
             backtrace=True,
-            level=level.upper(),
+            level=log_level,
             format=format
         )
         logging.basicConfig(handlers=[InterceptHandler()], level=0)
@@ -85,6 +224,9 @@ class CustomizeLogger:
                      ]:
             _logger = logging.getLogger(_log)
             _logger.handlers = [InterceptHandler()]
+        
+        # 启动时清理旧日志
+        cls.cleanup_old_logs(retention_months=6)
 
         return logger.bind(request_id=None, method=None)
 
@@ -102,7 +244,25 @@ class CustomizeLogger:
             print(f"YAML 解析错误: {e}")
         except UnicodeDecodeError:
             print(f"文件编码错误,请确保 {config_path} 使用 UTF-8 编码")
+        return None
+
+def debug_log(message: str):
+    """
+    调试日志函数，只有在调试模式下才会输出日志
+    """
+    global DEBUG_MODE
+    if DEBUG_MODE:
+        custom_logger.debug(f"[DEBUG] {message}")
 
 
-config_path = Path(__file__).with_name('config.yaml')
+# 更可靠地构建config.yaml的绝对路径
+config_path = Path(__file__).parent.parent / "config" / "config.yaml"
+
+# 如果配置文件不存在，尝试其他可能的路径
+if not config_path.exists():
+    # 尝试从当前工作目录查找
+    alt_config_path = Path("config") / "config.yaml"
+    if alt_config_path.exists():
+        config_path = alt_config_path
+
 custom_logger = CustomizeLogger.make_logger(config_path=config_path)
