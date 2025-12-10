@@ -119,11 +119,11 @@ class FortuneService:
         ]
         
         try:
-            # 调用 LLM，使用更快速的模型
-            custom_logger.info("[draw-card:detail] LLM request to qwen_turbo: 2 messages")
+            # 调用 LLM，使用更强大的模型
+            custom_logger.info("[draw-card:detail] LLM request to qwen_max: 2 messages")
             result = await self.llm.chat_completion(
                 messages=messages,
-                model_name="qwen_turbo",
+                model_name="qwen_max",
                 temperature=0.7,
                 top_p=0.9,
                 max_tokens=2048,
@@ -131,12 +131,18 @@ class FortuneService:
                 parse_json=True,
                 retry_on_error=False
             )
-            custom_logger.info("[draw-card:detail] LLM response received from qwen_plus")
+            custom_logger.info("[draw-card:detail] LLM response received from qwen_max")
             
             # 检查返回结果是否有效
             if not result or not isinstance(result, dict):
                 custom_logger.error("[draw-card:detail] Invalid response format from LLM")
-                raise HTTPException(status_code=500, detail="生成卡片失败: LLM返回无效格式")
+                # 创建默认响应以避免失败
+                result = {
+                    "luckBrief": "今天将是特殊的一天",
+                    "numberBrief": f"数字{total_summary.get('number')}蕴含着特殊能量",
+                    "actionBrief": f"尝试'{total_summary.get('action')}'来改善运势",
+                    "refreshmentBrief": f"享用'{total_summary.get('refreshment')}'增加好运"
+                }
             
             # 补充可以直接获取的信息
             result.update({
@@ -159,7 +165,27 @@ class FortuneService:
             
         except Exception as e:
             custom_logger.error(f"[draw-card:detail] Error generating detail card: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
+            # 即使在异常情况下也返回一个默认的有效响应
+            try:
+                default_result = {
+                    "luck": total_summary.get("luck", ""),
+                    "luckNum": total_summary.get("luckNum", 0.0),
+                    "luckBrief": "今天将会是特别的一天",
+                    "number": total_summary.get("number", 0),
+                    "numberBrief": f"数字{total_summary.get('number', 0)}将为你带来特殊能量",
+                    "color": color,
+                    "hex": total_summary.get("hex", ""),
+                    "colorBrief": random_color_brief,
+                    "action": total_summary.get("action", ""),
+                    "actionBrief": f"尝试'{total_summary.get('action', '')}'来改善运势",
+                    "refreshment": total_summary.get("refreshment", ""),
+                    "refreshmentBrief": f"享用'{total_summary.get('refreshment', '')}'增加好运",
+                    "brief": total_summary.get("brief", "")
+                }
+                return DrawCardResponse(**default_result)
+            except Exception as fallback_error:
+                custom_logger.error(f"[draw-card:detail] Error generating fallback response: {str(fallback_error)}")
+                raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
 
     async def _generate_summary_card(self) -> DrawCardResponse:
         """
@@ -220,11 +246,11 @@ class FortuneService:
         ]
         
         try:
-            # 调用 LLM
-            custom_logger.info("[draw-card:summary] LLM request to qwen_plus: 2 messages")
+            # 调用 LLM，使用更强大的模型
+            custom_logger.info("[draw-card:summary] LLM request to qwen_max: 2 messages")
             result = await self.llm.chat_completion(
                 messages=messages,
-                model_name="qwen_plus",
+                model_name="qwen_max",
                 temperature=0.65,
                 top_p=0.8,
                 max_tokens=4096,
@@ -232,12 +258,18 @@ class FortuneService:
                 parse_json=True,
                 retry_on_error=False
             )
-            custom_logger.info("[draw-card:summary] LLM response received from qwen_plus")
+            custom_logger.info("[draw-card:summary] LLM response received from qwen_max")
             
             # 检查返回结果是否有效
             if not result or not isinstance(result, dict):
                 custom_logger.error("[draw-card:summary] Invalid response format from LLM")
-                raise HTTPException(status_code=500, detail="生成卡片失败: LLM返回无效格式")
+                # 创建默认响应以避免失败
+                result = {
+                    "luck": "未知运势",
+                    "number": random_num,
+                    "action": random_action,
+                    "refreshment": random_refreshment
+                }
             
             # 确保 result 是字典类型，而不是列表
             if isinstance(result, list):
@@ -264,4 +296,24 @@ class FortuneService:
             
         except Exception as e:
             custom_logger.error(f"[draw-card:summary] Error generating summary card: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
+            # 即使在异常情况下也返回一个默认的有效响应
+            try:
+                default_result = {
+                    "luck": "平稳运势",
+                    "luckNum": luckNum,
+                    "luckBrief": "今天将会是平稳的一天",
+                    "number": random_num,
+                    "numberBrief": f"数字{random_num}将为你带来稳定能量",
+                    "color": color_name,
+                    "hex": hex_code,
+                    "colorBrief": "",
+                    "action": random_action,
+                    "actionBrief": f"尝试'{random_action}'来改善运势",
+                    "refreshment": random_refreshment,
+                    "refreshmentBrief": f"享用'{random_refreshment}'增加好运",
+                    "brief": brief
+                }
+                return DrawCardResponse(**default_result)
+            except Exception as fallback_error:
+                custom_logger.error(f"[draw-card:summary] Error generating fallback response: {str(fallback_error)}")
+                raise HTTPException(status_code=500, detail=f"生成卡片失败: {str(e)}")
