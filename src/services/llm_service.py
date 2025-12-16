@@ -120,9 +120,13 @@ class LLMService:
         """
         try:
             # 清理可能的代码块
-            if "``json" in response_text:
+            if "```json" in response_text:
                 response_text = response_text.replace("```json\n", "").replace("\n```", "")
             
+            # 处理空白响应的情况
+            if not response_text or response_text.isspace():
+                raise json.JSONDecodeError("Empty response", "", 0)
+                
             return json.loads(response_text)
         except json.JSONDecodeError as e:
             if retry_count < max_retries:
@@ -248,6 +252,13 @@ class LLMService:
             
             # 在调试模式下记录完整的响应内容
             debug_log(f"Full LLM response: {response_data}")
+            
+            # 检查内容是否为空
+            if not content or content.isspace():
+                custom_logger.warning(f"Empty content received from LLM {model_name}")
+                if fallback_response is not None:
+                    return {"content": fallback_response}
+                raise Exception("Empty response from LLM")
             
             # 6. JSON 解析（如果需要）
             if parse_json:
