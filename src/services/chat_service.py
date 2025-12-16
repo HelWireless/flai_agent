@@ -156,7 +156,7 @@ class ChatService:
             result = await self.llm.chat_completion(
                 messages=messages,
                 model_name=model_name,
-                model_pool=["autodl", "qwen3_32b_custom", "qwen_max", "deepseek"] if not model_name else None,
+                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"] if not model_name else None,
                 temperature=0.9,
                 top_p=0.85,
                 max_tokens=2048,

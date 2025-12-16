@@ -1,7 +1,6 @@
 {
   "model_pools": {
     "chat": [
-      "autodl",
       "qwen3_32b_custom",
       "qwen_max",
       "deepseek"
