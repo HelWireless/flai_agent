@@ -26,7 +26,7 @@ class LLMService:
         self.config = config
         self.session = self._create_retry_session()
     
-    def _create_retry_session(self, retries=5, backoff_factor=1.0, 
+    def _create_retry_session(self, retries=3, backoff_factor=0.5, 
                               status_forcelist=(500, 502, 504)):
         """创建带重试机制的 HTTP 会话"""
         session = requests.Session()
@@ -47,12 +47,12 @@ class LLMService:
         session.mount('https://', adapter)
         return session
     
-    async def _make_request(self, url: str, json_data: Dict, headers: Dict):
+    async def _make_request(self, url: str, json_data: Dict, headers: Dict, timeout: int = 30):
         """异步 HTTP 请求"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, 
-            partial(self.session.post, url, json=json_data, headers=headers)
+            partial(self.session.post, url, json=json_data, headers=headers, timeout=timeout)
         )
     
     def _get_model_config(self, model_name: str) -> Dict:
@@ -145,7 +145,8 @@ class LLMService:
         response_format: str = "json_object",
         parse_json: bool = True,
         retry_on_error: bool = True,
-        fallback_response: Optional[Any] = None
+        fallback_response: Optional[Any] = None,
+        timeout: int = 15
     ) -> Dict:
         """
         统一的 LLM 调用接口
@@ -163,6 +164,7 @@ class LLMService:
             parse_json: 是否解析为 JSON
             retry_on_error: 是否在错误时重试
             fallback_response: 失败时的降级响应
+            timeout: 超时时间（秒）
         
         Returns:
             LLM 响应（字典或字符串）
@@ -211,7 +213,8 @@ class LLMService:
             response = await self._make_request(
                 model_config["api_base"], 
                 request_data, 
-                headers
+                headers,
+                timeout=timeout
             )
             
             # 检查响应状态

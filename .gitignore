@@ -180,3 +180,8 @@ logs/*
 
 # Config files (keep templates only)
 config/config.yaml
+
+# Project documentation
+# gemini-progress.txt
+
+

@@ -4,7 +4,7 @@
 from typing import List, Dict, Optional, Tuple
 import random
 
-from fastapi import HTTPException
+from fastapi import HTTPException, BackgroundTasks
 from ..schemas import ChatRequest, ChatResponse, GenerateOpenerRequest, GenerateOpenerResponse
 from ..core.content_filter import ContentFilter
 from ..core.config_loader import get_config_loader
@@ -47,12 +47,13 @@ class ChatService:
         self.sensitive_responses = responses_config.get('sensitive_responses', [])
         self.characters_opener = config_loader.get_character_openers()
     
-    async def process_chat(self, request: ChatRequest) -> ChatResponse:
+    async def process_chat(self, request: ChatRequest, background_tasks: Optional[BackgroundTasks] = None) -> ChatResponse:
         """
         处理对话请求
         
         Args:
             request: 对话请求
+            background_tasks: FastAPI后台任务对象
         
         Returns:
             对话响应
@@ -156,7 +157,7 @@ class ChatService:
             result = await self.llm.chat_completion(
                 messages=messages,
                 model_name=model_name,
-                model_pool=["autodl", "qwen3_32b_custom", "qwen_max", "deepseek"] if not model_name else None,
+                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"] if not model_name else None,
                 temperature=0.9,
                 top_p=0.85,
                 max_tokens=2048,
@@ -199,29 +200,41 @@ class ChatService:
         custom_logger.info(f"Emotion recognition completed in {emotion_recognition_duration:.2f} seconds")
         
         # 8. 保存到记忆（三种记忆）
-        # 这会触发：
-        # - LLM判断记忆类型
-        # - 持久化记忆更新（chat_memory表）
-        # - 向量存储（如果启用且未检测到高度相似内容）
-        memory_save_start_time = time.time()
-        memory_result = await self.memory.save_conversation(
-            user_id=request.user_id,
-            character_id=request.character_id,
-            user_message=request.message,
-            ai_response=answer,
-            metadata={
-                "emotion_type": emotion_type,
-                "voice": request.voice
-            },
-            skip_vector_storage=skip_vector_storage
-        )
-        memory_save_end_time = time.time()
-        memory_save_duration = memory_save_end_time - memory_save_start_time
-        custom_logger.info(f"Memory saving completed in {memory_save_duration:.2f} seconds")
-        
-        # 记录记忆处理结果
-        if memory_result:
-            custom_logger.debug(f"Memory save result: {memory_result}")
+        # 如果提供了background_tasks，则异步执行；否则同步执行
+        if background_tasks:
+            custom_logger.info("Scheduling memory save task in background")
+            background_tasks.add_task(
+                self.memory.save_conversation,
+                user_id=request.user_id,
+                character_id=request.character_id,
+                user_message=request.message,
+                ai_response=answer,
+                metadata={
+                    "emotion_type": emotion_type,
+                    "voice": request.voice
+                },
+                skip_vector_storage=skip_vector_storage
+            )
+        else:
+            memory_save_start_time = time.time()
+            memory_result = await self.memory.save_conversation(
+                user_id=request.user_id,
+                character_id=request.character_id,
+                user_message=request.message,
+                ai_response=answer,
+                metadata={
+                    "emotion_type": emotion_type,
+                    "voice": request.voice
+                },
+                skip_vector_storage=skip_vector_storage
+            )
+            memory_save_end_time = time.time()
+            memory_save_duration = memory_save_end_time - memory_save_start_time
+            custom_logger.info(f"Memory saving completed in {memory_save_duration:.2f} seconds")
+            
+            # 记录记忆处理结果
+            if memory_result:
+                custom_logger.debug(f"Memory save result: {memory_result}")
         
         end_time = time.time()
         total_duration = end_time - start_time
