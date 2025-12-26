@@ -126,9 +126,9 @@ class DialogueQuery:
         results = self.query_with_retry(self.db, self._query_dialogue_history,
                                        user_id, "t_third_character_dialogue", if_voice, character_id)
         nickname = self.query_with_retry(self.db, self._query_nickname, user_id)
-        return self._process_query_results(results, reverse=False), nickname
+        return self._process_query_results(results), nickname
     
-    def _process_query_results(self, query_results: List, reverse: bool = True) -> List[Dict]:
+    def _process_query_results(self, query_results: List, reverse: bool = False) -> List[Dict]:
         """处理查询结果，转换为对话格式"""
         temp_dict = {}
         
@@ -147,6 +147,8 @@ class DialogueQuery:
                     temp_dict[timestamp]["assistant"] = assistant_msg
         
         # 排序并取最近7轮对话
+        # 为了保持正确的对话时间顺序（较早的对话在前，较晚的对话在后），
+        # 我们按时间升序排序（reverse=False）
         sorted_keys = sorted(temp_dict.keys(), reverse=reverse)
         processed_results = []
         
