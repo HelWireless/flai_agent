@@ -178,7 +178,12 @@ class ChatService:
         try:
             # 构建消息列表（包含对话历史和持久化记忆）
             # 将JSON格式要求和持久化记忆直接整合到system prompt中
-            json_format_instruction = "请以JSON格式回复，包含emotion_type和answer字段。emotion_type必须是以下之一：开心、期待、生气、伤心、惊恐、害羞、抱抱、无语。\n\n"
+            json_format_instruction = """【重要】你必须严格以JSON格式回复，格式如下：
+{"emotion_type": "开心", "answer": "你的回复内容"}
+其中emotion_type必须是以下之一：开心、期待、生气、伤心、惊恐、害羞、抱抱、无语。
+不要输出任何JSON以外的内容。
+
+"""
             system_content = prompt["system_prompt"] + json_format_instruction 
             
             # 添加持久化记忆上下文（如果有）到system prompt中
