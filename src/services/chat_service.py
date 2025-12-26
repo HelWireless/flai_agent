@@ -148,18 +148,19 @@ class ChatService:
             if user_history_exists:
                 messages.extend(conversation_history)
             
-            # 添加当前用户消息（包含JSON格式要求以满足API规范）
-            # 某些模型要求消息中包含'json'字样才能使用json_object响应格式
-            # 同时确保用户昵称关系清晰，避免角色混淆
-            current_user_message = f"{request.message} 请以JSON格式回复，包含emotion_type和answer字段。"
-            
             # 检查用户消息中是否包含昵称相关的关键词，以确保角色关系清晰
             if "小甜心" in request.message or "昵称" in request.message or "称呼" in request.message:
                 # 在系统消息中添加额外的上下文，帮助AI理解当前的昵称偏好
                 nickname_context = f"\n\n重要提醒：用户在当前对话中表达了希望被称呼为'小甜心'，请在回复中注意这一昵称偏好。当前系统记录的昵称为'{nickname}'，但在本次对话中用户偏好为'小甜心'。"
-                messages.insert(-1, {"role": "system", "content": nickname_context})  # 在当前用户消息前插入系统提醒
+                messages.append({"role": "system", "content": nickname_context})  # 添加系统提醒
             
-            messages.append({"role": "user", "content": current_user_message})
+            # 添加当前用户消息（不包含JSON格式要求，以避免混淆）
+            messages.append({"role": "user", "content": request.message})
+            
+            # 添加系统消息以指定JSON格式要求（某些模型要求消息中包含'json'字样才能使用json_object响应格式）
+            # 这样可以避免将格式要求与用户消息混淆
+            json_format_message = "请以JSON格式回复，包含emotion_type和answer字段。"
+            messages.append({"role": "system", "content": json_format_message})
             
             # 记录发送给LLM的完整消息内容
             custom_logger.info(f"Sending {len(messages)} messages to LLM")
