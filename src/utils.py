@@ -239,8 +239,19 @@ def split_message(message: str, count: int, is_voice: bool = False) -> List[str]
     # 过滤掉长度小于或等于1的句子
     result = [sentence for sentence in result if len(sentence) > 1]
 
-    # 50%的概率删除单独的口癖词
-    result = remove_random_interjections(result)
+    # 只对第一个句子进行处理，50%的概率删除单独的口癖词
+    if len(result) > 0:
+        first_sentence = result[0]
+        interjections = {"哼", "哈", "哎呀", "嗯", "哦", "呃", "啊", "哎", "咦", "嘘", "哼哼", "哈哈", "嘿嘿"}
+        
+        # 检查是否是单独的口癖词
+        if first_sentence.strip() in interjections:
+            # 50%的概率删除
+            if random.random() < 0.5:
+                result.pop(0)
+                # 如果删除了第一个句子，确保至少有一个句子
+                if not result and sentences:
+                    result.append(sentences[0])
 
     # print(f"最终结果: {result}")
     return result
