@@ -139,7 +139,7 @@ class ChatService:
                 current_message=request.message,
                 character_id=request.character_id,
                 if_voice=request.voice,
-                conversation_history_limit=20,
+                conversation_history_limit=7,
                 vector_memory_limit=3
             )
         except Exception as e:
