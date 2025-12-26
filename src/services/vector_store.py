@@ -183,8 +183,15 @@ class VectorStore:
             conversion_duration = conversion_end_time - conversion_start_time
             custom_logger.info(f"Results conversion completed in {conversion_duration:.2f} seconds")
             
+            # 过滤低相似度结果（阈值0.8）
+            original_count = len(conversations)
+            conversations = [conv for conv in conversations if conv["score"] >= 0.8]
+            filtered_count = original_count - len(conversations)
+            if filtered_count > 0:
+                custom_logger.debug(f"Filtered out {filtered_count} low similarity conversations (score < 0.8)")
+            
             custom_logger.debug(f"Found {len(conversations)} similar conversations for user {user_id}")
-            debug_log(f"Total similar conversations found: {len(conversations)}")
+            debug_log(f"Total similar conversations found: {len(conversations)} (filtered from {original_count})")
             
             end_time = time.time()
             total_duration = end_time - start_time
