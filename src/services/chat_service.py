@@ -226,27 +226,36 @@ class ChatService:
             from ..custom_logger import debug_log
             debug_log(f"Full messages sent to LLM: {messages}")
 
-            # 调用 LLM
-            result = await self.llm.chat_completion(
-                messages=messages,
-                model_name=model_name,
-                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"] if not model_name else None,
-                temperature=0.9,
-                top_p=0.85,
-                max_tokens=2048,
-                response_format="json_object",
-                parse_json=True,
-                retry_on_error=True,
-                fallback_response=random.choice(self.error_responses)
-            )
+            # 调用 LLM（最多重试2次以获取正确JSON格式）
+            max_attempts = 2
+            result = None
+            for attempt in range(max_attempts):
+                result = await self.llm.chat_completion(
+                    messages=messages,
+                    model_name=model_name,
+                    model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"] if not model_name else None,
+                    temperature=0.9,
+                    top_p=0.85,
+                    max_tokens=2048,
+                    response_format="json_object",
+                    parse_json=True,
+                    retry_on_error=True,
+                    fallback_response=random.choice(self.error_responses)
+                )
+                
+                # 检查返回格式
+                if isinstance(result, dict) and "answer" in result:
+                    break
+                elif attempt < max_attempts - 1:
+                    custom_logger.warning(f"LLM returned invalid format (attempt {attempt + 1}), retrying...")
             
-            # 处理 LLM 返回结果（可能是字典或字符串）
+            # 处理 LLM 返回结果
             if isinstance(result, dict):
                 answer = result.get("answer", random.choice(self.error_responses))
                 emotion_type_from_llm = result.get("emotion_type")
             else:
-                # LLM 返回了非字典格式（如纯字符串），使用返回值作为 answer
-                custom_logger.warning(f"LLM returned non-dict response: {type(result)}")
+                # 重试后仍然是非字典格式，使用返回值作为 answer
+                custom_logger.warning(f"LLM returned non-dict response after retries: {type(result)}")
                 answer = str(result) if result else random.choice(self.error_responses)
                 emotion_type_from_llm = None
             
