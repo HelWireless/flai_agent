@@ -58,11 +58,12 @@ def get_emotion_type(text: str, emotion_type=None) -> int:
         '😐': '无语', '😑': '无语', '🙄': '无语'
     }
     if emotion_type:
-        try:
+        if emotion_type in emotion_map:
             return emotion_map[emotion_type]
-        except Exception as e:
-            print("error is ", e)
-            return get_emotion_type(text)
+        else:
+            # emotion_type不在map中，随机返回一个情绪
+            custom_logger.warning(f"Unknown emotion_type: {emotion_type}, using random")
+            return random.choice(list(emotion_map.values()))
 
     text = text.lower()
     exclamation_count = text.count('!')
