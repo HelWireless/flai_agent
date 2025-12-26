@@ -67,7 +67,9 @@ class ChatService:
                 messages=messages,
                 model_pool=["qwen_plus"],
                 temperature=0.7,
-                max_tokens=10
+                max_tokens=10,
+                response_format=None,  # 不使用JSON格式
+                parse_json=False       # 不解析JSON
             )
             # 提取emoji，如果格式不对则兜底
             response = result if isinstance(result, str) else str(result)
