@@ -167,10 +167,15 @@ def split_message(message: str, count: int, is_voice: bool = False) -> List[str]
         # 在voice模式下，禁止出现emoji
         message = remove_emojis(message)
     else:
-        # 非voice模式下，如果对方全是emoji，则我们也用emoji回复
+        # 非voice模式下，如果对方全是emoji，则我们也用emoji回复（90%概率）
         if is_all_emojis(message):
-            # 这里可以添加一些emoji回复的逻辑
-            pass
+            # 90%的概率使用emoji回复
+            if random.random() < 0.9:
+                # 返回一个emoji回复
+                emoji_replies = [
+                    '😊', '😄', '😃', '😁', '🤔', '🙏', '😠', '😡', '🤬', '😢', '😭', '😞', '😨', '😱', '😰', '😳', '🤭', '🤗', '😐', '😑', '🙄'
+                ]
+                return [random.choice(emoji_replies)]
     
     message = message.replace('\\"', '#')
 
