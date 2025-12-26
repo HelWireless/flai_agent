@@ -77,7 +77,7 @@ class MemoryService:
             if character_id == 'default':
                 conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id, if_voice)
             else:
-                conversation_history, nickname = dq.get_user_third_character_dialogue_history(user_id, character_id)
+                conversation_history, nickname = dq.get_user_third_character_dialogue_history(user_id, character_id, if_voice)
             
             # 限制返回数量
             return conversation_history[:limit], nickname
