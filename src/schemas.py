@@ -26,11 +26,15 @@ class TextToSpeechRequest(BaseModel):
     voice: str
 
 class ChatRequest(BaseModel):
-    user_id: Union[str, int]
+    user_id: Union[str, int] = Field(alias="userId")  # 支持userId别名
     message: str
     message_count: int
     character_id: str = "default"  # 新增人物ID字段
     voice: bool = False
+    
+    model_config = ConfigDict(
+        populate_by_name=True  # 支持通过别名访问字段
+    )
     
     @field_validator('user_id')
     def convert_user_id(cls, v) -> str:
