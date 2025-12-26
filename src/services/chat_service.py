@@ -57,8 +57,10 @@ class ChatService:
         Returns:
             回复的emoji
         """
+        import re
+        
         messages = [
-            {"role": "system", "content": "你是一个emoji回复专家。用户发送了emoji，请用1-2个合适的emoji回复。只输出emoji，不要输出任何文字。"},
+            {"role": "system", "content": "你是一个emoji回复专家。用户发送了emoji，请用1-2个合适的emoji回复。只输出emoji，不要输出任何文字或HTML标签。"},
             {"role": "user", "content": user_emoji}
         ]
         
@@ -71,12 +73,23 @@ class ChatService:
                 response_format=None,  # 不使用JSON格式
                 parse_json=False       # 不解析JSON
             )
-            # 提取emoji，如果格式不对则兜底
-            response = result if isinstance(result, str) else str(result)
+            
+            # 正确提取返回内容
+            if isinstance(result, dict):
+                response = result.get("content", "")
+            else:
+                response = str(result)
+            
+            # 清理HTML标签（如 <span class="emoji emoji1f31b"></span>）
+            response = re.sub(r'<[^>]+>', '', response)
             response = response.strip()
+            
             if response and is_all_emojis(response):
                 custom_logger.info(f"Emoji response from LLM: {response}")
                 return response
+            else:
+                custom_logger.warning(f"LLM returned non-emoji content: {response[:50] if response else 'empty'}")
+                
         except Exception as e:
             custom_logger.error(f"Emoji response generation failed: {e}")
         
