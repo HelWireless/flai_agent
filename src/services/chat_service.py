@@ -126,15 +126,10 @@ class ChatService:
         llm_start_time = time.time()
         try:
             # 构建消息列表（包含对话历史和持久化记忆）
-            messages = [
-                {"role": "system", "content": prompt["system_prompt"]}
-            ]
+            # 将持久化记忆直接整合到system prompt中
+            system_content = prompt["system_prompt"]
             
-            # 添加对话历史（作为多个连续的用户/助手消息）
-            if user_history_exists:
-                messages.extend(conversation_history)
-            
-            # 添加持久化记忆上下文（如果有）
+            # 添加持久化记忆上下文（如果有）到system prompt中
             memory_context = ""
             if persistent_memory.get("long_term"):
                 memory_context += f"\n\n【用户长期特征】\n{persistent_memory['long_term']}"
@@ -142,8 +137,16 @@ class ChatService:
                 memory_context += f"\n\n【最近事件】\n{persistent_memory['short_term']}"
             
             if memory_context:
-                # 添加持久化记忆作为系统消息
-                messages.append({"role": "system", "content": memory_context})
+                # 将记忆上下文添加到系统提示词中
+                system_content += memory_context
+            
+            messages = [
+                {"role": "system", "content": system_content}
+            ]
+            
+            # 添加对话历史（作为多个连续的用户/助手消息）
+            if user_history_exists:
+                messages.extend(conversation_history)
             
             # 添加当前用户消息（包含JSON格式要求以满足API规范）
             # 某些模型要求消息中包含'json'字样才能使用json_object响应格式
