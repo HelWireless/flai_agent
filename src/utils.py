@@ -138,6 +138,26 @@ def is_all_emojis(text: str) -> bool:
     # 如果移除emoji后文本为空，则说明原文本全部由emoji组成
     return len(text_without_emojis.strip()) == 0
 
+def remove_random_interjections(sentences: List[str]) -> List[str]:
+    """50%的概率删除单独的口癖词"""
+    interjections = {"哼", "哈", "哎呀", "嗯", "哦", "呃", "啊", "哎", "咦", "嘘", "哼哼", "哈哈", "嘿嘿"}
+    
+    result = []
+    for sentence in sentences:
+        # 检查是否是单独的口癖词
+        if sentence.strip() in interjections:
+            # 50%的概率删除
+            if random.random() < 0.5:
+                continue  # 跳过这个句子（即删除它）
+        
+        result.append(sentence)
+    
+    # 如果所有句子都被删除了，至少保留一个
+    if not result and sentences:
+        result.append(sentences[0])
+    
+    return result
+
 def split_message(message: str, count: int, is_voice: bool = False) -> List[str]:
     if not isinstance(message, str):
         message = str(message)
@@ -218,6 +238,9 @@ def split_message(message: str, count: int, is_voice: bool = False) -> List[str]
     result = [clean_sentence(sentence) for sentence in result]
     # 过滤掉长度小于或等于1的句子
     result = [sentence for sentence in result if len(sentence) > 1]
+
+    # 50%的概率删除单独的口癖词
+    result = remove_random_interjections(result)
 
     # print(f"最终结果: {result}")
     return result
