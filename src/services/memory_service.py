@@ -79,8 +79,10 @@ class MemoryService:
             else:
                 conversation_history, nickname = dq.get_user_third_character_dialogue_history(user_id, character_id, if_voice)
             
-            # 限制返回数量
-            return conversation_history[:limit], nickname
+            # 限制返回数量 - 取最近的N条（列表已是时间正序，取最后N条）
+            if len(conversation_history) > limit:
+                return conversation_history[-limit:], nickname
+            return conversation_history, nickname
         except Exception as e:
             custom_logger.error(f"Failed to get short-term memory: {e}")
             return [], "熟悉的人"
