@@ -240,8 +240,15 @@ class ChatService:
                 fallback_response=random.choice(self.error_responses)
             )
             
-            answer = result.get("answer", random.choice(self.error_responses))
-            emotion_type_from_llm = result.get("emotion_type")
+            # 处理 LLM 返回结果（可能是字典或字符串）
+            if isinstance(result, dict):
+                answer = result.get("answer", random.choice(self.error_responses))
+                emotion_type_from_llm = result.get("emotion_type")
+            else:
+                # LLM 返回了非字典格式（如纯字符串），使用返回值作为 answer
+                custom_logger.warning(f"LLM returned non-dict response: {type(result)}")
+                answer = str(result) if result else random.choice(self.error_responses)
+                emotion_type_from_llm = None
             
             # 在调试模式下记录LLM的响应
             debug_log(f"LLM Response: {result}")
