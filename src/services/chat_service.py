@@ -139,7 +139,7 @@ class ChatService:
                 current_message=request.message,
                 character_id=request.character_id,
                 if_voice=request.voice,
-                conversation_history_limit=7,
+                conversation_history_limit=20,
                 vector_memory_limit=3
             )
         except Exception as e:
@@ -178,7 +178,7 @@ class ChatService:
         try:
             # 构建消息列表（包含对话历史和持久化记忆）
             # 将JSON格式要求和持久化记忆直接整合到system prompt中
-            json_format_instruction = "请以JSON格式回复，包含emotion_type和answer字段。\n\n"
+            json_format_instruction = "请以JSON格式回复，包含emotion_type和answer字段。emotion_type必须是以下之一：开心、期待、生气、伤心、惊恐、害羞、抱抱、无语。\n\n"
             system_content = prompt["system_prompt"] + json_format_instruction 
             
             # 添加持久化记忆上下文（如果有）到system prompt中
