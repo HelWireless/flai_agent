@@ -128,6 +128,14 @@ class DialogueQuery:
         nickname = self.query_with_retry(self.db, self._query_nickname, user_id)
         return self._process_query_results(results), nickname
     
+    def _clean_html_tags(self, text: str) -> str:
+        """清理HTML标签（如 <span class="emoji...">）"""
+        import re
+        if not text:
+            return text
+        # 移除所有HTML标签
+        return re.sub(r'<[^>]+>', '', text).strip()
+    
     def _process_query_results(self, query_results: List, limit: int = 20) -> List[Dict]:
         """处理查询结果，转换为对话格式
         
@@ -147,12 +155,15 @@ class DialogueQuery:
                 temp_dict[timestamp] = {"user": "", "assistant": ""}
             
             if user_msg:
-                temp_dict[timestamp]["user"] = user_msg
+                # 清理HTML标签
+                temp_dict[timestamp]["user"] = self._clean_html_tags(user_msg)
             if assistant_msg:
+                # 清理HTML标签
+                cleaned_msg = self._clean_html_tags(assistant_msg)
                 if temp_dict[timestamp]["assistant"]:
-                    temp_dict[timestamp]["assistant"] += " " + assistant_msg
+                    temp_dict[timestamp]["assistant"] += " " + cleaned_msg
                 else:
-                    temp_dict[timestamp]["assistant"] = assistant_msg
+                    temp_dict[timestamp]["assistant"] = cleaned_msg
         
         # 按时间升序排序，然后取最近的N轮对话
         # 升序排序后，最新的在最后，取最后N个就是最近的N轮
