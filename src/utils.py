@@ -118,10 +118,40 @@ def clean_sentence(sentence: str) -> str:
     cleaned_sentence = re.sub(r'^[^\w\s]+', '', cleaned_sentence)
     return cleaned_sentence
 
+def remove_emojis(text: str) -> str:
+    """移除文本中的所有emoji"""
+    # 使用正则表达式匹配emoji
+    emoji_pattern = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002702-\U000027B0\U000024C2-\U0001F251]", flags=re.UNICODE)
+    return emoji_pattern.sub('', text)
 
-def split_message(message: str, count: int) -> List[str]:
+def is_all_emojis(text: str) -> bool:
+    """检查文本是否全部由emoji组成"""
+    if not text:
+        return False
+    
+    # 使用正则表达式匹配emoji
+    emoji_pattern = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002702-\U000027B0\U000024C2-\U0001F251]", flags=re.UNICODE)
+    
+    # 移除所有emoji
+    text_without_emojis = emoji_pattern.sub('', text)
+    
+    # 如果移除emoji后文本为空，则说明原文本全部由emoji组成
+    return len(text_without_emojis.strip()) == 0
+
+def split_message(message: str, count: int, is_voice: bool = False) -> List[str]:
     if not isinstance(message, str):
         message = str(message)
+    
+    # 处理emoji
+    if is_voice:
+        # 在voice模式下，禁止出现emoji
+        message = remove_emojis(message)
+    else:
+        # 非voice模式下，如果对方全是emoji，则我们也用emoji回复
+        if is_all_emojis(message):
+            # 这里可以添加一些emoji回复的逻辑
+            pass
+    
     message = message.replace('\\"', '#')
 
     if count == 1:
