@@ -105,7 +105,7 @@ class LLMService:
         retry_count: int = 0
     ) -> Dict:
         """
-        解析 JSON 响应（带重试逻辑）
+        解析 JSON 响应（带重试逻辑，兼容 deepseek 等模型的特殊格式）
         
         Args:
             response_text: LLM 返回的文本
@@ -118,17 +118,54 @@ class LLMService:
         Raises:
             json.JSONDecodeError: 解析失败
         """
+        import re
+        
+        original_text = response_text
+        
         try:
-            # 清理可能的代码块
-            if "```json" in response_text:
-                response_text = response_text.replace("```json\n", "").replace("\n```", "")
-            
             # 处理空白响应的情况
             if not response_text or response_text.isspace():
                 raise json.JSONDecodeError("Empty response", "", 0)
-                
+            
+            # 1. 清理 deepseek 的 <think>...</think> 标签（思考过程）
+            response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
+            
+            # 2. 清理可能的代码块标记
+            if "```json" in response_text:
+                response_text = re.sub(r'```json\s*', '', response_text)
+                response_text = re.sub(r'\s*```', '', response_text)
+            elif "```" in response_text:
+                response_text = re.sub(r'```\s*', '', response_text)
+            
+            # 3. 去除前后空白
+            response_text = response_text.strip()
+            
+            # 4. 尝试直接解析
+            if response_text.startswith('{') and response_text.endswith('}'):
+                return json.loads(response_text)
+            
+            # 5. 尝试提取 JSON 对象（从文本中找 {...}）
+            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
+            if json_match:
+                try:
+                    return json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    pass
+            
+            # 6. 如果是纯文本回复，尝试构造成需要的格式
+            if response_text and not response_text.startswith('{'):
+                custom_logger.warning(f"LLM returned plain text, wrapping as answer: {response_text[:100]}...")
+                # 将纯文本包装为标准格式
+                return {
+                    "answer": response_text,
+                    "emotion_type": "开心"  # 默认情绪
+                }
+            
+            # 最终尝试
             return json.loads(response_text)
+            
         except json.JSONDecodeError as e:
+            custom_logger.warning(f"JSON parse failed for: {original_text[:200]}...")
             if retry_count < max_retries:
                 custom_logger.warning(f"JSON 解析失败，第 {retry_count + 1} 次重试...")
                 raise  # 让调用者处理重试
