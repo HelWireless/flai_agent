@@ -129,8 +129,26 @@ def is_all_emojis(text: str) -> bool:
     if not text:
         return False
     
-    # 使用正则表达式匹配emoji
-    emoji_pattern = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002702-\U000027B0\U000024C2-\U0001F251]", flags=re.UNICODE)
+    # 使用正则表达式匹配emoji（修正范围，避免匹配到中文字符）
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # 表情符号
+        "\U0001F300-\U0001F5FF"  # 符号和图形
+        "\U0001F680-\U0001F6FF"  # 交通和地图
+        "\U0001F700-\U0001F77F"  # 炼金术符号
+        "\U0001F780-\U0001F7FF"  # 几何形状扩展
+        "\U0001F800-\U0001F8FF"  # 补充箭头-C
+        "\U0001F900-\U0001F9FF"  # 补充符号和图形
+        "\U0001FA00-\U0001FA6F"  # 国际象棋符号
+        "\U0001FA70-\U0001FAFF"  # 符号和图形扩展-A
+        "\U00002702-\U000027B0"  # 装饰符号
+        "\U0001F1E0-\U0001F1FF"  # 国旗
+        "\U00002600-\U000026FF"  # 杂项符号
+        "\U0000FE00-\U0000FE0F"  # 变体选择器
+        "\U0000200D"             # 零宽连接符
+        "]", 
+        flags=re.UNICODE
+    )
     
     # 移除所有emoji
     text_without_emojis = emoji_pattern.sub('', text)
