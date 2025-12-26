@@ -36,7 +36,7 @@ class PersistentMemoryService:
         self.config = config or {}
         
         # 配置参数
-        self.short_term_update_interval = self.config.get('short_term_update_interval', 7)  # 每7轮更新
+        self.short_term_update_interval = self.config.get('short_term_update_interval', 20)  # 每20轮更新
         self.enabled_characters = self.config.get('enabled_characters', [])  # 启用记忆的角色列表
         self.global_enabled = self.config.get('enabled', True)  # 全局开关
     
@@ -460,8 +460,8 @@ class PersistentMemoryService:
             
             existing_short_term = memory["short_term_memory"] or ""
             
-            # 合并新记忆（添加时间戳）
-            timestamp = datetime.now().strftime("%Y-%m-%d")
+            # 合并新记忆（添加时间戳，精确到秒）
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             new_memories_with_time = [f"[{timestamp}] {m}" for m in cached_memories]
             new_memories_text = "\n".join(new_memories_with_time)
             
@@ -578,8 +578,8 @@ class PersistentMemoryService:
             
             summary_content = summary_result.get("summary", "日常对话")
             
-            # 添加时间戳
-            timestamp = datetime.now().strftime("%Y-%m-%d")
+            # 添加时间戳（精确到秒）
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             summary_with_time = f"[{timestamp}] {summary_content}"
             
             # 合并到现有短期记忆
@@ -611,8 +611,177 @@ class PersistentMemoryService:
             self._short_term_cache[cache_key]["dialogues"] = []
             self._short_term_cache[cache_key]["count"] = 0
             
+            # 整理历史短期记忆（将非当天的多条记忆按天合并）
+            await self._consolidate_daily_memories(user_id, robot_id)
+            
         except Exception as e:
             custom_logger.error(f"Failed to generate short-term summary: {e}")
+    
+    async def _consolidate_daily_memories(
+        self,
+        user_id: str,
+        robot_id: str
+    ):
+        """
+        整理历史短期记忆：将非当天的多条记忆按日期合并成一条
+        
+        Args:
+            user_id: 用户ID
+            robot_id: 机器人ID
+        """
+        try:
+            # 获取现有短期记忆
+            memory = self.query_with_retry(self.db, self._get_memory_record, user_id, robot_id)
+            if not memory or not memory["short_term_memory"]:
+                return
+            
+            existing_short_term = memory["short_term_memory"]
+            
+            # 解析短期记忆，按日期分组
+            lines = existing_short_term.strip().split('\n')
+            today = datetime.now().strftime("%Y-%m-%d")
+            
+            # 按日期分组记忆
+            daily_memories = defaultdict(list)
+            for line in lines:
+                if not line.strip():
+                    continue
+                # 解析格式 [YYYY-MM-DD HH:MM:SS] 内容 或 [YYYY-MM-DD] 内容
+                if line.startswith('[') and ']' in line:
+                    end_bracket = line.find(']')
+                    timestamp_str = line[1:end_bracket]
+                    content = line[end_bracket + 2:] if end_bracket + 2 < len(line) else ""
+                    
+                    # 提取日期部分（取前10个字符，即 YYYY-MM-DD）
+                    date_part = timestamp_str[:10] if len(timestamp_str) >= 10 else timestamp_str
+                    
+                    daily_memories[date_part].append({
+                        "timestamp": timestamp_str,
+                        "content": content
+                    })
+                else:
+                    # 无时间戳的记忆，归类到 unknown
+                    daily_memories["unknown"].append({
+                        "timestamp": "unknown",
+                        "content": line
+                    })
+            
+            # 检查是否需要合并（只有非当天的日期有多条记忆才需要）
+            needs_consolidation = False
+            for date, memories in daily_memories.items():
+                if date != today and date != "unknown" and len(memories) > 1:
+                    needs_consolidation = True
+                    break
+            
+            if not needs_consolidation:
+                custom_logger.debug(f"No consolidation needed for user {user_id}")
+                return
+            
+            # 对非当天的多条记忆进行合并
+            consolidated_memories = []
+            
+            # 按日期排序处理
+            sorted_dates = sorted(daily_memories.keys())
+            
+            for date in sorted_dates:
+                memories = daily_memories[date]
+                
+                if date == today:
+                    # 当天的记忆保持不变
+                    for mem in memories:
+                        consolidated_memories.append(f"[{mem['timestamp']}] {mem['content']}")
+                elif date == "unknown":
+                    # 未知日期的记忆保持不变
+                    for mem in memories:
+                        consolidated_memories.append(mem['content'])
+                elif len(memories) == 1:
+                    # 只有一条记忆，保持不变
+                    mem = memories[0]
+                    consolidated_memories.append(f"[{mem['timestamp']}] {mem['content']}")
+                else:
+                    # 多条记忆，使用LLM合并
+                    contents = [mem['content'] for mem in memories]
+                    merged_content = await self._merge_daily_memories(date, contents)
+                    consolidated_memories.append(f"[{date}] {merged_content}")
+            
+            # 更新数据库
+            consolidated_text = "\n".join(consolidated_memories)
+            
+            # 限制长度
+            if len(consolidated_text) > 5000:
+                consolidated_text = consolidated_text[-5000:]
+            
+            self.query_with_retry(
+                self.db,
+                self._update_short_term_memory,
+                user_id,
+                robot_id,
+                consolidated_text,
+                0  # 不增加计数
+            )
+            
+            custom_logger.info(
+                f"Consolidated daily memories for user {user_id}: "
+                f"{len(lines)} lines → {len(consolidated_memories)} lines"
+            )
+            
+        except Exception as e:
+            custom_logger.error(f"Failed to consolidate daily memories: {e}")
+    
+    async def _merge_daily_memories(
+        self,
+        date: str,
+        contents: list
+    ) -> str:
+        """
+        使用LLM合并同一天的多条记忆
+        
+        Args:
+            date: 日期
+            contents: 该天的记忆内容列表
+        
+        Returns:
+            合并后的记忆内容
+        """
+        try:
+            system_prompt = """你是一个专业的记忆总结专家。你的任务是将同一天的多条记忆合并成一条简洁的总结。
+
+要求：
+1. 只输出合并后的内容，不要添加任何解释
+2. 保留重要信息，去除重复内容
+3. 内容要简洁明了
+4. 输出JSON格式"""
+
+            memories_text = "\n".join([f"- {c}" for c in contents])
+            user_prompt = f"""请将以下 {date} 的多条记忆合并成一条简洁的总结：
+
+{memories_text}
+
+请输出JSON格式：
+{{
+    "merged": "合并后的记忆内容"
+}}"""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            
+            result = await self.llm_service.chat_completion(
+                messages=messages,
+                model_pool=["qwen_plus"],
+                temperature=0.3,
+                max_tokens=200,
+                parse_json=True,
+                retry_on_error=True
+            )
+            
+            return result.get("merged", "；".join(contents))
+            
+        except Exception as e:
+            custom_logger.error(f"Failed to merge daily memories: {e}")
+            # 出错时简单拼接
+            return "；".join(contents)
     
     async def _handle_long_term_memory_async(
         self,

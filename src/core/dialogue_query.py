@@ -128,8 +128,16 @@ class DialogueQuery:
         nickname = self.query_with_retry(self.db, self._query_nickname, user_id)
         return self._process_query_results(results), nickname
     
-    def _process_query_results(self, query_results: List, reverse: bool = False) -> List[Dict]:
-        """处理查询结果，转换为对话格式"""
+    def _process_query_results(self, query_results: List, limit: int = 20) -> List[Dict]:
+        """处理查询结果，转换为对话格式
+        
+        Args:
+            query_results: 查询结果列表
+            limit: 返回的对话轮数限制，默认20轮
+        
+        Returns:
+            对话历史列表，按时间正序排列（早的在前，晚的在后）
+        """
         temp_dict = {}
         
         for query_result in query_results:
@@ -146,13 +154,13 @@ class DialogueQuery:
                 else:
                     temp_dict[timestamp]["assistant"] = assistant_msg
         
-        # 排序并取最近7轮对话
-        # 为了保持正确的对话时间顺序（较早的对话在前，较晚的对话在后），
-        # 我们按时间升序排序（reverse=False）
-        sorted_keys = sorted(temp_dict.keys(), reverse=reverse)
-        processed_results = []
+        # 按时间升序排序，然后取最近的N轮对话
+        # 升序排序后，最新的在最后，取最后N个就是最近的N轮
+        sorted_keys = sorted(temp_dict.keys())  # 升序（早的在前）
+        recent_keys = sorted_keys[-limit:] if len(sorted_keys) > limit else sorted_keys  # 取最后N个（最近的）
         
-        for key in sorted_keys[:7]:
+        processed_results = []
+        for key in recent_keys:  # 已经是时间正序
             if temp_dict[key]["user"]:
                 processed_results.append({"role": "user", "content": temp_dict[key]["user"]})
             if temp_dict[key]["assistant"]:
