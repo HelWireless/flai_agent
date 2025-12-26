@@ -125,11 +125,14 @@ class ChatService:
         # 5. 调用 LLM 生成回答
         llm_start_time = time.time()
         try:
-            # 构建用户消息（包含对话历史和持久化记忆）
-            user_content = prompt["user_prompt"].replace("query", request.message)
+            # 构建消息列表（包含对话历史和持久化记忆）
+            messages = [
+                {"role": "system", "content": prompt["system_prompt"]}
+            ]
             
-            # 添加对话历史
-            user_content = user_content.replace("history_chat", str(conversation_history) if user_history_exists else "None")
+            # 添加对话历史（作为多个连续的用户/助手消息）
+            if user_history_exists:
+                messages.extend(conversation_history)
             
             # 添加持久化记忆上下文（如果有）
             memory_context = ""
@@ -139,18 +142,22 @@ class ChatService:
                 memory_context += f"\n\n【最近事件】\n{persistent_memory['short_term']}"
             
             if memory_context:
-                user_content = f"{user_content}\n{memory_context}"
+                # 添加持久化记忆作为系统消息
+                messages.append({"role": "system", "content": memory_context})
             
-            messages = [
-                {"role": "system", "content": prompt["system_prompt"]},
-                {"role": "user", "content": user_content}
-            ]
+            # 添加当前用户消息（包含JSON格式要求以满足API规范）
+            # 某些模型要求消息中包含'json'字样才能使用json_object响应格式
+            current_user_message = f"{request.message} 请以JSON格式回复，包含emotion_type和answer字段。"
+            messages.append({"role": "user", "content": current_user_message})
             
-            # 在调试模式下记录发送给LLM的完整消息
+            # 记录发送给LLM的完整消息内容
+            custom_logger.info(f"Sending {len(messages)} messages to LLM")
+            for i, msg in enumerate(messages):
+                custom_logger.info(f"Message {i+1}: Role={msg['role']}, Content Length={len(str(msg['content']))} chars")
+            
+            # 在调试模式下记录完整的消息内容
             from ..custom_logger import debug_log
-            debug_log(f"Sending messages to LLM - System: {prompt['system_prompt'][:200]}...")
-            debug_log(f"Sending messages to LLM - User Content: {user_content[:500]}...")
-            debug_log(f"Sending messages to LLM - Full Messages: {messages}")
+            debug_log(f"Full messages sent to LLM: {messages}")
 
             # 调用 LLM
             result = await self.llm.chat_completion(

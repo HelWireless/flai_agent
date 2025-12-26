@@ -110,7 +110,15 @@ class FortuneService:
 转运动作: {total_summary.get("action")}
 幸运小食: {total_summary.get("refreshment")}
 
-请用JSON格式返回，只包含luckBrief, numberBrief, actionBrief, refreshmentBrief四个字段。
+请严格按照以下JSON格式返回结果：
+{{
+    "luckBrief": "运势解读",
+    "numberBrief": "数字解读",
+    "actionBrief": "动作解读",
+    "refreshmentBrief": "小食解读"
+}}
+
+注意：只返回JSON格式内容，不要有任何其他解释或文本。
 """
         
         messages = [
@@ -233,11 +241,21 @@ class FortuneService:
             [0.10, 0.15, 0.25, 0.25, 0.15, 0.10]
         )[0]
         
-        # 构建用户输入
+        # 构建用户输入，明确要求JSON格式
         user_content = f"""
             今天的幸运数字：{random_num}
             转运的关键动作：{random_action}
             强运的日常小食：{random_refreshment}
+            
+            请严格按照以下JSON格式返回结果：
+            {{
+                "luck": "运势状态（四个字）",
+                "number": {random_num},
+                "action": "{random_action}",
+                "refreshment": "{random_refreshment}"
+            }}
+            
+            注意：只返回JSON格式内容，不要有任何其他解释或文本。
         """
         
         messages = [
@@ -271,10 +289,22 @@ class FortuneService:
                     "refreshment": random_refreshment
                 }
             
-            # 确保 result 是字典类型，而不是列表
+            # 确保 result 是字典类型，而不是列表或字符串
             if isinstance(result, list):
                 # 如果是列表，取第一个元素或者创建空字典
                 result = result[0] if result else {}
+            elif isinstance(result, str):
+                # 如果是字符串，尝试解析为JSON
+                try:
+                    result = json.loads(result)
+                except json.JSONDecodeError:
+                    custom_logger.error("[draw-card:summary] Failed to parse LLM response as JSON")
+                    result = {
+                        "luck": "未知运势",
+                        "number": random_num,
+                        "action": random_action,
+                        "refreshment": random_refreshment
+                    }
             
             # 补充基础信息
             result.update({
