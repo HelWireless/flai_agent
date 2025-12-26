@@ -66,23 +66,19 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
     # 构建用户prompt配置
     character_user_info = {
         "return_json_prompt": """
-                            Here is the history: {history_chat}
-                            Here is the input question: {query}. 
-                            Please immerse yourself in your role. and generate queries based on the input question ，and return a JSON structure. 
-                            Here are some examples:
+                            请沉浸在你的角色中，基于之前的对话历史生成回复，并以JSON格式返回结果。
+                            请参考以下JSON格式示例：
                             ```json
                             {
-                            "emotion_type":  "开心",   // your now emotion,choose one in ["开心","期待","生气","伤心","惊恐","害羞","抱抱","无语","其他"]
-                            "answer": "好的，我现在好开心呀~！"          // your answer to the question
+                            "emotion_type":  "开心",   // 你当前的情绪，从以下选项中选择：["开心","期待","生气","伤心","惊恐","害羞","抱抱","无语","其他"]
+                            "answer": "好的，我现在好开心呀~！"          // 你对问题的回答
                             }
                             ```
                             
-                            ** Finally only output the JSON structure without outputting any other content ** 
+                            ** 请仅输出JSON结构，不要输出任何其他内容 ** 
                          """,
         "return_answer_prompt": """
-                            Here is the history input: {history}
-                            Here is the input question: {query}. 
-                            Please immerse yourself in your role. and generate queries based on the input question.
+                            请沉浸在你的角色中，基于之前的对话历史生成回复。
                             """
     }
     
