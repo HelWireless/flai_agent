@@ -154,13 +154,15 @@ class ChatService:
                 nickname_context = f"\n\n重要提醒：用户在当前对话中表达了希望被称呼为'小甜心'，请在回复中注意这一昵称偏好。当前系统记录的昵称为'{nickname}'，但在本次对话中用户偏好为'小甜心'。"
                 messages.append({"role": "system", "content": nickname_context})  # 添加系统提醒
             
-            # 添加当前用户消息（不包含JSON格式要求，以避免混淆）
-            messages.append({"role": "user", "content": request.message})
+            # 构建包含用户输入和系统指令的完整消息内容
+            # 使用清晰的分隔符来区分用户输入和系统指令
+            user_input = request.message
+            system_instruction = "请以JSON格式回复，包含emotion_type和answer字段。"
             
-            # 添加系统消息以指定JSON格式要求（某些模型要求消息中包含'json'字样才能使用json_object响应格式）
-            # 这样可以避免将格式要求与用户消息混淆
-            json_format_message = "请以JSON格式回复，包含emotion_type和answer字段。"
-            messages.append({"role": "system", "content": json_format_message})
+            # 将用户输入和系统指令组合在一个user消息中，用清晰的分隔符区分
+            combined_content = f"用户输入: {user_input}\n\n系统指令: {system_instruction}"
+            
+            messages.append({"role": "user", "content": combined_content})
             
             # 记录发送给LLM的完整消息内容
             custom_logger.info(f"Sending {len(messages)} messages to LLM")
