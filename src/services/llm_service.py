@@ -224,6 +224,22 @@ class LLMService:
                     f"API request failed: {response.status_code} - {response.text} using {model_name}"
                 )
                 
+                # 检查是否是内容过滤错误（400 - data_inspection_failed）
+                response_text_lower = response.text.lower()
+                if response.status_code == 400 and ("data_inspection_failed" in response_text_lower or "inappropriate content" in response_text_lower):
+                    custom_logger.warning(f"Content filtered by API: {model_name}")
+                    # 直接返回敏感内容回复
+                    if fallback_response is not None:
+                        return {"content": fallback_response}
+                    else:
+                        # 如果没有提供fallback_response，从配置中获取随机敏感内容回复
+                        from ..core.config_loader import get_config_loader
+                        config_loader = get_config_loader()
+                        responses_config = config_loader.get_responses()
+                        import random
+                        default_sensitive_response = random.choice(responses_config.get('sensitive_responses', ["抱歉，由于内容安全策略，无法处理您的请求。"]))
+                        return {"content": default_sensitive_response}
+                
                 # 重试逻辑
                 if retry_on_error and model_pool and len(model_pool) > 1:
                     custom_logger.info("Retrying with different model...")

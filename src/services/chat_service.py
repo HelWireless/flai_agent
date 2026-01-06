@@ -132,9 +132,13 @@ class ChatService:
             # 添加持久化记忆上下文（如果有）到system prompt中
             memory_context = ""
             if persistent_memory.get("long_term"):
-                memory_context += f"\n\n【用户长期特征】\n{persistent_memory['long_term']}"
+                # 先过滤持久化记忆内容，避免包含敏感词
+                filtered_long_term = self.cf.filter_sensitive_content(persistent_memory['long_term'])
+                memory_context += f"\n\n【用户长期特征】\n{filtered_long_term}"
             if persistent_memory.get("short_term"):
-                memory_context += f"\n\n【最近事件】\n{persistent_memory['short_term']}"
+                # 先过滤短期记忆内容，避免包含敏感词
+                filtered_short_term = self.cf.filter_sensitive_content(persistent_memory['short_term'])
+                memory_context += f"\n\n【最近事件】\n{filtered_short_term}"
             
             if memory_context:
                 # 将记忆上下文添加到系统提示词中
@@ -146,7 +150,10 @@ class ChatService:
             
             # 添加对话历史（作为多个连续的用户/助手消息）
             if user_history_exists:
-                messages.extend(conversation_history)
+                # 过滤对话历史，避免包含敏感内容
+                for msg in conversation_history:
+                    filtered_content = self.cf.filter_sensitive_content(msg['content'])
+                    messages.append({"role": msg['role'], "content": filtered_content})
             
             # 检查用户消息中是否包含昵称相关的关键词，以确保角色关系清晰
             if "小甜心" in request.message or "昵称" in request.message or "称呼" in request.message:
@@ -154,8 +161,9 @@ class ChatService:
                 nickname_context = f"\n\n重要提醒：用户在当前对话中表达了希望被称呼为'小甜心'，请在回复中注意这一昵称偏好。当前系统记录的昵称为'{nickname}'，但在本次对话中用户偏好为'小甜心'。"
                 messages.append({"role": "system", "content": nickname_context})  # 添加系统提醒
             
-            # 添加当前用户消息
-            messages.append({"role": "user", "content": request.message})
+            # 添加当前用户消息（先过滤敏感内容）
+            filtered_user_message = self.cf.filter_sensitive_content(request.message)
+            messages.append({"role": "user", "content": filtered_user_message})
             
             # 添加系统消息以指定JSON格式要求（某些模型要求消息中包含'json'字样才能使用json_object响应格式）
             # 这样可以避免将格式要求与用户消息混淆

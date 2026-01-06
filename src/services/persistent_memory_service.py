@@ -281,9 +281,15 @@ class PersistentMemoryService:
         
         # 2. 使用 LLM 判断记忆类型
         classification_start_time = time.time()
+        # 对消息内容进行敏感词过滤后再进行分类
+        from ..core.content_filter import ContentFilter
+        cf = ContentFilter()
+        filtered_user_message = cf.filter_sensitive_content(user_message)
+        filtered_ai_response = cf.filter_sensitive_content(ai_response)
+        
         classification = await self.classifier.classify_memory_type(
-            user_message=user_message,
-            ai_response=ai_response
+            user_message=filtered_user_message,
+            ai_response=filtered_ai_response
         )
         classification_end_time = time.time()
         classification_duration = classification_end_time - classification_start_time
@@ -530,9 +536,12 @@ class PersistentMemoryService:
             if not cached_dialogues:
                 return
             
-            # 构建对话历史字符串
+            # 构建对话历史字符串，先对内容进行敏感词过滤
+            from ..core.content_filter import ContentFilter
+            cf = ContentFilter()
+            
             dialogue_history = "\n".join([
-                f"用户: {dialogue['user']}\nAI: {dialogue['ai']}" 
+                f"用户: {cf.filter_sensitive_content(dialogue['user'])}\nAI: {cf.filter_sensitive_content(dialogue['ai'])}" 
                 for dialogue in cached_dialogues
             ])
             

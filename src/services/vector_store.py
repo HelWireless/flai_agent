@@ -256,8 +256,8 @@ class VectorStore:
             # 构建 payload
             payload = {
                 "user_id": user_id,
-                "user_message": user_message,
-                "ai_response": ai_response,
+                "user_message": filtered_user_message,
+                "ai_response": filtered_ai_response,
                 "text": combined_text,
                 **(metadata or {})
             }

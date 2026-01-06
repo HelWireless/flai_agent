@@ -278,14 +278,20 @@ class MemoryService:
         # 2. 向量存储（额外记忆 - 语义检索）
         vector_start_time = time.time()
         if self.vector_store.enabled and not skip_vector_storage:
+            # 对要存储的内容进行敏感词过滤
+            from ..core.content_filter import ContentFilter
+            cf = ContentFilter()
+            filtered_user_message = cf.filter_sensitive_content(user_message)
+            filtered_ai_response = cf.filter_sensitive_content(ai_response)
+            
             metadata = metadata or {}
             metadata['timestamp'] = datetime.now().isoformat()
             metadata['character_id'] = character_id
             
             vector_saved = await self.vector_store.store_conversation(
                 user_id=user_id,
-                user_message=user_message,
-                ai_response=ai_response,
+                user_message=filtered_user_message,
+                ai_response=filtered_ai_response,
                 metadata=metadata
             )
             results["vector_memory"] = {"saved": vector_saved}
