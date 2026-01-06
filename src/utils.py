@@ -58,11 +58,12 @@ def get_emotion_type(text: str, emotion_type=None) -> int:
         '😐': '无语', '😑': '无语', '🙄': '无语'
     }
     if emotion_type:
-        try:
+        if emotion_type in emotion_map:
             return emotion_map[emotion_type]
-        except Exception as e:
-            print("error is ", e)
-            return get_emotion_type(text)
+        else:
+            # emotion_type不在map中，随机返回一个情绪
+            custom_logger.warning(f"Unknown emotion_type: {emotion_type}, using random")
+            return random.choice(list(emotion_map.values()))
 
     text = text.lower()
     exclamation_count = text.count('!')
@@ -129,8 +130,26 @@ def is_all_emojis(text: str) -> bool:
     if not text:
         return False
     
-    # 使用正则表达式匹配emoji
-    emoji_pattern = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002702-\U000027B0\U000024C2-\U0001F251]", flags=re.UNICODE)
+    # 使用正则表达式匹配emoji（修正范围，避免匹配到中文字符）
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # 表情符号
+        "\U0001F300-\U0001F5FF"  # 符号和图形
+        "\U0001F680-\U0001F6FF"  # 交通和地图
+        "\U0001F700-\U0001F77F"  # 炼金术符号
+        "\U0001F780-\U0001F7FF"  # 几何形状扩展
+        "\U0001F800-\U0001F8FF"  # 补充箭头-C
+        "\U0001F900-\U0001F9FF"  # 补充符号和图形
+        "\U0001FA00-\U0001FA6F"  # 国际象棋符号
+        "\U0001FA70-\U0001FAFF"  # 符号和图形扩展-A
+        "\U00002702-\U000027B0"  # 装饰符号
+        "\U0001F1E0-\U0001F1FF"  # 国旗
+        "\U00002600-\U000026FF"  # 杂项符号
+        "\U0000FE00-\U0000FE0F"  # 变体选择器
+        "\U0000200D"             # 零宽连接符
+        "]", 
+        flags=re.UNICODE
+    )
     
     # 移除所有emoji
     text_without_emojis = emoji_pattern.sub('', text)
@@ -158,7 +177,93 @@ def remove_random_interjections(sentences: List[str]) -> List[str]:
     
     return result
 
-def split_message(message: str, count: int, is_voice: bool = False) -> List[str]:
+def get_emoji_emotion(emoji_text: str) -> str:
+    """
+    识别emoji的情感类型
+    
+    Args:
+        emoji_text: 包含emoji的文本
+    
+    Returns:
+        情感类型字符串
+    """
+    # emoji到情感的映射
+    emoji_emotion_map = {
+        # 开心类
+        '😊': '开心', '😄': '开心', '😃': '开心', '😁': '开心', '😆': '开心', 
+        '😀': '开心', '🥰': '开心', '😍': '开心', '🤩': '开心', '😘': '开心',
+        '😋': '开心', '😜': '开心', '😝': '开心', '🤪': '开心', '😎': '开心',
+        '🎉': '开心', '🎊': '开心', '✨': '开心', '💖': '开心', '❤️': '开心',
+        # 期待/思考类
+        '🤔': '期待', '🙏': '期待', '👀': '期待', '🧐': '期待', '💭': '期待',
+        # 生气类
+        '😠': '生气', '😡': '生气', '🤬': '生气', '💢': '生气', '😤': '生气',
+        # 伤心类
+        '😢': '伤心', '😭': '伤心', '😞': '伤心', '😔': '伤心', '😿': '伤心',
+        '🥺': '伤心', '😥': '伤心', '😓': '伤心',
+        # 惊恐类
+        '😨': '惊恐', '😱': '惊恐', '😰': '惊恐', '😧': '惊恐', '😦': '惊恐',
+        # 害羞类
+        '😳': '害羞', '🤭': '害羞', '🙈': '害羞', '😅': '害羞',
+        # 抱抱/安慰类
+        '🤗': '抱抱', '💕': '抱抱', '💗': '抱抱', '🥹': '抱抱',
+        # 无语类
+        '😐': '无语', '😑': '无语', '🙄': '无语', '😒': '无语', '🤷': '无语',
+    }
+    
+    # 统计各情感出现次数
+    emotion_counts = {}
+    for char in emoji_text:
+        if char in emoji_emotion_map:
+            emotion = emoji_emotion_map[char]
+            emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
+    
+    if not emotion_counts:
+        return '开心'  # 默认开心
+    
+    # 返回出现次数最多的情感
+    return max(emotion_counts, key=emotion_counts.get)
+
+
+def get_response_emoji(emotion: str) -> str:
+    """
+    根据情感类型返回对应的回复emoji
+    
+    Args:
+        emotion: 情感类型
+    
+    Returns:
+        对应的emoji
+    """
+    # 情感对应的回复emoji池
+    emotion_response_emojis = {
+        '开心': ['😊', '😄', '🥰', '😘', '💖', '✨', '🎉', '😁', '💕'],
+        '期待': ['🤔', '👀', '😏', '🧐', '💭', '✨'],
+        '生气': ['😤', '🙄', '😑', '💢'],  # 回复生气用傲娇的emoji
+        '伤心': ['🤗', '💕', '😘', '🥹', '💖'],  # 回复伤心用安慰的emoji
+        '惊恐': ['😳', '👀', '🤗', '💕'],  # 回复惊恐用安抚的emoji
+        '害羞': ['😊', '🤭', '😏', '💕', '😘'],  # 回复害羞用调皮的emoji
+        '抱抱': ['🤗', '💕', '💖', '😘', '🥰'],  # 回复抱抱用温暖的emoji
+        '无语': ['😏', '🤭', '😜', '✨'],  # 回复无语用调皮的emoji
+    }
+    
+    emojis = emotion_response_emojis.get(emotion, ['😊', '💕'])
+    return random.choice(emojis)
+
+
+def split_message(message: str, count: int, is_voice: bool = False, user_message: str = None) -> List[str]:
+    """
+    分割消息为多个段落
+    
+    Args:
+        message: LLM生成的回复
+        count: 分割段落数
+        is_voice: 是否语音模式
+        user_message: 用户的原始消息（用于判断是否需要emoji回复）
+    
+    Returns:
+        分割后的消息列表
+    """
     if not isinstance(message, str):
         message = str(message)
     
@@ -167,15 +272,14 @@ def split_message(message: str, count: int, is_voice: bool = False) -> List[str]
         # 在voice模式下，禁止出现emoji
         message = remove_emojis(message)
     else:
-        # 非voice模式下，如果对方全是emoji，则我们也用emoji回复（90%概率）
-        if is_all_emojis(message):
+        # 非voice模式下，如果用户输入全是emoji，则我们也用emoji回复（90%概率）
+        if user_message and is_all_emojis(user_message):
             # 90%的概率使用emoji回复
             if random.random() < 0.9:
-                # 返回一个emoji回复
-                emoji_replies = [
-                    '😊', '😄', '😃', '😁', '🤔', '🙏', '😠', '😡', '🤬', '😢', '😭', '😞', '😨', '😱', '😰', '😳', '🤭', '🤗', '😐', '😑', '🙄'
-                ]
-                return [random.choice(emoji_replies)]
+                # 识别用户emoji的情感，返回对应的emoji
+                user_emotion = get_emoji_emotion(user_message)
+                response_emoji = get_response_emoji(user_emotion)
+                return [response_emoji]
     
     message = message.replace('\\"', '#')
 

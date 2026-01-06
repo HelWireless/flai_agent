@@ -44,7 +44,7 @@ class SpeechAPI:
             "Authorization": f"Bearer;{self.config['access_token']}"
         }
         try:
-            (f"Sending request to {api_url} with headers {headers} and body {request_body}")
+            custom_logger.debug(f"Sending request to {api_url} with body text: {request_body.get('request', {}).get('text', '')[:50]}")
             response = requests.post(api_url, json=request_body, headers=headers)
             custom_logger.info(f"HTTP status code: {response.status_code}")
             if response.status_code == 200:
@@ -53,13 +53,24 @@ class SpeechAPI:
                     data = response_json["data"]
                     with open(output_path, "wb") as file_to_save:  # 保存为 MP3 文件
                         file_to_save.write(base64.b64decode(data))
-                    custom_logger.info("MP3 文件已保存为 output.mp3")
+                    custom_logger.info(f"MP3 文件已保存: {output_path}")
                 else:
                     custom_logger.error("响应中没有找到数据")
+                    raise Exception("响应中没有找到音频数据")
             else:
-                custom_logger.error(f"HTTP 请求失败: {response.status_code}")
+                error_msg = f"HTTP 请求失败: {response.status_code}"
+                try:
+                    error_detail = response.json()
+                    custom_logger.error(f"{error_msg}, 详情: {error_detail}")
+                except:
+                    custom_logger.error(error_msg)
+                raise Exception(error_msg)
+        except requests.RequestException as e:
+            custom_logger.error(f"请求异常: {e}")
+            raise
         except Exception as e:
-            custom_logger.error(f"An error occurred: {e}")
+            custom_logger.error(f"语音合成失败: {e}")
+            raise
 
 
 if __name__ == "__main__":

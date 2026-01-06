@@ -3,12 +3,25 @@
 """
 import os
 import uuid
+import random
 from fastapi import HTTPException
 
 from ..schemas import Text2Voice, Text2VoiceResponse
 from ..custom_logger import custom_logger
-from ..utils import upload_to_oss
+from ..utils import upload_to_oss, is_all_emojis
 from .speech_api import SpeechAPI
+
+
+# 当文本是纯emoji时的替代回答
+EMOJI_FALLBACK_RESPONSES = [
+    "哎，这个我怎么读出来嘛",
+    "不要为难我读这个啦",
+    "换一个让我说给你听",
+    "太难了，我读不出来！",
+    "这个...让我用声音怎么表达嘛",
+    "你发的这个我念不出来啦",
+    "哼，故意为难我是吧",
+]
 
 
 class VoiceService:
@@ -38,9 +51,15 @@ class VoiceService:
             f"text_id: {request.text_id}"
         )
         
+        # 检查是否为纯emoji，如果是则替换为固定回答
+        text_to_speak = request.text
+        if is_all_emojis(request.text):
+            text_to_speak = random.choice(EMOJI_FALLBACK_RESPONSES)
+            custom_logger.info(f"Text is pure emoji, replacing with: {text_to_speak}")
+        
         # 1. 初始化语音 API
         speech_api = SpeechAPI(self.config["speech_api"], request.user_id)
-        request_body = speech_api.generate_request_body(request.text)
+        request_body = speech_api.generate_request_body(text_to_speak)
         
         # 2. 生成语音文件
         api_url = "https://openspeech.bytedance.com/api/v1/tts"
