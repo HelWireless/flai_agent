@@ -263,8 +263,8 @@ class VectorStore:
             # 构建 payload
             payload = {
                 "user_id": user_id,
-                "user_message": filtered_user_message,
-                "ai_response": filtered_ai_response,
+                "user_message": user_message,
+                "ai_response": ai_response,
                 "text": combined_text,
                 **(metadata or {})
             }
@@ -298,6 +298,49 @@ class VectorStore:
             custom_logger.info(f"Total conversation storage completed in {total_duration:.2f} seconds")
             
             return True
+        except NameError as e:
+            if "filtered_user_message" in str(e):
+                custom_logger.error(f"Variable not defined error: {e}. Using user_message instead.")
+                # 重新构建 payload，确保使用正确的参数
+                payload = {
+                    "user_id": user_id,
+                    "user_message": user_message,
+                    "ai_response": ai_response,
+                    "text": f"用户: {user_message}\nAI: {ai_response}",
+                    **(metadata or {})
+                }
+                
+                debug_log(f"Payload for storage (retry): {json.dumps(payload, ensure_ascii=False)[:300]}...")  # 只显示前300个字符
+                
+                # 存储到向量数据库
+                store_start_time = time.time()
+                from qdrant_client.http import models
+                point_id = hash(f"用户: {user_message}\nAI: {ai_response}") % (2**63)  # 生成唯一ID
+                
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=[
+                        models.PointStruct(
+                            id=point_id,
+                            vector=vector,
+                            payload=payload
+                        )
+                    ]
+                )
+                store_end_time = time.time()
+                store_duration = store_end_time - store_start_time
+                custom_logger.info(f"Vector storage completed in {store_duration:.2f} seconds")
+
+                custom_logger.debug(f"Conversation stored to vector DB for user {user_id}")
+                debug_log(f"Conversation successfully stored with point ID: {point_id}")
+                
+                end_time = time.time()
+                total_duration = end_time - start_time
+                custom_logger.info(f"Total conversation storage completed in {total_duration:.2f} seconds")
+                
+                return True
+            else:
+                raise
         except Exception as e:
             custom_logger.error(f"Failed to store conversation: {e}")
             return False
