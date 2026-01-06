@@ -110,20 +110,46 @@ def generate_random_proportions(count: int) -> List[float]:
 
 
 def clean_sentence(sentence: str) -> str:
-    # 移除中英文括号及其他指定符号
+    # 添加调试日志
+    from .custom_logger import debug_log
+    debug_log(f"clean_sentence input: '{sentence}'")
+    
+    # 移除中英文括号及其他指定符号，但保留有意义的标点符号如波浪号
     symbols_to_remove = r'[\\"‘’“”\(\)（）\[\]\{\}【】]'
     cleaned_sentence = re.sub(symbols_to_remove, '', sentence)
+    debug_log(f"After removing symbols: '{cleaned_sentence}'")
+    
     cleaned_sentence = cleaned_sentence.strip()
+    debug_log(f"After stripping: '{cleaned_sentence}'")
 
-    # 去除开头到第一个文字或空格前的非文字字符
-    cleaned_sentence = re.sub(r'^[^\w\s]+', '', cleaned_sentence)
+    # 去除开头到第一个文字或空格前的非文字字符，但保留有意义的符号如波浪号
+    cleaned_sentence = re.sub(r'^[^\w\s~]+', '', cleaned_sentence)
+    debug_log(f"After removing leading non-word chars: '{cleaned_sentence}'")
+    
+    debug_log(f"clean_sentence output: '{cleaned_sentence}'")
     return cleaned_sentence
 
 def remove_emojis(text: str) -> str:
     """移除文本中的所有emoji"""
-    # 使用正则表达式匹配emoji
-    emoji_pattern = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002702-\U000027B0\U000024C2-\U0001F251]", flags=re.UNICODE)
-    return emoji_pattern.sub('', text)
+    from .custom_logger import debug_log
+    debug_log(f"Before remove_emojis: {text}")
+    # 使用更安全的正则表达式匹配emoji，避免误删中文字符
+    emoji_pattern = re.compile(
+        "([\U0001F600-\U0001F64F]"  # 表情符号
+        "|[\U0001F300-\U0001F5FF]"  # 符号和图形
+        "|[\U0001F680-\U0001F6FF]"  # 交通和地图符号
+        "|[\U0001F700-\U0001F77F]"  # 几何形状扩展
+        "|[\U0001F780-\U0001F7FF]"  # 附加几何形状
+        "|[\U0001F800-\U0001F8FF]"  # 补充符号-交通
+        "|[\U0001F900-\U0001F9FF]"  # 补充符号-大
+        "|[\U0001FA00-\U0001FA6F]"  # 传统游戏符号
+        "|[\U0001FA70-\U0001FAFF]"  # 补充符号-小
+        "|[\U00002600-\U000027BF]"  # 杂项符号
+        "|[\U0001F000-\U0001F02F])"  # 棋牌符号
+    , flags=re.UNICODE)
+    result = emoji_pattern.sub('', text)
+    debug_log(f"After remove_emojis: {result}")
+    return result
 
 def is_all_emojis(text: str) -> bool:
     """检查文本是否全部由emoji组成"""
@@ -206,7 +232,7 @@ def get_emoji_emotion(emoji_text: str) -> str:
         # 害羞类
         '😳': '害羞', '🤭': '害羞', '🙈': '害羞', '😅': '害羞',
         # 抱抱/安慰类
-        '🤗': '抱抱', '💕': '抱抱', '💗': '抱抱', '🥹': '抱抱',
+        '🤗': '抱抱', '💕': '抱抱', '💗': '抱抱', '🥹': 'brace',
         # 无语类
         '😐': '无语', '😑': '无语', '🙄': '无语', '😒': '无语', '🤷': '无语',
     }
@@ -267,24 +293,35 @@ def split_message(message: str, count: int, is_voice: bool = False, user_message
     if not isinstance(message, str):
         message = str(message)
     
-    # 处理emoji
+    # 语音模式下不进行分割，直接返回清理后的完整消息
     if is_voice:
         # 在voice模式下，禁止出现emoji
         message = remove_emojis(message)
-    else:
+        # 语音模式下不进行分割，直接返回清理后的完整消息
+        cleaned = clean_sentence(message)
+        from .custom_logger import debug_log
+        debug_log(f"Voice mode: original message: {message}, cleaned: {cleaned}")
+        if len(cleaned) == 0:
+            return [message]
+        return [cleaned]
+    
+    # 处理emoji（非语音模式）
+    if user_message and is_all_emojis(user_message):
         # 非voice模式下，如果用户输入全是emoji，则我们也用emoji回复（90%概率）
-        if user_message and is_all_emojis(user_message):
-            # 90%的概率使用emoji回复
-            if random.random() < 0.9:
-                # 识别用户emoji的情感，返回对应的emoji
-                user_emotion = get_emoji_emotion(user_message)
-                response_emoji = get_response_emoji(user_emotion)
-                return [response_emoji]
+        if random.random() < 0.9:
+            # 识别用户emoji的情感，返回对应的emoji
+            user_emotion = get_emoji_emotion(user_message)
+            response_emoji = get_response_emoji(user_emotion)
+            return [response_emoji]
     
     message = message.replace('\\"', '#')
 
     if count == 1:
-        return [clean_sentence(message)]
+        cleaned = clean_sentence(message)
+        # 确保即使清理后内容不为空
+        if len(cleaned) == 0:
+            return [message]  # 如果清理后为空，返回原始消息
+        return [cleaned]
     elif count == 0:
         return [message]
 
@@ -345,16 +382,16 @@ def split_message(message: str, count: int, is_voice: bool = False, user_message
 
     # 清理每个句子中的干扰符号
     result = [clean_sentence(sentence) for sentence in result]
-    # 过滤掉长度小于或等于1的句子
-    result = [sentence for sentence in result if len(sentence) > 1]
+    # 过滤掉长度小于或等于1的句子，但保留有意义的符号如波浪号
+    result = [sentence for sentence in result if len(sentence) > 1 or (len(sentence) == 1 and sentence in '~！!。.?？…')]
 
     # 只对第一个句子进行处理，50%的概率删除单独的口癖词
     if len(result) > 0:
         first_sentence = result[0]
         interjections = {"哼", "哈", "哎呀", "嗯", "哦", "呃", "啊", "哎", "咦", "嘘", "哼哼", "哈哈", "嘿嘿"}
         
-        # 检查是否是单独的口癖词
-        if first_sentence.strip() in interjections:
+        # 检查是否是单独的口癖词（长度较短且在口癖词列表中）
+        if first_sentence.strip() in interjections and len(first_sentence.strip()) <= 2:
             # 50%的概率删除
             if random.random() < 0.5:
                 result.pop(0)

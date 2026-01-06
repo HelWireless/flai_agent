@@ -148,7 +148,21 @@ class LLMService:
             json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
             if json_match:
                 try:
-                    return json.loads(json_match.group())
+                    parsed_json = json.loads(json_match.group())
+                    
+                    # 验证解析结果，确保answer字段包含合理内容
+                    if 'answer' in parsed_json:
+                        answer_content = parsed_json['answer']
+                        # 如果answer字段只包含很少的字符（如单个符号），可能解析错误
+                        if len(str(answer_content)) <= 2 and all(c in '~！!。.?？…' for c in str(answer_content)):
+                            custom_logger.warning(f"Answer field contains only symbols: '{answer_content}', treating as plain text")
+                            # 将整个响应作为answer返回
+                            return {
+                                "answer": response_text,
+                                "emotion_type": parsed_json.get("emotion_type", "开心")
+                            }
+                    
+                    return parsed_json
                 except json.JSONDecodeError:
                     pass
             
@@ -320,6 +334,11 @@ class LLMService:
                     
                     # 在调试模式下记录解析后的数据
                     debug_log(f"Parsed JSON response: {parsed_data}")
+                    
+                    # 添加额外调试信息
+                    if "answer" in parsed_data:
+                        debug_log(f"Answer field content: '{parsed_data['answer']}'")
+                        debug_log(f"Answer field length: {len(str(parsed_data['answer']))}")
                     
                     return parsed_data
                 except json.JSONDecodeError as e:

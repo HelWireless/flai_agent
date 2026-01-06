@@ -198,6 +198,9 @@ class ChatService:
             
             # 在调试模式下记录LLM的响应
             debug_log(f"LLM Response: {result}")
+            debug_log(f"Extracted answer: {answer}")
+            debug_log(f"Answer type: {type(answer)}")
+            debug_log(f"Answer length: {len(str(answer)) if answer else 0}")
 
         except Exception as e:
             custom_logger.error(f"Error generating answer: {str(e)}")
@@ -210,6 +213,7 @@ class ChatService:
         
         # 6. 分割消息
         split_start_time = time.time()
+        custom_logger.debug(f"About to call split_message with answer: {answer}, message_count: {request.message_count}, voice: {request.voice}")
         if answer not in self.error_responses:
             llm_messages = split_message(answer, request.message_count, request.voice)
         else:
@@ -217,6 +221,12 @@ class ChatService:
         split_end_time = time.time()
         split_duration = split_end_time - split_start_time
         custom_logger.info(f"Message splitting completed in {split_duration:.2f} seconds")
+        
+        # 添加调试日志
+        custom_logger.debug(f"Original answer from LLM: {answer}")
+        custom_logger.debug(f"Message count requested: {request.message_count}")
+        custom_logger.debug(f"Voice mode: {request.voice}")
+        custom_logger.debug(f"Messages after split_message: {llm_messages}")
         
         # 7. 识别情绪
         emotion_recognition_start_time = time.time()

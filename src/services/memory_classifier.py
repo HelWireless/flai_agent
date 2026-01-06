@@ -78,7 +78,7 @@ AI回复：{filtered_ai_response}
         try:
             result = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen_turbo"],
+                model_pool=["qwen_plus", "qwen_max", "qwen3_32b_custom"],
                 temperature=0.3,
                 top_p=0.8,
                 max_tokens=100,
