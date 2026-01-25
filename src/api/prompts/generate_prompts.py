@@ -59,8 +59,22 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
         model_id = None
     else:
         import json as json_module
-        system_prompt = character_sys_info.get(character_id, "{'info':'Character not found'}")
-        system_prompt = json_module.dumps(system_prompt, ensure_ascii=False, indent=4)
+        # 首先尝试从正常缓存中获取
+        system_prompt = character_sys_info.get(character_id)
+        # 如果没有找到，尝试强制刷新配置
+        if system_prompt is None:
+            characters_config = loader.get_characters(reload=True)
+            character_sys_info = characters_config.get('characters', {})
+            system_prompt = character_sys_info.get(character_id)
+        
+        # 如果仍然没有找到，抛出异常或返回错误信息
+        if system_prompt is None:
+            # 返回一个有意义的错误信息，让调用方知道角色不存在
+            # 这样可以在chat_service中进行适当处理
+            system_prompt = f"{{\"error\":\"角色ID {character_id} 不存在，请检查ID是否正确\"}}"
+        else:
+            # 如果找到了，序列化为JSON字符串
+            system_prompt = json_module.dumps(system_prompt, ensure_ascii=False, indent=4)
         model_id = "qwen_max"
     
     # 构建用户prompt配置
@@ -75,7 +89,7 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
                             }
                             ```
                             
-                            ** 请仅输出JSON结构，不要输出任何其他内容 ** 
+                            ** 请仅输出JSON格式，不要输出任何其他内容 ** 
                          """,
         "return_answer_prompt": """
                             请沉浸在你的角色中，基于之前的对话历史生成回复。

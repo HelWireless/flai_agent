@@ -122,6 +122,25 @@ class ChatService:
         prompt_duration = prompt_end_time - prompt_start_time
         custom_logger.info(f"Prompt generation completed in {prompt_duration:.2f} seconds")
         
+        # 检查角色是否存在
+        system_content = prompt["system_prompt"]
+        if "\"error\":\"角色ID" in system_content and "不存在，请检查ID是否正确" in system_content:
+            # 角色不存在，返回错误信息而不是继续处理
+            custom_logger.error(f"Character {request.character_id} not found for user {request.user_id}")
+            error_message = f"错误：角色ID {request.character_id} 不存在，请检查ID是否正确"
+            llm_messages = [error_message]
+            emotion_type = "other"  # 使用通用情绪类型
+            
+            end_time = time.time()
+            total_duration = end_time - start_time
+            custom_logger.info(f"Chat processed with error for missing character, total time: {total_duration:.2f} seconds")
+            
+            return ChatResponse(
+                user_id=request.user_id,
+                llm_message=llm_messages,
+                emotion_type=emotion_type
+            )
+        
         # 5. 调用 LLM 生成回答
         llm_start_time = time.time()
         try:
