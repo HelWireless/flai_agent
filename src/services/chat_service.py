@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from ..schemas import ChatRequest, ChatResponse, GenerateOpenerRequest, GenerateOpenerResponse
 from ..core.content_filter import ContentFilter
 from ..core.config_loader import get_config_loader
-from ..utils import get_emotion_type, split_message, is_all_emojis, get_emoji_emotion, get_response_emoji
+from ..utils import get_emotion_type, split_message
 from ..custom_logger import custom_logger
 from .llm_service import LLMService
 from .memory_service import MemoryService
@@ -47,57 +47,6 @@ class ChatService:
         self.sensitive_responses = responses_config.get('sensitive_responses', [])
         self.characters_opener = config_loader.get_character_openers()
     
-    async def _generate_emoji_response(self, user_emoji: str) -> str:
-        """
-        使用小模型生成emoji回复
-        
-        Args:
-            user_emoji: 用户发送的emoji
-        
-        Returns:
-            回复的emoji
-        """
-        import re
-        
-        messages = [
-            {"role": "system", "content": "你是一个emoji回复专家。用户发送了emoji，请用1-2个合适的emoji回复。只输出emoji，不要输出任何文字或HTML标签。"},
-            {"role": "user", "content": user_emoji}
-        ]
-        
-        try:
-            result = await self.llm.chat_completion(
-                messages=messages,
-                model_pool=["qwen_plus"],
-                temperature=0.7,
-                max_tokens=10,
-                response_format=None,  # 不使用JSON格式
-                parse_json=False       # 不解析JSON
-            )
-            
-            # 正确提取返回内容
-            if isinstance(result, dict):
-                response = result.get("content", "")
-            else:
-                response = str(result)
-            
-            # 清理HTML标签（如 <span class="emoji emoji1f31b"></span>）
-            response = re.sub(r'<[^>]+>', '', response)
-            response = response.strip()
-            
-            if response and is_all_emojis(response):
-                custom_logger.info(f"Emoji response from LLM: {response}")
-                return response
-            else:
-                custom_logger.warning(f"LLM returned non-emoji content: {response[:50] if response else 'empty'}")
-                
-        except Exception as e:
-            custom_logger.error(f"Emoji response generation failed: {e}")
-        
-        # 兜底：使用规则生成
-        custom_logger.info(f"Using fallback emoji response for: {user_emoji}")
-        emotion = get_emoji_emotion(user_emoji)
-        return get_response_emoji(emotion)
-    
     async def process_chat(self, request: ChatRequest) -> ChatResponse:
         """
         处理对话请求
@@ -131,20 +80,7 @@ class ChatService:
                 emotion_type=emotion_type
             )
         
-        # 2. 全emoji消息检测（非语音模式）- 使用小模型快速回复
-        if not request.voice and is_all_emojis(request.message):
-            custom_logger.info(f"Detected all-emoji message: {request.message}")
-            # 90%概率使用小模型生成emoji回复，跳过主LLM调用
-            if random.random() < 0.9:
-                emoji_response = await self._generate_emoji_response(request.message)
-                custom_logger.info(f"Emoji quick response: {emoji_response}")
-                return ChatResponse(
-                    user_id=request.user_id,
-                    llm_message=[emoji_response],
-                    emotion_type=2  # 开心
-                )
-        
-        # 3. 获取组合记忆（对话历史 + 持久化记忆 + 向量检索）
+        # 2. 获取组合记忆（对话历史 + 持久化记忆 + 向量检索）
         memory_start_time = time.time()
         try:
             combined_history, nickname, persistent_memory, skip_vector_storage = await self.memory.get_combined_memory(
@@ -167,14 +103,14 @@ class ChatService:
         user_history_exists = bool(combined_history)
         conversation_history = combined_history if user_history_exists else []
         
-        # 4. 获取情绪类型
+        # 3. 获取情绪类型
         emotion_start_time = time.time()
         EMS_type = self.emotion_service.get_current_emotion(request.user_id, request.character_id)
         emotion_end_time = time.time()
         emotion_duration = emotion_end_time - emotion_start_time
         custom_logger.info(f"Emotion detection completed in {emotion_duration:.2f} seconds")
         
-        # 5. 获取角色配置和提示词
+        # 4. 获取角色配置和提示词
         prompt_start_time = time.time()
         prompt, model_name = get_prompt_by_character_id(
             character_id=request.character_id,
@@ -186,25 +122,42 @@ class ChatService:
         prompt_duration = prompt_end_time - prompt_start_time
         custom_logger.info(f"Prompt generation completed in {prompt_duration:.2f} seconds")
         
-        # 6. 调用 LLM 生成回答
+        # 检查角色是否存在
+        system_content = prompt["system_prompt"]
+        if "\"error\":\"角色ID" in system_content and "不存在，请检查ID是否正确" in system_content:
+            # 角色不存在，返回错误信息而不是继续处理
+            custom_logger.error(f"Character {request.character_id} not found for user {request.user_id}")
+            error_message = f"错误：角色ID {request.character_id} 不存在，请检查ID是否正确"
+            llm_messages = [error_message]
+            emotion_type = "other"  # 使用通用情绪类型
+            
+            end_time = time.time()
+            total_duration = end_time - start_time
+            custom_logger.info(f"Chat processed with error for missing character, total time: {total_duration:.2f} seconds")
+            
+            return ChatResponse(
+                user_id=request.user_id,
+                llm_message=llm_messages,
+                emotion_type=emotion_type
+            )
+        
+        # 5. 调用 LLM 生成回答
         llm_start_time = time.time()
         try:
             # 构建消息列表（包含对话历史和持久化记忆）
-            # 将JSON格式要求和持久化记忆直接整合到system prompt中
-            json_format_instruction = """【重要】你必须严格以JSON格式回复，格式如下：
-{"emotion_type": "开心", "answer": "你的回复内容"}
-其中emotion_type必须是以下之一：开心、期待、生气、伤心、惊恐、害羞、抱抱、无语。
-不要输出任何JSON以外的内容。
-
-"""
-            system_content = prompt["system_prompt"] + json_format_instruction 
+            # 将持久化记忆直接整合到system prompt中
+            system_content = prompt["system_prompt"]
             
             # 添加持久化记忆上下文（如果有）到system prompt中
             memory_context = ""
             if persistent_memory.get("long_term"):
-                memory_context += f"\n\n【用户长期特征】\n{persistent_memory['long_term']}"
+                # 先过滤持久化记忆内容，避免包含敏感词
+                filtered_long_term = self.cf.filter_sensitive_content(persistent_memory['long_term'])
+                memory_context += f"\n\n【用户长期特征】\n{filtered_long_term}"
             if persistent_memory.get("short_term"):
-                memory_context += f"\n\n【最近事件】\n{persistent_memory['short_term']}"
+                # 先过滤短期记忆内容，避免包含敏感词
+                filtered_short_term = self.cf.filter_sensitive_content(persistent_memory['short_term'])
+                memory_context += f"\n\n【最近事件】\n{filtered_short_term}"
             
             if memory_context:
                 # 将记忆上下文添加到系统提示词中
@@ -216,7 +169,10 @@ class ChatService:
             
             # 添加对话历史（作为多个连续的用户/助手消息）
             if user_history_exists:
-                messages.extend(conversation_history)
+                # 过滤对话历史，避免包含敏感内容
+                for msg in conversation_history:
+                    filtered_content = self.cf.filter_sensitive_content(msg['content'])
+                    messages.append({"role": msg['role'], "content": filtered_content})
             
             # 检查用户消息中是否包含昵称相关的关键词，以确保角色关系清晰
             if "小甜心" in request.message or "昵称" in request.message or "称呼" in request.message:
@@ -224,16 +180,14 @@ class ChatService:
                 nickname_context = f"\n\n重要提醒：用户在当前对话中表达了希望被称呼为'小甜心'，请在回复中注意这一昵称偏好。当前系统记录的昵称为'{nickname}'，但在本次对话中用户偏好为'小甜心'。"
                 messages.append({"role": "system", "content": nickname_context})  # 添加系统提醒
             
-            # 处理连续user消息问题：如果历史记录最后一条是user消息，与当前消息合并
-            current_message = request.message
-            if conversation_history and conversation_history[-1]["role"] == "user":
-                # 合并历史最后一条user消息与当前消息
-                last_user_msg = messages.pop()  # 移除刚添加的最后一条user消息（来自conversation_history）
-                current_message = last_user_msg["content"] + "\n" + current_message
-                custom_logger.info(f"Merged consecutive user messages")
+            # 添加当前用户消息（先过滤敏感内容）
+            filtered_user_message = self.cf.filter_sensitive_content(request.message)
+            messages.append({"role": "user", "content": filtered_user_message})
             
-            # 添加当前用户消息
-            messages.append({"role": "user", "content": current_message})
+            # 添加系统消息以指定JSON格式要求（某些模型要求消息中包含'json'字样才能使用json_object响应格式）
+            # 这样可以避免将格式要求与用户消息混淆
+            json_format_message = "请以JSON格式回复，包含emotion_type和answer字段。"
+            messages.append({"role": "system", "content": json_format_message})
             
             # 记录发送给LLM的完整消息内容
             custom_logger.info(f"Sending {len(messages)} messages to LLM")
@@ -244,41 +198,28 @@ class ChatService:
             from ..custom_logger import debug_log
             debug_log(f"Full messages sent to LLM: {messages}")
 
-            # 调用 LLM（最多重试2次以获取正确JSON格式）
-            max_attempts = 2
-            result = None
-            for attempt in range(max_attempts):
-                result = await self.llm.chat_completion(
-                    messages=messages,
-                    model_name=model_name,
-                    model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"] if not model_name else None,
-                    temperature=0.9,
-                    top_p=0.85,
-                    max_tokens=2048,
-                    response_format="json_object",
-                    parse_json=True,
-                    retry_on_error=True,
-                    fallback_response=random.choice(self.error_responses)
-                )
-                
-                # 检查返回格式
-                if isinstance(result, dict) and "answer" in result:
-                    break
-                elif attempt < max_attempts - 1:
-                    custom_logger.warning(f"LLM returned invalid format (attempt {attempt + 1}), retrying...")
+            # 调用 LLM
+            result = await self.llm.chat_completion(
+                messages=messages,
+                model_name=model_name,
+                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"] if not model_name else None,
+                temperature=0.9,
+                top_p=0.85,
+                max_tokens=2048,
+                response_format="json_object",
+                parse_json=True,
+                retry_on_error=True,
+                fallback_response=random.choice(self.error_responses)
+            )
             
-            # 处理 LLM 返回结果
-            if isinstance(result, dict):
-                answer = result.get("answer", random.choice(self.error_responses))
-                emotion_type_from_llm = result.get("emotion_type")
-            else:
-                # 重试后仍然是非字典格式，使用返回值作为 answer
-                custom_logger.warning(f"LLM returned non-dict response after retries: {type(result)}")
-                answer = str(result) if result else random.choice(self.error_responses)
-                emotion_type_from_llm = None
+            answer = result.get("answer", random.choice(self.error_responses))
+            emotion_type_from_llm = result.get("emotion_type")
             
             # 在调试模式下记录LLM的响应
             debug_log(f"LLM Response: {result}")
+            debug_log(f"Extracted answer: {answer}")
+            debug_log(f"Answer type: {type(answer)}")
+            debug_log(f"Answer length: {len(str(answer)) if answer else 0}")
 
         except Exception as e:
             custom_logger.error(f"Error generating answer: {str(e)}")
@@ -289,35 +230,31 @@ class ChatService:
         llm_duration = llm_end_time - llm_start_time
         custom_logger.info(f"LLM response generation completed in {llm_duration:.2f} seconds")
         
-        # 7. 分割消息
+        # 6. 分割消息
         split_start_time = time.time()
+        custom_logger.debug(f"About to call split_message with answer: {answer}, message_count: {request.message_count}, voice: {request.voice}")
         if answer not in self.error_responses:
-            llm_messages = split_message(answer, request.message_count, request.voice, user_message=request.message)
+            llm_messages = split_message(answer, request.message_count, request.voice)
         else:
             llm_messages = [answer]
-        
-        # 检查第一句话是否包含口癖词，60%概率拦截
-        if llm_messages and len(llm_messages) > 1:
-            first_msg = llm_messages[0]
-            interjection_words = ["哼", "哎呀", "嗯", "哦", "呃", "啊", "哎", "咦", "嘘"]
-            # 检查第一句是否包含这些词
-            contains_interjection = any(word in first_msg for word in interjection_words)
-            if contains_interjection and random.random() < 0.6:
-                llm_messages.pop(0)
-                custom_logger.info(f"Removed first message containing interjection: {first_msg[:20]}...")
-        
         split_end_time = time.time()
         split_duration = split_end_time - split_start_time
         custom_logger.info(f"Message splitting completed in {split_duration:.2f} seconds")
         
-        # 8. 识别情绪
+        # 添加调试日志
+        custom_logger.debug(f"Original answer from LLM: {answer}")
+        custom_logger.debug(f"Message count requested: {request.message_count}")
+        custom_logger.debug(f"Voice mode: {request.voice}")
+        custom_logger.debug(f"Messages after split_message: {llm_messages}")
+        
+        # 7. 识别情绪
         emotion_recognition_start_time = time.time()
         emotion_type = get_emotion_type(answer, emotion_type_from_llm)
         emotion_recognition_end_time = time.time()
         emotion_recognition_duration = emotion_recognition_end_time - emotion_recognition_start_time
         custom_logger.info(f"Emotion recognition completed in {emotion_recognition_duration:.2f} seconds")
         
-        # 9. 保存到记忆（三种记忆）
+        # 8. 保存到记忆（三种记忆）
         # 这会触发：
         # - LLM判断记忆类型
         # - 持久化记忆更新（chat_memory表）

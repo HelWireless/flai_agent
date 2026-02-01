@@ -59,8 +59,15 @@ class MemoryClassifier:
 3. 严格遵循上述JSON格式
 """
 
+        # 对消息内容进行敏感词过滤
+        from ..core.content_filter import ContentFilter
+        cf = ContentFilter()
+        filtered_user_message = cf.filter_sensitive_content(user_message)
+        filtered_ai_response = cf.filter_sensitive_content(ai_response)
+        
         user_content = f"""
-用户消息：{user_message}
+用户消息：{filtered_user_message}
+AI回复：{filtered_ai_response}
 """
         
         messages = [
@@ -71,7 +78,7 @@ class MemoryClassifier:
         try:
             result = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen_turbo"],
+                model_pool=["qwen_plus", "qwen_max", "qwen3_32b_custom"],
                 temperature=0.3,
                 top_p=0.8,
                 max_tokens=100,

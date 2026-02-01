@@ -148,7 +148,21 @@ class LLMService:
             json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
             if json_match:
                 try:
-                    return json.loads(json_match.group())
+                    parsed_json = json.loads(json_match.group())
+                    
+                    # 验证解析结果，确保answer字段包含合理内容
+                    if 'answer' in parsed_json:
+                        answer_content = parsed_json['answer']
+                        # 如果answer字段只包含很少的字符（如单个符号），可能解析错误
+                        if len(str(answer_content)) <= 2 and all(c in '~！!。.?？…' for c in str(answer_content)):
+                            custom_logger.warning(f"Answer field contains only symbols: '{answer_content}', treating as plain text")
+                            # 将整个响应作为answer返回
+                            return {
+                                "answer": response_text,
+                                "emotion_type": parsed_json.get("emotion_type", "开心")
+                            }
+                    
+                    return parsed_json
                 except json.JSONDecodeError:
                     pass
             
@@ -261,6 +275,22 @@ class LLMService:
                     f"API request failed: {response.status_code} - {response.text} using {model_name}"
                 )
                 
+                # 检查是否是内容过滤错误（400 - data_inspection_failed）
+                response_text_lower = response.text.lower()
+                if response.status_code == 400 and ("data_inspection_failed" in response_text_lower or "inappropriate content" in response_text_lower):
+                    custom_logger.warning(f"Content filtered by API: {model_name}")
+                    # 直接返回敏感内容回复
+                    if fallback_response is not None:
+                        return {"content": fallback_response}
+                    else:
+                        # 如果没有提供fallback_response，从配置中获取随机敏感内容回复
+                        from ..core.config_loader import get_config_loader
+                        config_loader = get_config_loader()
+                        responses_config = config_loader.get_responses()
+                        import random
+                        default_sensitive_response = random.choice(responses_config.get('sensitive_responses', ["抱歉，由于内容安全策略，无法处理您的请求。"]))
+                        return {"content": default_sensitive_response}
+                
                 # 重试逻辑
                 if retry_on_error and model_pool and len(model_pool) > 1:
                     custom_logger.info("Retrying with different model...")
@@ -304,6 +334,11 @@ class LLMService:
                     
                     # 在调试模式下记录解析后的数据
                     debug_log(f"Parsed JSON response: {parsed_data}")
+                    
+                    # 添加额外调试信息
+                    if "answer" in parsed_data:
+                        debug_log(f"Answer field content: '{parsed_data['answer']}'")
+                        debug_log(f"Answer field length: {len(str(parsed_data['answer']))}")
                     
                     return parsed_data
                 except json.JSONDecodeError as e:

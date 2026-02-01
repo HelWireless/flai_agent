@@ -173,6 +173,10 @@ actions/
 output.txt
 src/*.yaml
 
+# Lingma AI assistant
+.lingma/
+.lingmaignore
+
 # Project specific - Runtime logs
 nohup.out
 logs/*
