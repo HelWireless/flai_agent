@@ -121,6 +121,7 @@ flai_agent/
 │   └── 2025-11/              # 2025年11月的日志
 │       └── 2025-11-03_2025-11-09.log
 ├── scripts/                   # 工具脚本
+│   ├── check_dialogue_history.py  # 对话历史检查工具
 │   ├── log_extractor.py      # 日志提取工具
 │   └── log_extractor.sh
 ├── src/                       # 源代码
@@ -270,6 +271,18 @@ pip freeze > requirements.txt
 source .venv/bin/activate
 pip list
 ```
+
+## 📋 更新日志
+
+### 2026-02-01
+- 清理一次性工具脚本，移除已完成任务的角色导入脚本
+- 移除 lingma 配置文件，优化 .gitignore
+- 同步代码到 online 和 main 分支
+
+### 2026-01
+- 批量添加 C1S7 角色配置和开场白
+- 优化角色查找和错误处理机制
+- 重构 prompt 生成模块，迁移到 JSON 配置
 
 ## 📝 许可证
 
