@@ -3,6 +3,7 @@ API 路由定义
 纯路由层，只负责接收请求和返回响应，业务逻辑在服务层
 """
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import json
 
@@ -10,7 +11,8 @@ from src.schemas import (
     ChatRequest, ChatResponse,
     Text2Voice, Text2VoiceResponse,
     GenerateOpenerRequest, GenerateOpenerResponse,
-    DrawCardRequest, DrawCardResponse
+    DrawCardRequest, DrawCardResponse,
+    IWChatRequest, IWChatResponse
 )
 from src.database import get_db
 from src.services.chat_service import ChatService
@@ -18,6 +20,8 @@ from src.services.fortune_service import FortuneService
 from src.services.voice_service import VoiceService
 from src.services.llm_service import LLMService
 from src.services.memory_service import MemoryService
+from src.services.instance_world_service import FreakWorldService
+from src.services.coc_service import COCService
 from src.core.content_filter import ContentFilter
 from src.core.config_loader import get_config_loader
 from src.custom_logger import custom_logger
@@ -99,6 +103,22 @@ def get_fortune_service(
 def get_voice_service() -> VoiceService:
     """获取语音服务实例"""
     return VoiceService(app_config)
+
+
+def get_freak_world_service(
+    db: Session = Depends(get_db),
+    llm_service: LLMService = Depends(get_llm_service)
+) -> FreakWorldService:
+    """获取异世界服务实例"""
+    return FreakWorldService(llm_service, db, app_config)
+
+
+def get_coc_service(
+    db: Session = Depends(get_db),
+    llm_service: LLMService = Depends(get_llm_service)
+) -> COCService:
+    """获取克苏鲁跑团服务实例"""
+    return COCService(llm_service, db, app_config)
 
 
 # ==================== API 路由 ====================
@@ -220,3 +240,107 @@ async def clear_user_memory(
     """
     success = await memory_service.clear_memory(user_id, character_id)
     return {"success": success, "message": "记忆已清除" if success else "清除失败"}
+
+
+# ==================== 异世界接口 ====================
+
+@router.post("/freak-world/chat")
+async def freak_world_chat(
+    request: IWChatRequest,
+    fw_service: FreakWorldService = Depends(get_freak_world_service)
+):
+    """
+    异世界对话接口（SSE 流式响应）
+    
+    功能：
+    - 开始新游戏（无 session_id）
+    - 继续对话（有 session_id，action=chat）
+    - 保存游戏（action=save）
+    - 加载存档（action=load，需要 save_id）
+    
+    响应格式（SSE）：
+    - delta: {"type": "delta", "content": "部分文本..."}
+    - done: {"type": "done", "result": {...}}
+    """
+    custom_logger.info(
+        f"Freak World request: user_id={request.user_id}, "
+        f"session_id={request.session_id}, action={request.action}, "
+        f"world_id={request.world_id}"
+    )
+    
+    async def generate():
+        async for chunk in fw_service.stream_chat(request):
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.post("/freak-world/chat-sync", response_model=IWChatResponse)
+async def freak_world_chat_sync(
+    request: IWChatRequest,
+    fw_service: FreakWorldService = Depends(get_freak_world_service)
+):
+    """
+    异世界对话接口（同步响应，用于测试）
+    
+    与 SSE 接口功能相同，但返回完整 JSON 响应
+    """
+    custom_logger.info(
+        f"Freak World sync request: user_id={request.user_id}, "
+        f"session_id={request.session_id}, action={request.action}"
+    )
+    
+    return await fw_service.process_request(request)
+
+
+# ==================== 克苏鲁跑团接口 ====================
+
+@router.post("/coc/chat")
+async def coc_chat(
+    request: Request,
+    coc_service: COCService = Depends(get_coc_service)
+):
+    """
+    克苏鲁跑团对话接口（同步响应）
+    
+    请求体:
+    {
+        "sessionId": "会话ID（可选，新游戏不传）",
+        "accountId": 用户ID,
+        "action": "start|confirm|reroll|select|input",
+        "message": "玩家输入内容",
+        "selection": "选项ID（可选）"
+    }
+    
+    响应体:
+    {
+        "sessionId": "会话ID",
+        "gameStatus": "当前游戏状态",
+        "content": "markdown内容",
+        "structuredData": {...},
+        "selections": [{"id": "xxx", "text": "xxx"}],
+        "investigatorCard": {...},
+        "turn": 轮数,
+        "round": 回合数
+    }
+    
+    游戏状态流程:
+    gm_select -> step1_attributes -> step2_secondary -> 
+    step3_profession -> step4_background -> step5_summary -> playing -> ended
+    """
+    body = await request.json()
+    
+    custom_logger.info(
+        f"COC chat request: account_id={body.get('accountId')}, "
+        f"session_id={body.get('sessionId')}, action={body.get('action')}"
+    )
+    
+    return await coc_service.chat(body)
