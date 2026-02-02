@@ -13,8 +13,7 @@ CREATE TABLE `t_freak_world_game_state` (
   
   -- 游戏状态字段
   `gm_id` varchar(16) NOT NULL DEFAULT '01' COMMENT '引导者ID',
-  `game_phase` varchar(32) NOT NULL DEFAULT 'gm_intro' COMMENT '游戏阶段: gm_intro/world_intro/character_select/playing/ended',
-  `game_state` varchar(16) NOT NULL DEFAULT 'playing' COMMENT '游戏状态: playing/ended/death',
+  `game_status` varchar(32) NOT NULL DEFAULT 'gm_intro' COMMENT '游戏状态: gm_intro/world_intro/character_select/playing/ended/death',
   `gender_preference` varchar(8) DEFAULT NULL COMMENT '原住民性别偏好: male/female',
   `current_character_id` varchar(64) DEFAULT NULL COMMENT '当前交谈角色ID',
   `random_seed` bigint DEFAULT NULL COMMENT '随机种子',
