@@ -3,60 +3,37 @@
 -- 创建时间: 2026-02-01
 
 -- =====================================================
--- 1. 异世界会话/存档表
+-- 1. 异世界游戏状态表 (我们新增，存储游戏进度)
 -- =====================================================
-CREATE TABLE `t_freak_world_session` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '自增ID',
-  `session_id` VARCHAR(64) NOT NULL COMMENT '会话ID',
-  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID (对应 account_id)',
-  `world_id` VARCHAR(32) NOT NULL COMMENT '世界ID',
-  `gm_id` VARCHAR(16) NOT NULL COMMENT '引导者ID',
-  `game_phase` VARCHAR(32) NOT NULL DEFAULT 'gm_intro' COMMENT '游戏阶段: gm_intro/world_intro/character_select/playing/ended',
-  `game_state` VARCHAR(16) NOT NULL DEFAULT 'playing' COMMENT '游戏状态: playing/ended/death',
-  `gender_preference` VARCHAR(8) DEFAULT NULL COMMENT '原住民性别偏好: male/female',
-  `current_character_id` VARCHAR(64) DEFAULT NULL COMMENT '当前交谈角色ID',
-  `random_seed` BIGINT DEFAULT NULL COMMENT '随机种子',
-  `characters` JSON DEFAULT NULL COMMENT '已生成的角色列表JSON',
-  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '会话状态: 1=活跃, 0=已结束',
+CREATE TABLE `t_freak_world_game_state` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `freak_world_id` int(11) unsigned NOT NULL COMMENT '异世界id',
+  `account_id` int(32) unsigned NOT NULL COMMENT '用户id',
+  `session_id` char(16) NOT NULL COMMENT '会话id',
   
-  -- 存档相关字段
-  `save_id` VARCHAR(64) DEFAULT NULL COMMENT '存档ID（存档后生成）',
-  `save_data` JSON DEFAULT NULL COMMENT '存档内容JSON',
-  `saved_at` DATETIME DEFAULT NULL COMMENT '存档时间',
+  -- 游戏状态字段
+  `gm_id` varchar(16) NOT NULL DEFAULT '01' COMMENT '引导者ID',
+  `game_phase` varchar(32) NOT NULL DEFAULT 'gm_intro' COMMENT '游戏阶段: gm_intro/world_intro/character_select/playing/ended',
+  `game_state` varchar(16) NOT NULL DEFAULT 'playing' COMMENT '游戏状态: playing/ended/death',
+  `gender_preference` varchar(8) DEFAULT NULL COMMENT '原住民性别偏好: male/female',
+  `current_character_id` varchar(64) DEFAULT NULL COMMENT '当前交谈角色ID',
+  `random_seed` bigint DEFAULT NULL COMMENT '随机种子',
+  `characters` json DEFAULT NULL COMMENT '已生成的角色列表JSON',
   
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_session_id` (`session_id`),
-  KEY `idx_user_id` (`user_id`),
-  KEY `idx_save_id` (`save_id`),
-  KEY `idx_world_id` (`world_id`),
-  KEY `idx_status` (`status`),
-  KEY `idx_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异世界会话/存档表';
-
-
--- =====================================================
--- 2. 异世界对话历史表 (现有表，新增 is_save_point 字段)
--- =====================================================
-CREATE TABLE `t_freak_world_dialogue` (
-  `id` int(32) NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `account_id` int(32) NOT NULL COMMENT '用户id',
-  `freak_world_id` int(16) NOT NULL COMMENT '异世界id',
-  `session_id` int(16) NOT NULL COMMENT '对话id',
-  `message` text CHARACTER SET utf8mb4 COMMENT '发送内容',
-  `response` text CHARACTER SET utf8mb4 COMMENT '返回内容',
-  `step` int(4) unsigned DEFAULT NULL COMMENT '初始加载步骤',
-  `is_save_point` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否为存档点: 0=否, 1=是',
-  `ext_param1` text CHARACTER SET utf8mb4 COMMENT '扩展参数1',
-  `ext_param2` text COMMENT '扩展参数2',
-  `ext_param3` text COMMENT '扩展参数3',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `del` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='异世界对话表';
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_session_id` (`session_id`),
+  KEY `idx_account_id` (`account_id`),
+  KEY `idx_freak_world_id` (`freak_world_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异世界游戏状态表';
+
+-- 说明：
+-- - t_freak_world_dialogue: 现有对话表，Java 写入，Python 只读
+-- - t_freak_world_save_slot: 现有存档槽表，Java 管理存档ID与对话ID的关联
+-- - t_freak_world_game_state: 我们新增，存储游戏进度状态
 
 
 -- =====================================================
