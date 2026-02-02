@@ -1,11 +1,11 @@
--- 副本世界数据库表创建脚本
--- 数据库: pillow_customer_test
+-- 异世界数据库表创建脚本
+-- 用于测试环境和生产环境建表
 -- 创建时间: 2026-02-01
 
 -- =====================================================
--- 1. 副本世界会话/存档表
+-- 1. 异世界会话/存档表
 -- =====================================================
-CREATE TABLE `t_instance_world_session` (
+CREATE TABLE `t_freak_world_session` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '自增ID',
   `session_id` VARCHAR(64) NOT NULL COMMENT '会话ID',
   `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID (对应 account_id)',
@@ -34,34 +34,29 @@ CREATE TABLE `t_instance_world_session` (
   KEY `idx_world_id` (`world_id`),
   KEY `idx_status` (`status`),
   KEY `idx_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='副本世界会话/存档表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异世界会话/存档表';
 
 
 -- =====================================================
--- 2. 副本世界对话历史表
+-- 2. 异世界对话历史表 (现有表，新增 is_save_point 字段)
 -- =====================================================
-CREATE TABLE `t_instance_world_dialogue` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '自增ID',
-  `session_id` VARCHAR(64) NOT NULL COMMENT '会话ID',
-  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID (对应 account_id)',
-  `world_id` VARCHAR(32) NOT NULL COMMENT '世界ID',
-  `role` VARCHAR(16) NOT NULL COMMENT '角色: user/assistant/system',
-  `content` TEXT NOT NULL COMMENT '消息内容',
-  `type` TINYINT NOT NULL DEFAULT 1 COMMENT '消息类型: 1=普通文字, 2=语音转文字, 3=系统消息',
-  `is_save_point` TINYINT NOT NULL DEFAULT 0 COMMENT '是否为存档点: 0=否, 1=是',
-  `is_deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否已删除: 0=否, 1=是',
-  `metadata` JSON DEFAULT NULL COMMENT '额外元数据JSON',
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  
-  PRIMARY KEY (`id`),
-  KEY `idx_session_id` (`session_id`),
-  KEY `idx_user_id` (`user_id`),
-  KEY `idx_world_id` (`world_id`),
-  KEY `idx_is_deleted` (`is_deleted`),
-  KEY `idx_created_at` (`created_at`),
-  KEY `idx_session_created` (`session_id`, `created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='副本世界对话历史表';
+CREATE TABLE `t_freak_world_dialogue` (
+  `id` int(32) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `account_id` int(32) NOT NULL COMMENT '用户id',
+  `freak_world_id` int(16) NOT NULL COMMENT '异世界id',
+  `session_id` int(16) NOT NULL COMMENT '对话id',
+  `message` text CHARACTER SET utf8mb4 COMMENT '发送内容',
+  `response` text CHARACTER SET utf8mb4 COMMENT '返回内容',
+  `step` int(4) unsigned DEFAULT NULL COMMENT '初始加载步骤',
+  `is_save_point` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否为存档点: 0=否, 1=是',
+  `ext_param1` text CHARACTER SET utf8mb4 COMMENT '扩展参数1',
+  `ext_param2` text COMMENT '扩展参数2',
+  `ext_param3` text COMMENT '扩展参数3',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `del` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='异世界对话表';
 
 
 -- =====================================================
