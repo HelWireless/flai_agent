@@ -265,17 +265,139 @@ async def freak_world_chat(
     fw_service: FreakWorldService = Depends(get_freak_world_service)
 ):
     """
-    异世界对话接口（SSE 流式响应）
+    副本世界对话接口（SSE 流式响应）
     
-    功能：
-    - 开始新游戏（无 session_id）
-    - 继续对话（有 session_id，action=chat）
-    - 保存游戏（action=save）
-    - 加载存档（action=load，需要 save_id）
+    ## 请求参数
     
-    响应格式（SSE）：
-    - delta: {"type": "delta", "content": "部分文本..."}
-    - done: {"type": "done", "result": {...}}
+    | 字段 | 类型 | 必填 | 说明 |
+    |------|------|------|------|
+    | userId | string/int | 是 | 用户ID |
+    | worldId | string | 是 | 世界ID（如 "01"） |
+    | sessionId | string | 否 | 会话ID，新游戏不传 |
+    | gmId | string | 否 | GM ID，切换GM时传入 |
+    | message | string | 否 | 用户消息 |
+    | action | string | 否 | 动作类型，默认 "chat" |
+    | saveId | string | 否 | 存档ID，action=load 时必传 |
+    
+    ### action 类型说明
+    - `chat`: 对话（默认）
+    - `save`: 保存游戏
+    - `load`: 加载存档
+    
+    ## 请求示例
+    
+    ### 1. 开始新游戏
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "01"
+    }
+    ```
+    
+    ### 2. 指定GM开始新游戏
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "01",
+        "gmId": "yan"
+    }
+    ```
+    
+    ### 3. 继续对话
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "01",
+        "sessionId": "fw_abc123def456",
+        "message": "我选择进入那扇神秘的门"
+    }
+    ```
+    
+    ### 4. 切换GM
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "01",
+        "sessionId": "fw_abc123def456",
+        "gmId": "li",
+        "message": "继续"
+    }
+    ```
+    
+    ### 5. 保存游戏
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "01",
+        "sessionId": "fw_abc123def456",
+        "action": "save"
+    }
+    ```
+    
+    ### 6. 加载存档
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "01",
+        "action": "load",
+        "saveId": "save_abc123"
+    }
+    ```
+    
+    ## 响应格式（SSE）
+    
+    响应为 Server-Sent Events 流，包含以下事件类型：
+    
+    ### delta 事件（流式内容）
+    ```
+    data: {"type": "delta", "content": "欢迎来到"}
+    data: {"type": "delta", "content": "异世界..."}
+    ```
+    
+    ### done 事件（最终结果）
+    ```
+    data: {"type": "done", "result": {
+        "session_id": "fw_abc123def456",
+        "content": "欢迎来到异世界...",
+        "selection_type": "choice",
+        "selections": [
+            {"id": "1", "text": "进入森林"},
+            {"id": "2", "text": "前往城镇"}
+        ],
+        "game_state": {
+            "session_id": "fw_abc123def456",
+            "world_id": "01",
+            "gm_id": "yan",
+            "game_status": "playing",
+            "current_character_id": null
+        },
+        "save_id": null
+    }}
+    ```
+    
+    ### error 事件（错误）
+    ```
+    data: {"type": "error", "message": "错误信息"}
+    ```
+    
+    ## game_status 状态说明
+    
+    | 状态 | 说明 |
+    |------|------|
+    | gm_intro | GM自我介绍阶段 |
+    | world_intro | 世界介绍阶段 |
+    | character_select | 角色选择阶段 |
+    | playing | 游戏进行中 |
+    | ended | 游戏正常结束 |
+    | death | 角色死亡 |
+    
+    ## selection_type 说明
+    
+    | 类型 | 说明 |
+    |------|------|
+    | choice | 选择题，从 selections 中选择 |
+    | input | 自由输入 |
+    | none | 无需输入（游戏结束等） |
     """
     custom_logger.info(
         f"Freak World request: user_id={request.user_id}, "
@@ -304,9 +426,42 @@ async def freak_world_chat_sync(
     fw_service: FreakWorldService = Depends(get_freak_world_service)
 ):
     """
-    异世界对话接口（同步响应，用于测试）
+    副本世界对话接口（同步响应，用于测试）
     
-    与 SSE 接口功能相同，但返回完整 JSON 响应
+    与 SSE 接口功能相同，但返回完整 JSON 响应而非流式。
+    
+    ## 请求示例
+    
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "01",
+        "sessionId": "fw_abc123def456",
+        "message": "我选择进入那扇神秘的门"
+    }
+    ```
+    
+    ## 响应示例
+    
+    ```json
+    {
+        "sessionId": "fw_abc123def456",
+        "content": "你推开那扇古老的木门，一股潮湿的气息扑面而来...",
+        "selectionType": "choice",
+        "selections": [
+            {"id": "1", "text": "点燃火把照亮四周"},
+            {"id": "2", "text": "小心翼翼地摸黑前进"}
+        ],
+        "gameState": {
+            "sessionId": "fw_abc123def456",
+            "worldId": "01",
+            "gmId": "yan",
+            "gameStatus": "playing",
+            "currentCharacterId": null
+        },
+        "saveId": null
+    }
+    ```
     """
     custom_logger.info(
         f"Freak World sync request: user_id={request.user_id}, "
