@@ -61,7 +61,8 @@ class ChatService:
         start_time = time.time()
         custom_logger.info(
             f"Processing chat for user: {request.user_id}, "
-            f"character: {request.character_id}, voice: {request.voice}"
+            f"character: {request.character_id}, voice: {request.voice}, "
+            f"virtual_id: {request.virtual_id}"
         )
         
         # 初始化变量
@@ -89,7 +90,8 @@ class ChatService:
                 character_id=request.character_id,
                 if_voice=request.voice,
                 conversation_history_limit=7,
-                vector_memory_limit=3
+                vector_memory_limit=3,
+                virtual_id=request.virtual_id
             )
         except Exception as e:
             custom_logger.error(f"Error getting memory: {str(e)}")
@@ -116,7 +118,8 @@ class ChatService:
             character_id=request.character_id,
             user_id=request.user_id,
             nickname=nickname,
-            EMS_type=EMS_type
+            EMS_type=EMS_type,
+            virtual_id=request.virtual_id
         )
         prompt_end_time = time.time()
         prompt_duration = prompt_end_time - prompt_start_time

@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     message_count: int
     character_id: str = "default"  # 新增人物ID字段
     voice: bool = False
+    virtual_id: int = Field(default=0, alias="virtualId")  # 虚拟身份卡ID，0或None表示用户自己
     
     model_config = ConfigDict(
         populate_by_name=True  # 支持通过别名访问字段
@@ -108,3 +109,76 @@ class DrawCardResponse(BaseModel):
     actionBrief: str
     refreshment: str
     refreshmentBrief: str
+
+
+# ==================== 副本世界 (Instance World) ====================
+
+class IWChatRequest(BaseModel):
+    """副本世界对话请求"""
+    user_id: Union[str, int] = Field(alias="userId")
+    session_id: Optional[str] = Field(default=None, alias="sessionId")  # 新游戏时不传
+    world_id: str = Field(alias="worldId")
+    gm_id: Optional[str] = Field(default=None, alias="gmId")  # 切换GM时传入
+    message: str = ""
+    action: str = "chat"  # chat | save | load
+    save_id: Optional[str] = Field(default=None, alias="saveId")  # action=load 时必传
+    
+    model_config = ConfigDict(
+        populate_by_name=True
+    )
+    
+    @field_validator('user_id')
+    def convert_user_id(cls, v) -> str:
+        return str(v)
+
+
+class IWSelection(BaseModel):
+    """副本世界选项"""
+    id: str
+    text: str
+
+
+class IWGameState(BaseModel):
+    """异世界游戏状态"""
+    session_id: str = Field(alias="sessionId")
+    world_id: str = Field(alias="worldId")
+    gm_id: str = Field(alias="gmId")
+    game_status: str = Field(alias="gameStatus")  # gm_intro | world_intro | character_select | playing | ended | death
+    current_character_id: Optional[str] = Field(default=None, alias="currentCharacterId")
+    
+    model_config = ConfigDict(
+        populate_by_name=True
+    )
+
+
+class IWChatResponse(BaseModel):
+    """副本世界对话响应（SSE 最终结果）"""
+    session_id: str = Field(alias="sessionId")
+    content: str  # markdown 内容
+    selection_type: str = Field(alias="selectionType")  # choice | input | none
+    selections: List[IWSelection] = []
+    game_state: IWGameState = Field(alias="gameState")
+    save_id: Optional[str] = Field(default=None, alias="saveId")  # 存档时返回
+    
+    model_config = ConfigDict(
+        populate_by_name=True
+    )
+
+
+class IWSession(BaseModel):
+    """副本世界会话（内存存储用）"""
+    session_id: str
+    user_id: str
+    world_id: str
+    gm_id: str
+    game_phase: str = "gm_intro"  # gm_intro | world_intro | character_select | playing | ended
+    game_state: str = "playing"  # playing | ended | death
+    gender_preference: Optional[str] = None
+    current_character_id: Optional[str] = None
+    random_seed: Optional[int] = None
+    characters: List[Dict[str, Any]] = []
+    dialogue_history: List[Dict[str, str]] = []
+    save_id: Optional[str] = None
+    save_data: Optional[Dict[str, Any]] = None
+    created_at: str = ""
+    updated_at: str = ""

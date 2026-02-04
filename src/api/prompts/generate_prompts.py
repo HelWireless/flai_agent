@@ -8,7 +8,8 @@ from src.core.config_loader import get_config_loader
 
 def get_prompt_by_character_id(character_id: str, user_id: str = 'guest', 
                                nickname: str = "熟悉的人", EMS_type: str = None,
-                               user_prompt_type: str = "return_json_prompt") -> Tuple[Dict[str, str], str]:
+                               user_prompt_type: str = "return_json_prompt",
+                               virtual_id: int = 0) -> Tuple[Dict[str, str], str]:
     """
     根据角色ID获取对应的prompt配置
     
@@ -18,6 +19,7 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
         nickname: 用户昵称
         EMS_type: 情绪类型
         user_prompt_type: 用户prompt类型
+        virtual_id: 虚拟身份卡ID，0表示用户自己，>0表示扮演对应身份卡人物
     
     Returns:
         (character_prompt, model_id): prompt字典和模型ID
@@ -76,6 +78,13 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
             # 如果找到了，序列化为JSON字符串
             system_prompt = json_module.dumps(system_prompt, ensure_ascii=False, indent=4)
         model_id = "qwen_max"
+    
+    # 如果有虚拟身份卡，注入身份背景到 system_prompt
+    if virtual_id > 0:
+        from src.services.identity_card_service import build_identity_prompt
+        identity_prompt = build_identity_prompt(virtual_id)
+        if identity_prompt:
+            system_prompt = system_prompt + identity_prompt
     
     # 构建用户prompt配置
     character_user_info = {

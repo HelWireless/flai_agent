@@ -70,14 +70,30 @@ class DialogueQuery:
     
     def _query_dialogue_history(
         self, db_session: Session, user_id: str, table_name: str,
-        if_voice: bool = False, character_id: Optional[str] = None
+        if_voice: bool = False, character_id: Optional[str] = None,
+        virtual_id: int = 0
     ) -> List:
-        """统一的对话历史查询（合并了两个重复方法）"""
+        """统一的对话历史查询
+        
+        Args:
+            db_session: 数据库会话
+            user_id: 用户ID
+            table_name: 表名
+            if_voice: 是否语音
+            character_id: 第三方角色ID（可选）
+            virtual_id: 虚拟身份卡ID，0表示用户自己，需要同时匹配NULL和0
+        """
         type_num = TYPE_VOICE if if_voice else TYPE_TEXT
         
         if character_id:
-            where_clause = "account_id = :user_id AND third_character_id = :character_id"
-            params = {"user_id": user_id, "character_id": character_id, "type_num": type_num}
+            # 第三方角色对话，需要加入 virtual_id 过滤
+            # virtual_id=0 时，同时匹配 NULL 和 0（兼容历史数据）
+            if virtual_id == 0:
+                where_clause = "account_id = :user_id AND third_character_id = :character_id AND (virtual_id IS NULL OR virtual_id = 0)"
+                params = {"user_id": user_id, "character_id": character_id, "type_num": type_num}
+            else:
+                where_clause = "account_id = :user_id AND third_character_id = :character_id AND virtual_id = :virtual_id"
+                params = {"user_id": user_id, "character_id": character_id, "type_num": type_num, "virtual_id": virtual_id}
         else:
             where_clause = "account_id = :user_id"
             params = {"user_id": user_id, "type_num": type_num}
@@ -120,11 +136,22 @@ class DialogueQuery:
         return self._process_query_results(results), nickname
     
     def get_user_third_character_dialogue_history(
-        self, user_id: str, character_id: str, if_voice: bool = False
+        self, user_id: str, character_id: str, if_voice: bool = False,
+        virtual_id: int = 0
     ) -> Tuple[List[Dict], str]:
-        """获取用户与第三方角色的对话历史"""
+        """获取用户与第三方角色的对话历史
+        
+        Args:
+            user_id: 用户ID
+            character_id: 第三方角色ID
+            if_voice: 是否语音对话
+            virtual_id: 虚拟身份卡ID，0表示用户自己
+        
+        Returns:
+            (对话历史列表, 用户昵称)
+        """
         results = self.query_with_retry(self.db, self._query_dialogue_history,
-                                       user_id, "t_third_character_dialogue", if_voice, character_id)
+                                       user_id, "t_third_character_dialogue", if_voice, character_id, virtual_id)
         nickname = self.query_with_retry(self.db, self._query_nickname, user_id)
         return self._process_query_results(results), nickname
     
@@ -183,6 +210,10 @@ class DialogueQuery:
 if __name__ == "__main__":
     dialogue_query = DialogueQuery(if_test=True)
     result, user_nickname = dialogue_query.get_user_pillow_dialogue_history('1000003')
-    tmp, _ = dialogue_query.get_user_third_character_dialogue_history("1000003", "c1s2c6_0016")
+    # 测试第三方角色对话历史查询（用户自己身份）
+    tmp, _ = dialogue_query.get_user_third_character_dialogue_history("1000003", "c1s2c6_0016", virtual_id=0)
+    # 测试第三方角色对话历史查询（虚拟身份卡）
+    tmp_virtual, _ = dialogue_query.get_user_third_character_dialogue_history("1000003", "c1s2c6_0016", virtual_id=1)
     print(f"默认角色: {len(result)} 条, 昵称: {user_nickname}")
-    print(f"第三方角色: {len(tmp)} 条")
+    print(f"第三方角色(用户自己): {len(tmp)} 条")
+    print(f"第三方角色(身份卡1): {len(tmp_virtual)} 条")
