@@ -326,30 +326,140 @@ async def coc_chat(
     """
     克苏鲁跑团对话接口（同步响应）
     
-    请求体:
-    {
-        "sessionId": "会话ID（可选，新游戏不传）",
-        "accountId": 用户ID,
-        "action": "start|confirm|reroll|select|input",
-        "message": "玩家输入内容",
-        "selection": "选项ID（可选）"
-    }
+    ## 游戏流程
     
-    响应体:
-    {
-        "sessionId": "会话ID",
-        "gameStatus": "当前游戏状态",
-        "content": "markdown内容",
-        "structuredData": {...},
-        "selections": [{"id": "xxx", "text": "xxx"}],
-        "investigatorCard": {...},
-        "turn": 轮数,
-        "round": 回合数
-    }
+    ```
+    gm_select → step1_attributes → step2_secondary → step3_profession → step4_background → step5_summary → playing
+    ```
     
-    游戏状态流程:
-    gm_select -> step1_attributes -> step2_secondary -> 
-    step3_profession -> step4_background -> step5_summary -> playing -> ended
+    ## 请求参数
+    
+    | 字段 | 类型 | 必填 | 说明 |
+    |------|------|------|------|
+    | accountId | int | 是 | 用户ID |
+    | sessionId | string | 否 | 会话ID，新游戏不传 |
+    | action | string | 否 | 动作类型，默认 "input" |
+    | selection | string | 否 | 选择的选项ID |
+    | message | string | 否 | 玩家输入内容（playing 阶段使用） |
+    | saveData | object | 否 | 存档数据（action=load 时使用） |
+    
+    ### action 类型说明
+    - `start`: 开始新游戏
+    - `confirm`: 确认当前选择
+    - `reroll`: 重新随机
+    - `select`: 无需单独传，直接传 selection 即可
+    - `input`: 自由输入（playing 阶段）
+    - `load`: 读取存档
+    
+    ## 请求示例
+    
+    ### 1. 开始新游戏
+    ```json
+    {
+        "accountId": 1000001,
+        "action": "start"
+    }
+    ```
+    
+    ### 2. 选择GM性别
+    ```json
+    {
+        "sessionId": "coc_abc123def456",
+        "accountId": 1000001,
+        "selection": "female"
+    }
+    ```
+    
+    ### 3. 确认属性
+    ```json
+    {
+        "sessionId": "coc_abc123def456",
+        "accountId": 1000001,
+        "selection": "confirm"
+    }
+    ```
+    
+    ### 4. 重新随机属性
+    ```json
+    {
+        "sessionId": "coc_abc123def456",
+        "accountId": 1000001,
+        "selection": "reroll"
+    }
+    ```
+    
+    ### 5. 选择职业（选第1个）
+    ```json
+    {
+        "sessionId": "coc_abc123def456",
+        "accountId": 1000001,
+        "selection": "prof_0"
+    }
+    ```
+    
+    ### 6. 开始游戏
+    ```json
+    {
+        "sessionId": "coc_abc123def456",
+        "accountId": 1000001,
+        "selection": "start_game"
+    }
+    ```
+    
+    ### 7. 游戏中输入
+    ```json
+    {
+        "sessionId": "coc_abc123def456",
+        "accountId": 1000001,
+        "message": "我想调查这个房间"
+    }
+    ```
+    
+    ### 8. 读取存档
+    ```json
+    {
+        "accountId": 1000001,
+        "action": "load",
+        "saveData": { ... }
+    }
+    ```
+    
+    ## 响应示例
+    
+    ```json
+    {
+        "sessionId": "coc_abc123def456",
+        "gameStatus": "step1_attributes",
+        "content": "（璃微微颔首）...以下是你随机分配的8个常规属性值：",
+        "structuredData": {
+            "title": "第一步：常规属性分配结果",
+            "attributes": [
+                {"name": "力量", "abbr": "STR", "value": 65, "display": "力量(STR): 65"},
+                {"name": "体质", "abbr": "CON", "value": 50, "display": "体质(CON): 50"}
+            ]
+        },
+        "selections": [
+            {"id": "confirm", "text": "确认属性"},
+            {"id": "reroll", "text": "重新随机"}
+        ],
+        "investigatorCard": null,
+        "turn": 0,
+        "round": 0
+    }
+    ```
+    
+    ## 游戏状态说明
+    
+    | gameStatus | 说明 | 可用 selection |
+    |------------|------|----------------|
+    | gm_select | 选择GM性别 | female, male |
+    | step1_attributes | 常规属性分配 | confirm, reroll |
+    | step2_secondary | 次要属性确认 | confirm, back |
+    | step3_profession | 职业选择 | prof_0, prof_1, prof_2, reroll |
+    | step4_background | 背景确认 | confirm, regenerate |
+    | step5_summary | 人物卡总结 | start_game, back |
+    | playing | 游戏进行中 | 自由输入 message |
+    | ended | 游戏结束 | new_game |
     """
     body = await request.json()
     
