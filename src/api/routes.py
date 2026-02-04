@@ -398,6 +398,99 @@ async def freak_world_chat(
     | choice | 选择题，从 selections 中选择 |
     | input | 自由输入 |
     | none | 无需输入（游戏结束等） |
+    
+    ---
+    
+    ## 前端接收 SSE 示例（JavaScript）
+    
+    ```javascript
+    async function streamChat(requestBody) {
+        const response = await fetch('/pillow/freak-world/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+    
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+    
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+    
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\\n\\n');
+            buffer = lines.pop();
+    
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = JSON.parse(line.slice(6));
+                
+                if (data.type === 'delta') {
+                    // 流式显示，追加到页面
+                    document.getElementById('content').textContent += data.content;
+                } else if (data.type === 'done') {
+                    // 完成，处理最终结果
+                    console.log('结果:', data.result);
+                } else if (data.type === 'error') {
+                    console.error('错误:', data.message);
+                }
+            }
+        }
+    }
+    
+    // 调用示例
+    streamChat({ userId: '1000001', worldId: '01', message: '进入森林' });
+    ```
+    
+    ---
+    
+    ## Java 后端透传 SSE 示例（Spring WebFlux）
+    
+    ```java
+    @PostMapping(value = "/freak-world/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> proxySSE(@RequestBody Map<String, Object> request) {
+        return webClient.post()
+            .uri("http://python-service:8000/pillow/freak-world/chat")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(request)
+            .retrieve()
+            .bodyToFlux(String.class);
+    }
+    ```
+    
+    ### Spring MVC + RestTemplate 透传
+    
+    ```java
+    @PostMapping(value = "/freak-world/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<StreamingResponseBody> proxySSE(@RequestBody String body) {
+        StreamingResponseBody stream = outputStream -> {
+            HttpURLConnection conn = (HttpURLConnection) 
+                new URL("http://python-service:8000/pillow/freak-world/chat").openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+            
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    outputStream.write((line + "\\n").getBytes(StandardCharsets.UTF_8));
+                    outputStream.flush();
+                }
+            }
+        };
+        
+        return ResponseEntity.ok()
+            .contentType(MediaType.TEXT_EVENT_STREAM)
+            .body(stream);
+    }
+    ```
     """
     custom_logger.info(
         f"Freak World request: user_id={request.user_id}, "
