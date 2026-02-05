@@ -313,9 +313,16 @@ async def freak_world_chat(
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_01"） |
     | step | str | 是 | 游戏阶段，初始传 "0" |
     | message | str | 是 | 用户消息，可为空串 |
-    | saveId | str | 否 | 存档ID，有值则为读档 |
-    | extParam | object | 否 | 扩展参数 |
+    | saveId | str | 否 | 存档ID，读档时必填 |
+    | extParam | object | 否 | 扩展参数（见下方说明） |
     | stream | bool | 否 | true=SSE（默认），false=同步JSON |
+    
+    ## extParam 扩展参数说明
+    
+    | 字段 | 类型 | 说明 |
+    |------|------|------|
+    | action | str | 操作类型：`"save"` 存档、`"load"` 读档 |
+    | save_data | object | 读档时传入的存档数据（由 Java 层提供） |
     
     ## step 游戏阶段说明
     
@@ -368,7 +375,20 @@ async def freak_world_chat(
     }
     ```
     
-    ### 4. 读取存档
+    ### 4. 存档
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "1",
+        "message": "",
+        "extParam": {"action": "save"}
+    }
+    ```
+    
+    ### 5. 读档
     ```json
     {
         "userId": "1000001",
@@ -377,11 +397,12 @@ async def freak_world_chat(
         "gmId": "gm_01",
         "step": "0",
         "message": "",
-        "saveId": "save_abc123"
+        "saveId": "save_abc123",
+        "extParam": {"action": "load"}
     }
     ```
     
-    ### 5. 同步请求（不使用SSE）
+    ### 6. 同步请求（不使用SSE）
     ```json
     {
         "userId": "1000001",
@@ -396,7 +417,7 @@ async def freak_world_chat(
     
     ## 响应格式（所有阶段返回 markdown）
     
-    ### 同步响应（stream=false）
+    ### 普通对话响应
     ```json
     {
         "sessionId": "fw_abc123",
@@ -406,6 +427,26 @@ async def freak_world_chat(
         "complete": false,
         "saveId": null,
         "extData": null
+    }
+    ```
+    
+    ### 存档响应（action: "save"）
+    ```json
+    {
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "1",
+        "content": "## 存档成功\\n\\n你的冒险进度已保存...",
+        "complete": false,
+        "saveId": "save_abc123",
+        "extData": {
+            "save_data": {
+                "save_id": "save_abc123",
+                "session_id": "fw_abc123",
+                "gm_id": "gm_01",
+                "world_id": "world_01"
+            }
+        }
     }
     ```
     
@@ -546,8 +587,8 @@ async def coc_chat(
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
     | step | str | 是 | 游戏阶段，初始传 "0" |
     | message | str | 是 | 用户消息/选择，可为空串 |
-    | saveId | str | 否 | 存档ID，有值则为读档 |
-    | extParam | object | 否 | 扩展参数（如 selection、action 等） |
+    | saveId | str | 否 | 存档ID，读档时必填 |
+    | extParam | object | 否 | 扩展参数（见下方说明） |
     | stream | bool | 否 | true=SSE（默认），false=同步JSON |
     
     ## step 游戏阶段说明（COC 特有）
@@ -565,9 +606,11 @@ async def coc_chat(
     
     ## extParam 扩展参数说明
     
-    COC 角色创建阶段需要通过 extParam 传递选择：
-    - `selection`: 选择的选项ID（如 "confirm", "reroll", "prof_0"）
-    - `action`: 动作类型（如 "start", "confirm", "reroll"）
+    | 字段 | 类型 | 说明 |
+    |------|------|------|
+    | action | str | 操作类型：`"save"` 存档、`"load"` 读档、`"start"` 开始、`"confirm"` 确认、`"reroll"` 重投 |
+    | selection | str | 选择的选项ID（如 `"confirm"`, `"reroll"`, `"prof_0"`） |
+    | save_data | object | 读档时传入的存档数据（由 Java 层提供） |
     
     ## 请求示例
     
@@ -622,7 +665,20 @@ async def coc_chat(
     }
     ```
     
-    ### 5. 读取存档
+    ### 5. 存档
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "6",
+        "message": "",
+        "extParam": {"action": "save"}
+    }
+    ```
+    
+    ### 6. 读档
     ```json
     {
         "userId": "1000001",
@@ -631,7 +687,8 @@ async def coc_chat(
         "gmId": "gm_02",
         "step": "0",
         "message": "",
-        "saveId": "save_abc123"
+        "saveId": "save_abc123",
+        "extParam": {"action": "load"}
     }
     ```
     
