@@ -354,9 +354,9 @@ async def freak_world_chat(
     data: {"type": "delta", "content": "异世界..."}
     ```
     
-    ### done 事件（最终结果）
+    ### done 事件（最终结果，流结束）
     ```
-    data: {"type": "done", "result": {
+    data: {"type": "done", "complete": true, "result": {
         "session_id": "fw_abc123def456",
         "content": "欢迎来到异世界...",
         "selection_type": "choice",
@@ -375,10 +375,12 @@ async def freak_world_chat(
     }}
     ```
     
-    ### error 事件（错误）
+    ### error 事件（错误，流结束）
     ```
-    data: {"type": "error", "message": "错误信息"}
+    data: {"type": "error", "complete": true, "message": "错误信息"}
     ```
+    
+    > **注意**: `complete: true` 表示 SSE 流已结束，前端收到后应关闭连接。
     
     ## game_status 状态说明
     
@@ -435,6 +437,12 @@ async def freak_world_chat(
                     console.log('结果:', data.result);
                 } else if (data.type === 'error') {
                     console.error('错误:', data.message);
+                }
+                
+                // 检查 complete 标识，流结束
+                if (data.complete) {
+                    console.log('SSE 流已结束');
+                    return;
                 }
             }
         }

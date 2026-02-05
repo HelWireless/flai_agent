@@ -522,12 +522,12 @@ class FreakWorldService:
             # 处理特殊操作（存档/加载）- 这些不需要流式
             if request.action == "save":
                 response = await self.save_game(request)
-                yield {"type": "done", "result": self._response_to_dict(response)}
+                yield {"type": "done", "complete": True, "result": self._response_to_dict(response)}
                 return
             
             if request.action == "load":
                 response = await self.load_game(request)
-                yield {"type": "done", "result": self._response_to_dict(response)}
+                yield {"type": "done", "complete": True, "result": self._response_to_dict(response)}
                 return
             
             # 获取或创建会话
@@ -550,6 +550,7 @@ class FreakWorldService:
                 if session.game_status in ["ended", "death"]:
                     yield {
                         "type": "done",
+                        "complete": True,
                         "result": {
                             "session_id": session.session_id,
                             "content": "游戏已结束，请开始新的副本。",
@@ -627,6 +628,7 @@ class FreakWorldService:
             # 返回最终结果
             yield {
                 "type": "done",
+                "complete": True,
                 "result": {
                     "session_id": session.session_id,
                     "content": content,
@@ -642,6 +644,7 @@ class FreakWorldService:
             self.db.rollback()
             yield {
                 "type": "error",
+                "complete": True,
                 "message": str(e)
             }
     
