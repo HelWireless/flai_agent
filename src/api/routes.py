@@ -327,11 +327,15 @@ async def freak_world_chat(
     
     ## 请求示例
     
+    > **ID 格式说明**：gmId 和 worldId 传数字部分，代码会自动加前缀查询数据库
+    > - 数据库 config_id: `gm_01` → 请求传: `"01"`
+    > - 数据库 config_id: `world_01` → 请求传: `"01"`
+    
     ### 1. 开始新游戏（后端分配GM，进入角色选择）
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_01",
+        "worldId": "01",
         "sessionId": "",
         "gmId": "0",
         "step": "0",
@@ -343,9 +347,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_01",
+        "worldId": "01",
         "sessionId": "fw_abc123",
-        "gmId": "gm_01",
+        "gmId": "01",
         "step": "0",
         "message": "我选择扮演那个神秘的旅者"
     }
@@ -355,9 +359,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_01",
+        "worldId": "01",
         "sessionId": "fw_abc123",
-        "gmId": "gm_01",
+        "gmId": "01",
         "step": "1",
         "message": "我选择进入那扇神秘的门"
     }
@@ -367,7 +371,7 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_01",
+        "worldId": "01",
         "sessionId": "",
         "gmId": "0",
         "step": "0",
@@ -380,9 +384,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_01",
+        "worldId": "01",
         "sessionId": "fw_abc123",
-        "gmId": "gm_01",
+        "gmId": "01",
         "step": "1",
         "message": "探索房间",
         "stream": false
@@ -395,7 +399,7 @@ async def freak_world_chat(
     ```json
     {
         "sessionId": "fw_abc123",
-        "gmId": "gm_01",
+        "gmId": "01",
         "step": "1",
         "content": "## 神秘的门后\\n\\n你推开那扇古老的木门，一股潮湿的气息扑面而来...\\n\\n*你听到远处传来微弱的脚步声*",
         "complete": false,
@@ -416,7 +420,7 @@ async def freak_world_chat(
     ```
     data: {"type": "done", "complete": true, "result": {
         "sessionId": "fw_abc123",
-        "gmId": "gm_01",
+        "gmId": "01",
         "step": "1",
         "content": "## 神秘的门后\\n\\n你推开那扇古老的木门...",
         "complete": false,

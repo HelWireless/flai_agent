@@ -129,15 +129,19 @@ def get_json_format_instruction() -> str:
 # ==================== GM 配置加载 ====================
 
 def get_gm_config(gm_id: str) -> dict:
-    """获取 GM 配置（优先数据库，fallback 文件）"""
-    # 尝试从数据库加载
-    config_id = f"gm_{gm_id}"
-    db_config = _query_config_by_id(config_id)
+    """获取 GM 配置（优先数据库，fallback 文件）
+    
+    Args:
+        gm_id: GM 的 config_id，如 "gm_01"
+    """
+    # 直接用 config_id 查询数据库
+    db_config = _query_config_by_id(gm_id)
     if db_config:
         return db_config.to_gm_dict()
     
-    # Fallback 到文件
-    return _load_gm_detail_from_file(gm_id)
+    # Fallback 到文件（兼容旧格式，去掉 gm_ 前缀）
+    file_id = gm_id.replace("gm_", "") if gm_id.startswith("gm_") else gm_id
+    return _load_gm_detail_from_file(file_id)
 
 
 def _load_gm_detail_from_file(gm_id: str) -> dict:
@@ -178,7 +182,7 @@ def get_enabled_gms() -> List[dict]:
     if db_configs:
         return [
             {
-                "id": c.config_id.replace("gm_", ""),
+                "id": c.config_id,  # 直接返回完整 config_id
                 "name": c.name,
                 "gender": c.gender,
                 "traits": c.traits
@@ -194,7 +198,7 @@ def get_enabled_gms() -> List[dict]:
             detail = _load_gm_file(gm_id, info)
             if detail:
                 gms.append({
-                    "id": gm_id,
+                    "id": f"gm_{gm_id}",  # 文件模式加前缀保持一致
                     "name": info.get("name", detail.get("name", "")),
                     "gender": info.get("gender", detail.get("gender", "")),
                     "traits": detail.get("traits", "")
@@ -203,33 +207,37 @@ def get_enabled_gms() -> List[dict]:
 
 
 def get_gm_ids() -> List[str]:
-    """获取所有启用的 GM ID 列表"""
+    """获取所有启用的 GM ID 列表（返回完整 config_id）"""
     # 尝试从数据库加载
     db_configs = _query_configs_by_type('gm')
     if db_configs:
-        return [c.config_id.replace("gm_", "") for c in db_configs]
+        return [c.config_id for c in db_configs]  # 直接返回完整 config_id
     
     # Fallback 到文件
     index = _load_gm_index_from_file()
-    return [gm_id for gm_id, info in index.items() if info.get("enabled", True)]
+    return [f"gm_{gm_id}" for gm_id, info in index.items() if info.get("enabled", True)]
 
 
 # ==================== 世界配置加载 ====================
 
 def get_world_config(world_id: str) -> dict:
-    """获取世界基础配置（优先数据库，fallback 文件）"""
-    # 尝试从数据库加载
-    config_id = f"world_{world_id}"
-    db_config = _query_config_by_id(config_id)
+    """获取世界基础配置（优先数据库，fallback 文件）
+    
+    Args:
+        world_id: 世界的 config_id，如 "world_01"
+    """
+    # 直接用 config_id 查询数据库
+    db_config = _query_config_by_id(world_id)
     if db_config:
         return db_config.to_world_dict()
     
-    # Fallback 到文件
-    return _load_world_detail_from_file(world_id)
+    # Fallback 到文件（兼容旧格式，去掉 world_ 前缀）
+    file_id = world_id.replace("world_", "") if world_id.startswith("world_") else world_id
+    return _load_world_detail_from_file(file_id)
 
 
 def _load_world_detail_from_file(world_id: str) -> dict:
-    """从文件加载单个世界详细配置"""
+    """从文件加载单个世界详细配置（world_id 为不带前缀的ID）"""
     index = _load_world_index_from_file()
     if world_id not in index:
         # 返回默认世界
@@ -266,7 +274,7 @@ def get_enabled_worlds() -> List[dict]:
     if db_configs:
         return [
             {
-                "id": c.config_id.replace("world_", ""),
+                "id": c.config_id,  # 直接返回完整 config_id
                 "name": c.name,
                 "theme": (c.config or {}).get("theme", c.traits),
                 "description": (c.config or {}).get("description", "")
@@ -282,7 +290,7 @@ def get_enabled_worlds() -> List[dict]:
             detail = _load_world_file(world_id, info)
             if detail:
                 worlds.append({
-                    "id": world_id,
+                    "id": f"world_{world_id}",  # 文件模式加前缀保持一致
                     "name": info.get("name", detail.get("name", "")),
                     "theme": info.get("theme", detail.get("theme", "")),
                     "description": detail.get("description", "")
@@ -291,27 +299,31 @@ def get_enabled_worlds() -> List[dict]:
 
 
 def get_world_ids() -> List[str]:
-    """获取所有启用的世界 ID 列表"""
+    """获取所有启用的世界 ID 列表（返回完整 config_id）"""
     # 尝试从数据库加载
     db_configs = _query_configs_by_type('world')
     if db_configs:
-        return [c.config_id.replace("world_", "") for c in db_configs]
+        return [c.config_id for c in db_configs]  # 直接返回完整 config_id
     
     # Fallback 到文件
     index = _load_world_index_from_file()
-    return [world_id for world_id, info in index.items() if info.get("enabled", True)]
+    return [f"world_{world_id}" for world_id, info in index.items() if info.get("enabled", True)]
 
 
 def load_world_setting(world_id: str, base_path: str = "") -> str:
-    """加载世界完整设定（优先数据库，fallback 文件）"""
-    # 尝试从数据库加载
-    config_id = f"world_{world_id}"
-    db_config = _query_config_by_id(config_id)
+    """加载世界完整设定（优先数据库，fallback 文件）
+    
+    Args:
+        world_id: 世界的 config_id，如 "world_01"
+    """
+    # 直接用 config_id 查询数据库
+    db_config = _query_config_by_id(world_id)
     if db_config and db_config.prompt:
         return db_config.prompt
     
-    # Fallback 到文件
-    config = _load_world_detail_from_file(world_id)
+    # Fallback 到文件（兼容旧格式，去掉 world_ 前缀）
+    file_id = world_id.replace("world_", "") if world_id.startswith("world_") else world_id
+    config = _load_world_detail_from_file(file_id)
     if not config:
         return f"世界 {world_id} 配置不存在"
     
