@@ -480,49 +480,134 @@ async def freak_world_chat(
     
     ---
     
-    ## 前端接收 SSE 示例（JavaScript）
+    ## 前端接收 SSE 示例
     
-    ```javascript
-    async function streamChat(requestBody) {
-        const response = await fetch('/pillow/freak-world/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-        });
-    
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-    
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-    
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\\n\\n');
-            buffer = lines.pop();
-    
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const data = JSON.parse(line.slice(6));
+    ### iOS (Swift)
+    ```swift
+    func streamChat(requestBody: [String: Any]) {
+        guard let url = URL(string: "https://api.example.com/pillow/freak-world/chat"),
+              let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        
+        let session = URLSession(configuration: .default)
+        let task = session.dataTask(with: request) { data, response, error in
+            guard let data = data, let text = String(data: data, encoding: .utf8) else { return }
+            
+            for line in text.components(separatedBy: "\\n\\n") {
+                guard line.hasPrefix("data: "),
+                      let jsonData = line.dropFirst(6).data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { continue }
                 
-                if (data.type === 'delta') {
-                    // 追加 markdown 内容
-                    document.getElementById('content').textContent += data.content;
-                } else if (data.type === 'done') {
-                    // 渲染最终 markdown
-                    renderMarkdown(data.result.content);
-                } else if (data.type === 'error') {
-                    console.error('错误:', data.message);
+                if let type = json["type"] as? String {
+                    switch type {
+                    case "delta":
+                        if let content = json["content"] as? String {
+                            // 追加 markdown 内容
+                            DispatchQueue.main.async { self.appendContent(content) }
+                        }
+                    case "done":
+                        if let result = json["result"] as? [String: Any] {
+                            DispatchQueue.main.async { self.renderResult(result) }
+                        }
+                    case "error":
+                        if let message = json["message"] as? String {
+                            print("错误: \\(message)")
+                        }
+                    default: break
+                    }
                 }
                 
                 // 检查结束标识
-                if (data.complete) {
-                    console.log('SSE 流已结束');
-                    return;
+                if json["complete"] as? Bool == true {
+                    print("SSE 流已结束")
+                    return
                 }
             }
         }
+        task.resume()
+    }
+    ```
+    
+    ### C# (Unity)
+    ```csharp
+    using UnityEngine;
+    using UnityEngine.Networking;
+    using System.Collections;
+    
+    IEnumerator StreamChat(string jsonBody) {
+        using (var request = new UnityWebRequest("https://api.example.com/pillow/freak-world/chat", "POST")) {
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonBody);
+            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            
+            yield return request.SendWebRequest();
+            
+            string[] lines = request.downloadHandler.text.Split(new[] { "\\n\\n" }, System.StringSplitOptions.RemoveEmptyEntries);
+            foreach (string line in lines) {
+                if (!line.StartsWith("data: ")) continue;
+                string jsonStr = line.Substring(6);
+                var data = JsonUtility.FromJson<SSEData>(jsonStr);
+                
+                switch (data.type) {
+                    case "delta":
+                        AppendContent(data.content);  // 追加 markdown 内容
+                        break;
+                    case "done":
+                        RenderResult(data.result);    // 渲染最终结果
+                        break;
+                    case "error":
+                        Debug.LogError($"错误: {data.message}");
+                        break;
+                }
+                
+                if (data.complete) {
+                    Debug.Log("SSE 流已结束");
+                    yield break;
+                }
+            }
+        }
+    }
+    ```
+    
+    ### Flutter (Dart)
+    ```dart
+    import 'dart:convert';
+    import 'package:http/http.dart' as http;
+    
+    Future<void> streamChat(Map<String, dynamic> requestBody) async {
+      final response = await http.post(
+        Uri.parse('https://api.example.com/pillow/freak-world/chat'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      );
+      
+      final lines = response.body.split('\\n\\n');
+      for (final line in lines) {
+        if (!line.startsWith('data: ')) continue;
+        final data = jsonDecode(line.substring(6));
+        
+        switch (data['type']) {
+          case 'delta':
+            appendContent(data['content']);  // 追加 markdown 内容
+            break;
+          case 'done':
+            renderResult(data['result']);    // 渲染最终结果
+            break;
+          case 'error':
+            print('错误: ${data["message"]}');
+            break;
+        }
+        
+        if (data['complete'] == true) {
+          print('SSE 流已结束');
+          return;
+        }
+      }
     }
     ```
     
