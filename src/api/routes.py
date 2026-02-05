@@ -307,9 +307,9 @@ async def freak_world_chat(
     | 字段 | 类型 | 必填 | 说明 |
     |------|------|------|------|
     | userId | str | 是 | 用户ID |
-    | worldId | str | 是 | 世界ID（如 "01"） |
+    | worldId | str | 是 | 世界 config_id（如 "world_01"） |
     | sessionId | str | 是 | 会话ID，新游戏传空串 "" |
-    | gmId | str | 是 | 后端分配的 GM config_id，首次传 "0" |
+    | gmId | str | 是 | GM config_id，首次传 "0"，后续传后端返回的值（如 "gm_01"） |
     | step | str | 是 | 游戏阶段，初始传 "0" |
     | message | str | 是 | 用户消息，可为空串 |
     | saveId | str | 否 | 存档ID，有值则为读档 |
@@ -327,15 +327,15 @@ async def freak_world_chat(
     
     ## 请求示例
     
-    > **ID 格式说明**：gmId 和 worldId 传数字部分，代码会自动加前缀查询数据库
-    > - 数据库 config_id: `gm_01` → 请求传: `"01"`
-    > - 数据库 config_id: `world_01` → 请求传: `"01"`
+    > **ID 格式说明**：gmId 和 worldId 直接传完整的 config_id
+    > - GM: `"gm_01"`、`"gm_02"` 等
+    > - 世界: `"world_01"`、`"world_02"` 等
     
     ### 1. 开始新游戏（后端分配GM，进入角色选择）
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "world_01",
         "sessionId": "",
         "gmId": "0",
         "step": "0",
@@ -347,9 +347,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "world_01",
         "sessionId": "fw_abc123",
-        "gmId": "01",
+        "gmId": "gm_01",
         "step": "0",
         "message": "我选择扮演那个神秘的旅者"
     }
@@ -359,9 +359,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "world_01",
         "sessionId": "fw_abc123",
-        "gmId": "01",
+        "gmId": "gm_01",
         "step": "1",
         "message": "我选择进入那扇神秘的门"
     }
@@ -371,7 +371,7 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "world_01",
         "sessionId": "",
         "gmId": "0",
         "step": "0",
@@ -384,9 +384,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "world_01",
         "sessionId": "fw_abc123",
-        "gmId": "01",
+        "gmId": "gm_01",
         "step": "1",
         "message": "探索房间",
         "stream": false
@@ -399,7 +399,7 @@ async def freak_world_chat(
     ```json
     {
         "sessionId": "fw_abc123",
-        "gmId": "01",
+        "gmId": "gm_01",
         "step": "1",
         "content": "## 神秘的门后\\n\\n你推开那扇古老的木门，一股潮湿的气息扑面而来...\\n\\n*你听到远处传来微弱的脚步声*",
         "complete": false,
@@ -420,7 +420,7 @@ async def freak_world_chat(
     ```
     data: {"type": "done", "complete": true, "result": {
         "sessionId": "fw_abc123",
-        "gmId": "01",
+        "gmId": "gm_01",
         "step": "1",
         "content": "## 神秘的门后\\n\\n你推开那扇古老的木门...",
         "complete": false,
@@ -539,9 +539,9 @@ async def coc_chat(
     | 字段 | 类型 | 必填 | 说明 |
     |------|------|------|------|
     | userId | str | 是 | 用户ID |
-    | worldId | str | 是 | 世界ID（COC 固定为 "coc"） |
+    | worldId | str | 是 | 世界 config_id（COC 固定为 "world_coc"） |
     | sessionId | str | 是 | 会话ID，新游戏传空串 "" |
-    | gmId | str | 是 | 后端分配的 GM config_id，首次传 "0" |
+    | gmId | str | 是 | GM config_id，首次传 "0"，后续传后端返回的值（如 "gm_02"） |
     | step | str | 是 | 游戏阶段，初始传 "0" |
     | message | str | 是 | 用户消息/选择，可为空串 |
     | saveId | str | 否 | 存档ID，有值则为读档 |
@@ -573,7 +573,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "coc",
+        "worldId": "world_coc",
         "sessionId": "",
         "gmId": "0",
         "step": "0",
@@ -586,7 +586,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "coc",
+        "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "1",
@@ -599,7 +599,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "coc",
+        "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "3",
@@ -612,7 +612,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "coc",
+        "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "6",
@@ -624,7 +624,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "coc",
+        "worldId": "world_coc",
         "sessionId": "",
         "gmId": "0",
         "step": "0",
