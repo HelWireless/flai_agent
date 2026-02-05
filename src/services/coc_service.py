@@ -5,11 +5,12 @@ import json
 import uuid
 import random
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, AsyncGenerator
 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 
+from ..schemas import IWChatRequest, IWChatResponse
 from ..custom_logger import custom_logger
 from ..models.coc_game_state import COCGameState
 from ..models.instance_world import FreakWorldDialogue
@@ -18,6 +19,19 @@ from .coc_generator import (
     COCGenerator, PrimaryAttributes, SecondaryAttributes, Profession,
     PRIMARY_ATTRIBUTES, PROFESSIONS
 )
+
+
+# COC step 常量（对应 IWChatRequest.step）
+# GM 由后端分配，用户选择的是角色属性、职业等
+class COCStep:
+    CHAR_CREATE = "0"         # 角色创建开始（GM由后端分配）
+    STEP1_ATTRIBUTES = "1"    # 常规属性分配
+    STEP2_SECONDARY = "2"     # 次要属性确认
+    STEP3_PROFESSION = "3"    # 职业选择
+    STEP4_BACKGROUND = "4"    # 背景确认
+    STEP5_SUMMARY = "5"       # 人物卡总结
+    PLAYING = "6"             # 游戏进行中（返回 markdown）
+    ENDED = "7"               # 游戏结束
 
 
 # =====================================================
@@ -1077,3 +1091,168 @@ class COCService:
             "turn": 0,
             "round": 0
         }
+    
+    # ==================== 新接口（统一格式）====================
+    
+    def _game_status_to_step(self, game_status: str) -> str:
+        """将内部 game_status 转换为 step"""
+        mapping = {
+            GameStatus.GM_SELECT: COCStep.CHAR_CREATE,  # GM选择阶段 → 角色创建（GM由后端分配）
+            GameStatus.STEP1_ATTRIBUTES: COCStep.STEP1_ATTRIBUTES,
+            GameStatus.STEP2_SECONDARY: COCStep.STEP2_SECONDARY,
+            GameStatus.STEP3_PROFESSION: COCStep.STEP3_PROFESSION,
+            GameStatus.STEP4_BACKGROUND: COCStep.STEP4_BACKGROUND,
+            GameStatus.STEP5_SUMMARY: COCStep.STEP5_SUMMARY,
+            GameStatus.PLAYING: COCStep.PLAYING,
+            GameStatus.ENDED: COCStep.ENDED,
+        }
+        return mapping.get(game_status, COCStep.CHAR_CREATE)
+    
+    def _convert_to_iw_response(self, old_response: Dict[str, Any], gm_id: str = "0") -> IWChatResponse:
+        """
+        将旧格式响应转换为 IWChatResponse
+        
+        所有阶段（包括 playing）都返回 markdown 格式
+        """
+        content = old_response.get("content", "")
+        structured_data = old_response.get("structuredData", {})
+        selections = old_response.get("selections", [])
+        game_status = old_response.get("gameStatus", "")
+        
+        # 添加结构化数据到 content（markdown 格式）
+        if structured_data:
+            if "title" in structured_data:
+                content = f"## {structured_data['title']}\n\n{content}"
+            if "attributes" in structured_data:
+                content += "\n\n| 属性 | 值 |\n|------|------|\n"
+                for attr in structured_data["attributes"]:
+                    content += f"| {attr.get('display', attr.get('name', ''))} | {attr.get('value', '')} |\n"
+            if "professions" in structured_data:
+                for prof in structured_data["professions"]:
+                    content += f"\n\n### {prof.get('name', '')}\n{prof.get('description', '')}"
+        
+        # playing 阶段不添加选项按钮，纯 markdown 叙事
+        # 其他阶段保留选项（角色创建流程需要选择）
+        if game_status != GameStatus.PLAYING and selections:
+            content += "\n\n---\n**请选择：**\n"
+            for sel in selections:
+                content += f"- `{sel.get('id')}`: {sel.get('text')}\n"
+        
+        return IWChatResponse(
+            session_id=old_response.get("sessionId", ""),
+            gm_id=gm_id,
+            step=self._game_status_to_step(game_status),
+            content=content,
+            complete=game_status == GameStatus.ENDED,
+            save_id=None,
+            ext_data={
+                "investigatorCard": old_response.get("investigatorCard"),
+                "turn": old_response.get("turn", 0),
+                "round": old_response.get("round", 0)
+            }
+        )
+    
+    def _iw_request_to_old_format(self, request: IWChatRequest) -> Dict[str, Any]:
+        """将 IWChatRequest 转换为旧格式请求"""
+        ext_param = request.ext_param or {}
+        return {
+            "sessionId": request.session_id if request.session_id else None,
+            "accountId": int(request.user_id),
+            "action": ext_param.get("action", "input"),
+            "message": request.message,
+            "selection": ext_param.get("selection"),
+            "saveData": ext_param.get("save_data") if request.save_id else None
+        }
+    
+    async def process_request(self, request: IWChatRequest) -> IWChatResponse:
+        """
+        处理请求（入口方法 - 同步模式，使用新的统一格式）
+        
+        Args:
+            request: IWChatRequest 请求
+        
+        Returns:
+            IWChatResponse 响应
+        """
+        custom_logger.info(
+            f"Processing COC request (new format): user={request.user_id}, "
+            f"session={request.session_id}, gm_id={request.gm_id}, step={request.step}"
+        )
+        
+        try:
+            # 转换为旧格式并调用原有逻辑
+            old_request = self._iw_request_to_old_format(request)
+            old_response = await self.chat(old_request)
+            
+            # 转换响应为新格式
+            return self._convert_to_iw_response(old_response, request.gm_id or "0")
+            
+        except Exception as e:
+            custom_logger.error(f"Error processing COC request: {e}")
+            self.db.rollback()
+            return IWChatResponse(
+                session_id=request.session_id or "",
+                gm_id=request.gm_id or "0",
+                step=request.step or COCStep.GM_SELECT,
+                content=f"处理请求时发生错误：{str(e)}",
+                complete=True
+            )
+    
+    async def stream_chat(
+        self,
+        request: IWChatRequest
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        流式对话（SSE 模式）
+        
+        COC 游戏逻辑复杂，暂不支持真正的流式输出，
+        直接返回完整结果
+        
+        Args:
+            request: 请求
+        
+        Yields:
+            SSE 事件数据
+        """
+        custom_logger.info(
+            f"Stream COC request: user={request.user_id}, "
+            f"session={request.session_id}, gm_id={request.gm_id}, step={request.step}"
+        )
+        
+        try:
+            # 调用同步处理
+            response = await self.process_request(request)
+            
+            # 将内容作为 delta 事件发送（模拟流式）
+            content = response.content
+            chunk_size = 50  # 每次发送的字符数
+            
+            for i in range(0, len(content), chunk_size):
+                yield {
+                    "type": "delta",
+                    "content": content[i:i+chunk_size]
+                }
+            
+            # 发送完成事件
+            yield {
+                "type": "done",
+                "complete": True,
+                "result": {
+                    "sessionId": response.session_id,
+                    "gmId": response.gm_id,
+                    "step": response.step,
+                    "content": response.content,
+                    "complete": response.complete,
+                    "saveId": response.save_id,
+                    "extData": response.ext_data
+                }
+            }
+            
+        except Exception as e:
+            custom_logger.error(f"Error in COC stream_chat: {e}")
+            self.db.rollback()
+            yield {
+                "type": "error",
+                "complete": True,
+                "message": str(e)
+            }
