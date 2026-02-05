@@ -297,10 +297,11 @@ async def freak_world_chat(
     
     ## 核心机制
     
-    1. **GM 由后端分配**：用户不选择 GM，后端自动分配
-    2. **用户选择角色**：step=0 时用户选择游戏中的角色
-    3. **换人**：换的是游戏角色，不是 GM
-    4. **返回格式**：所有阶段都返回 **markdown** 格式文本
+    1. **用户选择 GM**：用户开始游戏时选择 GM
+    2. **后端创建会话**：后端创建 sessionId 并返回，前端每次请求都带上
+    3. **用户选择角色**：step=0 时用户选择游戏中的角色
+    4. **换人**：换的是游戏角色，不是 GM
+    5. **返回格式**：所有阶段都返回 **markdown** 格式文本
     
     ## 请求参数
     
@@ -308,8 +309,8 @@ async def freak_world_chat(
     |------|------|------|------|
     | userId | str | 是 | 用户ID |
     | worldId | str | 是 | 世界 config_id（如 "world_01"） |
-    | sessionId | str | 是 | 会话ID，新游戏传空串 "" |
-    | gmId | str | 是 | GM config_id，首次传 "0"，后续传后端返回的值（如 "gm_01"） |
+    | sessionId | str | 是 | 会话ID（后端创建并返回，前端每次带上） |
+    | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_01"） |
     | step | str | 是 | 游戏阶段，初始传 "0" |
     | message | str | 是 | 用户消息，可为空串 |
     | saveId | str | 否 | 存档ID，有值则为读档 |
@@ -320,7 +321,7 @@ async def freak_world_chat(
     
     | step | 含义 | 说明 |
     |------|------|------|
-    | 0 | char_select | 角色选择阶段（GM已由后端分配） |
+    | 0 | char_select | 角色选择阶段 |
     | 1 | playing | 游戏进行中 |
     | 2 | ended | 游戏正常结束 |
     | 3 | death | 角色死亡 |
@@ -331,13 +332,13 @@ async def freak_world_chat(
     > - GM: `"gm_01"`、`"gm_02"` 等
     > - 世界: `"world_01"`、`"world_02"` 等
     
-    ### 1. 开始新游戏（后端分配GM，进入角色选择）
+    ### 1. 开始新游戏（用户选择GM，进入角色选择）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_01",
-        "sessionId": "",
-        "gmId": "0",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
         "step": "0",
         "message": ""
     }
@@ -372,8 +373,8 @@ async def freak_world_chat(
     {
         "userId": "1000001",
         "worldId": "world_01",
-        "sessionId": "",
-        "gmId": "0",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
         "step": "0",
         "message": "",
         "saveId": "save_abc123"
@@ -529,10 +530,11 @@ async def coc_chat(
     
     ## 核心机制
     
-    1. **GM 由后端分配**：用户不选择 GM，后端自动分配
-    2. **用户创建角色**：step 0-5 为角色创建流程（属性、职业、背景等）
-    3. **playing 阶段返回 markdown**：step=6 时，所有内容为纯 markdown 叙事文本
-    4. **换人**：换的是游戏角色，不是 GM
+    1. **用户选择 GM**：用户开始游戏时选择 GM
+    2. **后端创建会话**：后端创建 sessionId 并返回，前端每次请求都带上
+    3. **用户创建角色**：step 0-5 为角色创建流程（属性、职业、背景等）
+    4. **playing 阶段返回 markdown**：step=6 时，所有内容为纯 markdown 叙事文本
+    5. **换人**：换的是游戏角色，不是 GM
     
     ## 请求参数（与副本世界统一）
     
@@ -540,8 +542,8 @@ async def coc_chat(
     |------|------|------|------|
     | userId | str | 是 | 用户ID |
     | worldId | str | 是 | 世界 config_id（COC 固定为 "world_coc"） |
-    | sessionId | str | 是 | 会话ID，新游戏传空串 "" |
-    | gmId | str | 是 | GM config_id，首次传 "0"，后续传后端返回的值（如 "gm_02"） |
+    | sessionId | str | 是 | 会话ID（后端创建并返回，前端每次带上） |
+    | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
     | step | str | 是 | 游戏阶段，初始传 "0" |
     | message | str | 是 | 用户消息/选择，可为空串 |
     | saveId | str | 否 | 存档ID，有值则为读档 |
@@ -552,7 +554,7 @@ async def coc_chat(
     
     | step | 含义 | 说明 |
     |------|------|------|
-    | 0 | char_create | 角色创建开始（GM由后端分配） |
+    | 0 | char_create | 角色创建开始 |
     | 1 | step1_attributes | 常规属性分配 |
     | 2 | step2_secondary | 次要属性确认 |
     | 3 | step3_profession | 职业选择 |
@@ -569,13 +571,13 @@ async def coc_chat(
     
     ## 请求示例
     
-    ### 1. 开始新游戏（后端分配GM）
+    ### 1. 开始新游戏（用户选择GM）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_coc",
-        "sessionId": "",
-        "gmId": "0",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
         "step": "0",
         "message": "",
         "extParam": {"action": "start"}
@@ -625,8 +627,8 @@ async def coc_chat(
     {
         "userId": "1000001",
         "worldId": "world_coc",
-        "sessionId": "",
-        "gmId": "0",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
         "step": "0",
         "message": "",
         "saveId": "save_abc123"
