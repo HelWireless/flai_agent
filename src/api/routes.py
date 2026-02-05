@@ -331,7 +331,7 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "1",
         "sessionId": "",
         "gmId": "0",
         "step": "0",
@@ -343,9 +343,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "1",
         "sessionId": "fw_abc123",
-        "gmId": "gm_yan_001",
+        "gmId": "yan",
         "step": "0",
         "message": "我选择扮演那个神秘的旅者"
     }
@@ -355,9 +355,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "1",
         "sessionId": "fw_abc123",
-        "gmId": "gm_yan_001",
+        "gmId": "yan",
         "step": "1",
         "message": "我选择进入那扇神秘的门"
     }
@@ -367,7 +367,7 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "1",
         "sessionId": "",
         "gmId": "0",
         "step": "0",
@@ -380,9 +380,9 @@ async def freak_world_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "01",
+        "worldId": "1",
         "sessionId": "fw_abc123",
-        "gmId": "gm_yan_001",
+        "gmId": "yan",
         "step": "1",
         "message": "探索房间",
         "stream": false
@@ -395,7 +395,7 @@ async def freak_world_chat(
     ```json
     {
         "sessionId": "fw_abc123",
-        "gmId": "gm_yan_001",
+        "gmId": "yan",
         "step": "1",
         "content": "## 神秘的门后\\n\\n你推开那扇古老的木门，一股潮湿的气息扑面而来...\\n\\n*你听到远处传来微弱的脚步声*",
         "complete": false,
@@ -416,7 +416,7 @@ async def freak_world_chat(
     ```
     data: {"type": "done", "complete": true, "result": {
         "sessionId": "fw_abc123",
-        "gmId": "gm_yan_001",
+        "gmId": "yan",
         "step": "1",
         "content": "## 神秘的门后\\n\\n你推开那扇古老的木门...",
         "complete": false,
@@ -584,7 +584,7 @@ async def coc_chat(
         "userId": "1000001",
         "worldId": "coc",
         "sessionId": "coc_abc123",
-        "gmId": "gm_li_001",
+        "gmId": "li",
         "step": "1",
         "message": "",
         "extParam": {"selection": "confirm"}
@@ -597,7 +597,7 @@ async def coc_chat(
         "userId": "1000001",
         "worldId": "coc",
         "sessionId": "coc_abc123",
-        "gmId": "gm_li_001",
+        "gmId": "li",
         "step": "3",
         "message": "",
         "extParam": {"selection": "prof_0"}
@@ -610,7 +610,7 @@ async def coc_chat(
         "userId": "1000001",
         "worldId": "coc",
         "sessionId": "coc_abc123",
-        "gmId": "gm_li_001",
+        "gmId": "li",
         "step": "6",
         "message": "我想调查这个房间"
     }
@@ -635,7 +635,7 @@ async def coc_chat(
     ```json
     {
         "sessionId": "coc_abc123",
-        "gmId": "gm_li_001",
+        "gmId": "li",
         "step": "1",
         "content": "## 第一步：常规属性分配结果\\n\\n（璃微微颔首）以下是你随机分配的8个常规属性值：\\n\\n| 属性 | 值 |\\n|------|-----|\\n| 力量(STR) | 65 |\\n| 体质(CON) | 50 |\\n...\\n\\n---\\n**请选择：**\\n- `confirm`: 确认属性\\n- `reroll`: 重新随机",
         "complete": false,
@@ -652,7 +652,7 @@ async def coc_chat(
     ```json
     {
         "sessionId": "coc_abc123",
-        "gmId": "gm_li_001",
+        "gmId": "li",
         "step": "6",
         "content": "## 调查结果\\n\\n你仔细打量着这个昏暗的房间。墙上的挂钟已经停止了转动，指针永远定格在3点15分...\\n\\n*你注意到书桌抽屉微微开着，里面似乎有什么东西在反光。*\\n\\n> **理智检定：成功**\\n> 你保持了冷静，没有被房间里诡异的氛围所影响。",
         "complete": false,
