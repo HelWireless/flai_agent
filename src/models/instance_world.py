@@ -63,7 +63,7 @@ class FreakWorldDialogue(Base):
     freak_world_id = Column(Integer, nullable=False, index=True, comment='异世界id')
     session_id = Column(Integer, nullable=False, index=True, comment='对话id')
     message = Column(Text, nullable=True, comment='发送内容')
-    response = Column(Text, nullable=True, comment='返回内容')
+    text = Column(Text, nullable=True, comment='返回内容')
     step = Column(Integer, nullable=True, comment='初始加载步骤')
     ext_param1 = Column(Text, nullable=True, comment='扩展参数1')
     ext_param2 = Column(Text, nullable=True, comment='扩展参数2')
@@ -83,7 +83,7 @@ class FreakWorldDialogue(Base):
             "freak_world_id": self.freak_world_id,
             "session_id": self.session_id,
             "message": self.message,
-            "response": self.response,
+            "text": self.text,
             "step": self.step,
             "ext_param1": self.ext_param1,
             "ext_param2": self.ext_param2,
@@ -98,6 +98,6 @@ class FreakWorldDialogue(Base):
         messages = []
         if self.message:
             messages.append({"role": "user", "content": self.message})
-        if self.response:
-            messages.append({"role": "assistant", "content": self.response})
+        if self.text:
+            messages.append({"role": "assistant", "content": self.text})
         return messages
