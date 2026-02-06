@@ -101,10 +101,16 @@ class COCService:
     
     # ==================== 数据库操作 ====================
     
-    def _create_session_db(self, account_id: int, gm_gender: Optional[str] = None) -> COCGameState:
-        """创建新游戏状态"""
+    def _create_session_db(self, account_id: int, gm_gender: Optional[str] = None, session_id: Optional[str] = None) -> COCGameState:
+        """创建新游戏状态
+        
+        Args:
+            account_id: 用户ID
+            gm_gender: GM性别
+            session_id: 会话ID（可选，不传则自动生成）
+        """
         session = COCGameState(
-            session_id=self._generate_session_id(),
+            session_id=session_id or self._generate_session_id(),
             account_id=account_id,
             gm_gender=gm_gender,
             game_status=GameStatus.GM_SELECT,
@@ -178,12 +184,29 @@ class COCService:
             return await self.load_game(account_id, save_data)
         
         # 获取或创建会话
-        if session_id:
+        if action == "start":
+            # action=start 表示新游戏，直接用传入的 session_id 创建
+            if session_id:
+                session = self._get_session_db(session_id)
+                if not session:
+                    session = self._create_session_db(account_id, session_id=session_id)
+                # 如果 session 已存在但要重新开始，重置状态
+                elif session.game_status != GameStatus.GM_SELECT:
+                    session.game_status = GameStatus.GM_SELECT
+                    session.gm_gender = None
+                    session.investigator_card = None
+                    session.temp_data = None
+                    self._update_session_db(session)
+            else:
+                session = self._create_session_db(account_id)
+        elif session_id:
             session = self._get_session_db(session_id)
             if not session:
-                return self._error_response("会话不存在或已过期")
+                # session_id 由 Java 层创建但本地无记录，创建新会话
+                custom_logger.info(f"Session {session_id} not found, creating new session")
+                session = self._create_session_db(account_id, session_id=session_id)
         else:
-            # 新游戏
+            # 无 session_id，创建新会话
             session = self._create_session_db(account_id)
         
         # 状态处理器映射

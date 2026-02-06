@@ -96,11 +96,19 @@ class FreakWorldService:
         self,
         account_id: int,
         freak_world_id: int,
-        gm_id: Optional[str] = None
+        gm_id: Optional[str] = None,
+        session_id: Optional[str] = None
     ) -> FreakWorldGameState:
-        """创建新游戏状态（数据库）"""
+        """创建新游戏状态（数据库）
+        
+        Args:
+            account_id: 用户ID
+            freak_world_id: 世界ID
+            gm_id: GM ID
+            session_id: 会话ID（可选，不传则自动生成）
+        """
         session = FreakWorldGameState(
-            session_id=self._generate_session_id(),
+            session_id=session_id or self._generate_session_id(),
             account_id=account_id,
             freak_world_id=freak_world_id,
             gm_id=gm_id or self._get_random_gm_id(),
@@ -545,12 +553,13 @@ class FreakWorldService:
                 session = self._get_session_db(request.session_id)
             
             if not session:
-                # 创建新游戏状态，GM 由后端分配
+                # 创建新游戏状态，使用传入的 session_id
                 gm_id = request.gm_id if request.gm_id and request.gm_id != "0" else self._get_random_gm_id()
                 session = self._create_session_db(
                     account_id=int(request.user_id),
                     freak_world_id=int(request.world_id) if request.world_id.isdigit() else 1,
-                    gm_id=gm_id
+                    gm_id=gm_id,
+                    session_id=request.session_id if request.session_id else None
                 )
                 session.game_status = "character_select"  # 初始状态：角色选择
                 self._update_session_db(session)
