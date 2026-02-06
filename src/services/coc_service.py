@@ -25,7 +25,6 @@ from .coc_generator import (
 # COC step 常量（对应 IWChatRequest.step）
 # GM 由用户提前选择（gmId 参数），action=start 直接进入属性分配
 class COCStep:
-    CHAR_CREATE = "0"         # 已废弃：GM 由用户提前选择
     STEP1_ATTRIBUTES = "1"    # 常规属性分配（action=start 的首个响应）
     STEP2_SECONDARY = "2"     # 次要属性确认
     STEP3_PROFESSION = "3"    # 职业选择
@@ -1163,7 +1162,7 @@ class COCService:
     def _game_status_to_step(self, game_status: str) -> str:
         """将内部 game_status 转换为 step"""
         mapping = {
-            GameStatus.GM_SELECT: COCStep.CHAR_CREATE,  # GM选择阶段 → 角色创建（GM由后端分配）
+            GameStatus.GM_SELECT: COCStep.STEP1_ATTRIBUTES,  # 兼容旧数据，映射到属性分配
             GameStatus.STEP1_ATTRIBUTES: COCStep.STEP1_ATTRIBUTES,
             GameStatus.STEP2_SECONDARY: COCStep.STEP2_SECONDARY,
             GameStatus.STEP3_PROFESSION: COCStep.STEP3_PROFESSION,
@@ -1172,7 +1171,7 @@ class COCService:
             GameStatus.PLAYING: COCStep.PLAYING,
             GameStatus.ENDED: COCStep.ENDED,
         }
-        return mapping.get(game_status, COCStep.CHAR_CREATE)
+        return mapping.get(game_status, COCStep.STEP1_ATTRIBUTES)
     
     def _convert_to_iw_response(self, old_response: Dict[str, Any], gm_id: str = "0") -> IWChatResponse:
         """

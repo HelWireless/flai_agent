@@ -653,7 +653,7 @@ async def coc_chat(
     | worldId | str | 是 | 世界 config_id（COC 固定为 "world_coc"） |
     | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
-    | step | str | 是 | 游戏阶段，初始传 "0" |
+    | step | str | 是 | 游戏阶段，初始传 "1" |
     | message | str | 是 | 用户消息/选择，可为空串 |
     | saveId | str | 否 | 存档ID，读档时必填 |
     | extParam | object | 否 | 扩展参数（见下方说明） |
@@ -663,7 +663,7 @@ async def coc_chat(
     
     | step | 含义 | 响应格式 | 说明 |
     |------|------|----------|------|
-    | 1 | step1_attributes | **JSON** | 常规属性分配（action=start 直接进入） |
+    | 1 | step1_attributes | **JSON** | 常规属性分配（`action: "start"` 直接进入） |
     | 2 | step2_secondary | **JSON** | 次要属性确认 |
     | 3 | step3_profession | **JSON** | 职业选择 |
     | 4 | step4_background | **JSON** | 背景确认 |
@@ -690,12 +690,12 @@ async def coc_chat(
         "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "0",
+        "step": "1",
         "message": "",
         "extParam": {"action": "start"}
     }
     ```
-    > GM 已通过 `gmId` 指定，start 后直接进入属性分配阶段（返回 step=1）
+    > GM 已通过 `gmId` 指定，`action: "start"` 直接进入属性分配阶段
     
     ### 2. 确认属性（角色创建流程）
     ```json
@@ -755,7 +755,7 @@ async def coc_chat(
         "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "0",
+        "step": "1",
         "message": "",
         "saveId": "save_abc123",
         "extParam": {"action": "load"}
