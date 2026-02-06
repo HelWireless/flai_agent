@@ -774,25 +774,54 @@ async def coc_chat(
         "step": "1",
         "content": {
             "title": "第一步：常规属性分配结果",
-            "description": "（璃微微颔首）以下是你随机分配的8个常规属性值：",
-            "attributes": [
-                {"name": "STR", "display": "力量(STR)", "value": 65},
-                {"name": "CON", "display": "体质(CON)", "value": 50},
-                {"name": "SIZ", "display": "体型(SIZ)", "value": 60},
-                {"name": "DEX", "display": "敏捷(DEX)", "value": 55},
-                {"name": "APP", "display": "外貌(APP)", "value": 70},
-                {"name": "INT", "display": "智力(INT)", "value": 75},
-                {"name": "POW", "display": "意志(POW)", "value": 50},
-                {"name": "EDU", "display": "教育(EDU)", "value": 80}
-            ],
+            "description": "（璃微微颔首）你好，我是璃...",
             "selections": [
                 {"id": "confirm", "text": "确认属性"},
                 {"id": "reroll", "text": "重新随机"}
+            ],
+            "attributes": [
+                {"key": "STR", "name": "力量", "value": 60, "description": "衡量调查员纯粹身体力量"},
+                {"key": "CON", "name": "体质", "value": 50, "description": "衡量调查员健康与强韧程度"},
+                {"key": "DEX", "name": "敏捷", "value": 70, "description": "衡量调查员身体灵活性与速度"},
+                {"key": "SIZ", "name": "体型", "value": 50, "description": "反映调查员身高与体重"},
+                {"key": "INT", "name": "智力", "value": 40, "description": "衡量调查员的智慧、洞察与推理能力"},
+                {"key": "POW", "name": "意志", "value": 80, "description": "衡量调查员的精神力量与魔法天赋"},
+                {"key": "APP", "name": "外貌", "value": 60, "description": "衡量调查员的外表吸引力"},
+                {"key": "EDU", "name": "教育", "value": 50, "description": "衡量调查员通过正规教育或社会磨练积累的知识"}
             ]
         },
         "complete": false,
         "saveId": null,
-        "extData": {"investigatorCard": null, "turn": 0, "round": 0}
+        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
+    }
+    ```
+    
+    #### step=2 次要属性计算
+    ```json
+    {
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "2",
+        "content": {
+            "title": "第二步：次要属性计算",
+            "description": "（璃记录下你的属性）很好，属性已确认...",
+            "selections": [
+                {"id": "confirm", "text": "确认次要属性"},
+                {"id": "back", "text": "返回修改常规属性"}
+            ],
+            "attributes": [
+                {"key": "HP", "name": "生命值", "value": 10, "formula": "(体质50 + 体型50) ÷ 10 = 10", "description": "调查员能承受的伤害量"},
+                {"key": "MP", "name": "魔法值", "value": 16, "formula": "意志80 ÷ 5 = 16", "description": "用于施法或供能"},
+                {"key": "SAN", "name": "理智值", "value": 80, "formula": "等于意志值 = 80", "description": "调查员的心理健康程度"},
+                {"key": "LUCK", "name": "幸运值", "value": 55, "formula": "3D6 × 5 随机", "description": "调查员的运气"},
+                {"key": "DB", "name": "伤害加值", "value": 0, "formula": "力量40 + 体型50 = 90 → DB=0", "description": "近战伤害加成"},
+                {"key": "Build", "name": "体格", "value": 90, "formula": "力量40 + 体型50 = 90", "description": "力量与体型的综合"},
+                {"key": "MOV", "name": "移动速度", "value": 8, "formula": "人类固定为8", "description": "行动速度"}
+            ]
+        },
+        "complete": false,
+        "saveId": null,
+        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
     }
     ```
     
@@ -804,30 +833,65 @@ async def coc_chat(
         "step": "3",
         "content": {
             "title": "第三步：职业与技能生成",
-            "description": "（璃轻声说道）根据你的属性，以下职业比较适合你：",
+            "description": "（璃满意地点头）次要属性已确定...",
+            "selections": [
+                {"id": "prof_0", "text": "选择 文物学家"},
+                {"id": "prof_1", "text": "选择 作家"},
+                {"id": "prof_2", "text": "选择 记者"},
+                {"id": "reroll", "text": "重新随机3个职业"}
+            ],
             "professions": [
                 {
-                    "id": "prof_0",
-                    "name": "私家侦探",
-                    "description": "擅长调查和社交",
-                    "skills": ["侦查", "心理学", "图书馆使用", "乔装"]
+                    "name": "文物学家",
+                    "description": "专精于古董鉴定与文物研究",
+                    "skills": [
+                        {"name": "估价", "value": 40, "display": "估价: 40%"},
+                        {"name": "历史", "value": 60, "display": "历史: 60%"},
+                        {"name": "图书馆使用", "value": 50, "display": "图书馆使用: 50%"},
+                        {"name": "侦查", "value": 70, "display": "侦查: 70%"}
+                    ]
                 },
                 {
-                    "id": "prof_1",
-                    "name": "记者",
-                    "description": "擅长获取信息和说服",
-                    "skills": ["快速交谈", "心理学", "说服", "母语"]
+                    "name": "作家",
+                    "description": "以文字为生，擅长观察与记录",
+                    "skills": [
+                        {"name": "艺术（文学）", "value": 60, "display": "艺术（文学）: 60%"},
+                        {"name": "历史", "value": 50, "display": "历史: 50%"},
+                        {"name": "心理学", "value": 40, "display": "心理学: 40%"}
+                    ]
                 }
-            ],
-            "selections": [
-                {"id": "prof_0", "text": "选择私家侦探"},
-                {"id": "prof_1", "text": "选择记者"},
-                {"id": "reroll", "text": "重新生成职业"}
             ]
         },
         "complete": false,
         "saveId": null,
-        "extData": {"investigatorCard": null, "turn": 0, "round": 0}
+        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
+    }
+    ```
+    
+    #### step=4 角色背景与装备
+    ```json
+    {
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "4",
+        "content": {
+            "title": "第四步：角色背景与装备",
+            "description": "（璃记录下你的选择）你选择了考古学家作为职业...",
+            "selections": [
+                {"id": "confirm", "text": "确认角色信息"},
+                {"id": "regenerate", "text": "重新生成背景"}
+            ],
+            "character": {
+                "name": "调查员",
+                "gender": "男",
+                "age": 30,
+                "background": "一名经验丰富的考古学家，性格沉稳，善于观察。",
+                "equipment": ["手电筒", "笔记本", "钢笔"]
+            }
+        },
+        "complete": false,
+        "saveId": null,
+        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
     }
     ```
     
@@ -839,23 +903,31 @@ async def coc_chat(
         "step": "5",
         "content": {
             "title": "第五步：调查员信息总结",
-            "description": "（璃微笑着）你的调查员已经准备就绪：",
-            "investigatorCard": {
-                "name": "张明",
-                "age": 28,
-                "profession": "私家侦探",
-                "attributes": {"STR": 65, "CON": 50, "DEX": 55},
-                "skills": {"侦查": 60, "心理学": 45},
-                "background": "曾是警察，因一起神秘案件离职..."
-            },
+            "description": "人物卡已生成，是否开始游戏？",
             "selections": [
                 {"id": "start_game", "text": "开始游戏"},
                 {"id": "back", "text": "返回修改"}
-            ]
+            ],
+            "investigatorCard": {
+                "name": "调查员",
+                "age": 30,
+                "gender": "男",
+                "profession": "考古学家",
+                "primaryAttributes": {"STR": 60, "CON": 40, "DEX": 70, "SIZ": 80, "INT": 50, "POW": 50, "APP": 60, "EDU": 50},
+                "secondaryAttributes": {"HP": 12, "MP": 10, "SAN": 50, "LUCK": 55, "DB": 1, "Build": 140, "MOV": 8},
+                "currentHP": 12,
+                "currentMP": 10,
+                "currentSAN": 50,
+                "skills": {"考古学": 60, "侦查": 60, "攀爬": 70, "历史": 40, "图书馆使用": 50},
+                "professionSkills": ["考古学", "历史", "图书馆使用", "侦查", "攀爬"],
+                "interestSkills": ["追踪", "人类学", "汽车驾驶"],
+                "equipment": ["手电筒", "笔记本", "钢笔"],
+                "background": "一名经验丰富的考古学家，性格沉稳，善于观察。"
+            }
         },
         "complete": false,
         "saveId": null,
-        "extData": {"investigatorCard": {...}, "turn": 0, "round": 0}
+        "extData": {"investigatorCard": {"...同上..."}, "turn": 0, "round": 1}
     }
     ```
     
