@@ -746,7 +746,7 @@ class COCService:
             investigator_card = self.generator.generate_investigator_card(
                 primary=primary,
                 secondary=secondary,
-                profession=Profession(**profession),
+                profession=Profession.from_dict(profession),
                 interest_skills=interest_skills,
                 name=background_data.get("name", "调查员"),
                 gender=background_data.get("gender", "男"),

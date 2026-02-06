@@ -223,6 +223,16 @@ class Profession:
             "description": self.description
         }
     
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Profession":
+        """从字典创建 Profession（处理 camelCase -> snake_case）"""
+        return cls(
+            name=data.get("name", ""),
+            skills=data.get("skills", []),
+            skill_points=data.get("skillPoints", data.get("skill_points", {})),
+            description=data.get("description", "")
+        )
+    
     def to_display_dict(self) -> Dict[str, Any]:
         """转换为前端展示格式"""
         skill_list = []
