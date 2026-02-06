@@ -326,12 +326,12 @@ async def freak_world_chat(
     
     ## step 游戏阶段说明
     
-    | step | 含义 | 说明 |
-    |------|------|------|
-    | 0 | char_select | 角色选择阶段 |
-    | 1 | playing | 游戏进行中 |
-    | 2 | ended | 游戏正常结束 |
-    | 3 | death | 角色死亡 |
+    | step | 含义 | 响应格式 | 说明 |
+    |------|------|----------|------|
+    | 0 | char_select | **JSON** | 角色选择阶段（结构化数据） |
+    | 1 | playing | **markdown** | 游戏进行中（纯文本叙事） |
+    | 2 | ended | **markdown** | 游戏正常结束 |
+    | 3 | death | **markdown** | 角色死亡 |
     
     ## 请求示例
     
@@ -415,9 +415,30 @@ async def freak_world_chat(
     }
     ```
     
-    ## 响应格式（所有阶段返回 markdown）
+    ## 响应格式
     
-    ### 普通对话响应
+    ### 角色选择阶段响应（step=0，JSON 结构化数据）
+    ```json
+    {
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "0",
+        "content": {
+            "title": "选择你的角色",
+            "description": "在这个神秘的世界中，你可以扮演以下角色之一：",
+            "selections": [
+                {"id": "warrior", "text": "勇敢的战士", "desc": "擅长近战，生命值高"},
+                {"id": "mage", "text": "神秘的法师", "desc": "擅长魔法，智力高"},
+                {"id": "rogue", "text": "敏捷的盗贼", "desc": "擅长潜行，敏捷高"}
+            ]
+        },
+        "complete": false,
+        "saveId": null,
+        "extData": null
+    }
+    ```
+    
+    ### 游戏进行中响应（step=1，markdown 纯文本）
     ```json
     {
         "sessionId": "fw_abc123",
@@ -678,16 +699,16 @@ async def coc_chat(
     
     ## step 游戏阶段说明（COC 特有）
     
-    | step | 含义 | 说明 |
-    |------|------|------|
-    | 0 | char_create | 角色创建开始 |
-    | 1 | step1_attributes | 常规属性分配 |
-    | 2 | step2_secondary | 次要属性确认 |
-    | 3 | step3_profession | 职业选择 |
-    | 4 | step4_background | 背景确认 |
-    | 5 | step5_summary | 人物卡总结 |
-    | 6 | playing | 游戏进行中（**纯 markdown 叙事**） |
-    | 7 | ended | 游戏结束 |
+    | step | 含义 | 响应格式 | 说明 |
+    |------|------|----------|------|
+    | 0 | char_create | **JSON** | 角色创建开始 |
+    | 1 | step1_attributes | **JSON** | 常规属性分配 |
+    | 2 | step2_secondary | **JSON** | 次要属性确认 |
+    | 3 | step3_profession | **JSON** | 职业选择 |
+    | 4 | step4_background | **JSON** | 背景确认 |
+    | 5 | step5_summary | **JSON** | 人物卡总结 |
+    | 6 | playing | **markdown** | 游戏进行中（纯文本叙事） |
+    | 7 | ended | **markdown** | 游戏结束 |
     
     ## extParam 扩展参数说明
     
@@ -777,26 +798,104 @@ async def coc_chat(
     }
     ```
     
-    ## 响应格式（所有阶段返回 markdown）
+    ## 响应格式
     
-    ### 角色创建阶段响应示例（step 0-5）
+    ### 角色创建阶段响应（step 0-5，JSON 结构化数据）
+    
+    #### step=1 常规属性分配
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "1",
-        "content": "## 第一步：常规属性分配结果\\n\\n（璃微微颔首）以下是你随机分配的8个常规属性值：\\n\\n| 属性 | 值 |\\n|------|-----|\\n| 力量(STR) | 65 |\\n| 体质(CON) | 50 |\\n...\\n\\n---\\n**请选择：**\\n- `confirm`: 确认属性\\n- `reroll`: 重新随机",
+        "content": {
+            "title": "第一步：常规属性分配结果",
+            "description": "（璃微微颔首）以下是你随机分配的8个常规属性值：",
+            "attributes": [
+                {"name": "STR", "display": "力量(STR)", "value": 65},
+                {"name": "CON", "display": "体质(CON)", "value": 50},
+                {"name": "SIZ", "display": "体型(SIZ)", "value": 60},
+                {"name": "DEX", "display": "敏捷(DEX)", "value": 55},
+                {"name": "APP", "display": "外貌(APP)", "value": 70},
+                {"name": "INT", "display": "智力(INT)", "value": 75},
+                {"name": "POW", "display": "意志(POW)", "value": 50},
+                {"name": "EDU", "display": "教育(EDU)", "value": 80}
+            ],
+            "selections": [
+                {"id": "confirm", "text": "确认属性"},
+                {"id": "reroll", "text": "重新随机"}
+            ]
+        },
         "complete": false,
         "saveId": null,
-        "extData": {
-            "investigatorCard": null,
-            "turn": 0,
-            "round": 0
-        }
+        "extData": {"investigatorCard": null, "turn": 0, "round": 0}
     }
     ```
     
-    ### playing 阶段响应示例（step=6，纯 markdown 叙事）
+    #### step=3 职业选择
+    ```json
+    {
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "3",
+        "content": {
+            "title": "第三步：职业与技能生成",
+            "description": "（璃轻声说道）根据你的属性，以下职业比较适合你：",
+            "professions": [
+                {
+                    "id": "prof_0",
+                    "name": "私家侦探",
+                    "description": "擅长调查和社交",
+                    "skills": ["侦查", "心理学", "图书馆使用", "乔装"]
+                },
+                {
+                    "id": "prof_1",
+                    "name": "记者",
+                    "description": "擅长获取信息和说服",
+                    "skills": ["快速交谈", "心理学", "说服", "母语"]
+                }
+            ],
+            "selections": [
+                {"id": "prof_0", "text": "选择私家侦探"},
+                {"id": "prof_1", "text": "选择记者"},
+                {"id": "reroll", "text": "重新生成职业"}
+            ]
+        },
+        "complete": false,
+        "saveId": null,
+        "extData": {"investigatorCard": null, "turn": 0, "round": 0}
+    }
+    ```
+    
+    #### step=5 人物卡总结
+    ```json
+    {
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "5",
+        "content": {
+            "title": "第五步：调查员信息总结",
+            "description": "（璃微笑着）你的调查员已经准备就绪：",
+            "investigatorCard": {
+                "name": "张明",
+                "age": 28,
+                "profession": "私家侦探",
+                "attributes": {"STR": 65, "CON": 50, "DEX": 55},
+                "skills": {"侦查": 60, "心理学": 45},
+                "background": "曾是警察，因一起神秘案件离职..."
+            },
+            "selections": [
+                {"id": "start_game", "text": "开始游戏"},
+                {"id": "back", "text": "返回修改"}
+            ]
+        },
+        "complete": false,
+        "saveId": null,
+        "extData": {"investigatorCard": {...}, "turn": 0, "round": 0}
+    }
+    ```
+    
+    ### playing 阶段响应（step=6，markdown 纯文本）
     ```json
     {
         "sessionId": "coc_abc123",
@@ -805,17 +904,13 @@ async def coc_chat(
         "content": "## 调查结果\\n\\n你仔细打量着这个昏暗的房间。墙上的挂钟已经停止了转动，指针永远定格在3点15分...\\n\\n*你注意到书桌抽屉微微开着，里面似乎有什么东西在反光。*\\n\\n> **理智检定：成功**\\n> 你保持了冷静，没有被房间里诡异的氛围所影响。",
         "complete": false,
         "saveId": null,
-        "extData": {
-            "investigatorCard": {...},
-            "turn": 5,
-            "round": 2
-        }
+        "extData": {"investigatorCard": {...}, "turn": 5, "round": 2}
     }
     ```
     
     ### SSE 响应（stream=true）
     
-    与副本世界相同的 delta/done/error 事件格式，内容均为 markdown。
+    与副本世界相同的 delta/done/error 事件格式。选择阶段返回 JSON，playing 阶段返回 markdown。
     
     > **重要提示**：SSE 事件中的 `complete: true` 是流结束标识，前端收到后**必须关闭连接**。
     """
