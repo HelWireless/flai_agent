@@ -138,17 +138,21 @@ class COCService:
     
     def _get_dialogue_history(self, session_id: int) -> List[Dict[str, str]]:
         """获取对话历史（从 t_freak_world_dialogue 读取）"""
-        dialogues = self.db.query(FreakWorldDialogue).filter(
-            and_(
-                FreakWorldDialogue.session_id == session_id,
-                FreakWorldDialogue.del_ == 0
-            )
-        ).order_by(FreakWorldDialogue.id.asc()).all()
-        
-        messages = []
-        for d in dialogues:
-            messages.extend(d.to_messages())
-        return messages
+        try:
+            dialogues = self.db.query(FreakWorldDialogue).filter(
+                and_(
+                    FreakWorldDialogue.session_id == session_id,
+                    FreakWorldDialogue.del_ == 0
+                )
+            ).order_by(FreakWorldDialogue.id.asc()).all()
+            
+            messages = []
+            for d in dialogues:
+                messages.extend(d.to_messages())
+            return messages
+        except Exception as e:
+            custom_logger.warning(f"Failed to get dialogue history: {e}")
+            return []
     
     # ==================== 主入口 ====================
     
@@ -664,9 +668,12 @@ class COCService:
 只返回JSON，不要其他内容。"""
 
         try:
-            response = await self.llm.chat_completion_async([
-                {"role": "user", "content": prompt}
-            ])
+            response = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"],
+                parse_json=True,
+                response_format="json_object"
+            )
             
             # 解析响应
             content = response.get("content", "")
@@ -911,7 +918,12 @@ class COCService:
         messages.append({"role": "user", "content": message})
         
         try:
-            response = await self.llm.chat_completion_async(messages)
+            response = await self.llm.chat_completion(
+                messages=messages,
+                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"],
+                parse_json=False,
+                response_format="text"
+            )
             ai_content = response.get("content", "")
         except Exception as e:
             custom_logger.error(f"LLM call failed: {e}")
