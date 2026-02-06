@@ -156,7 +156,7 @@ class IWChatResponse(BaseModel):
     session_id: str = Field(alias="sessionId")
     gm_id: str = Field(alias="gmId")                                  # 后端分配的GM（config_id）
     step: str                                                         # 当前游戏阶段
-    content: str                                                      # markdown 格式内容
+    content: Any                                                      # 选择阶段: JSON对象, playing阶段: markdown字符串
     complete: bool = False                                            # 是否结束
     save_id: Optional[str] = Field(default=None, alias="saveId")      # 存档时返回
     ext_data: Optional[Dict[str, Any]] = Field(default=None, alias="extData")  # 扩展数据

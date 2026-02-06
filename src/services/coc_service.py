@@ -1135,31 +1135,36 @@ class COCService:
         """
         将旧格式响应转换为 IWChatResponse
         
-        所有阶段（包括 playing）都返回 markdown 格式
+        - 选择阶段（step 0-5）：content 为 JSON 结构化数据
+        - playing 阶段（step 6）：content 为 markdown 纯文本
         """
-        content = old_response.get("content", "")
+        text_content = old_response.get("content", "")
         structured_data = old_response.get("structuredData", {})
         selections = old_response.get("selections", [])
         game_status = old_response.get("gameStatus", "")
         
-        # 添加结构化数据到 content（markdown 格式）
-        if structured_data:
-            if "title" in structured_data:
-                content = f"## {structured_data['title']}\n\n{content}"
+        # playing 阶段返回 markdown 纯文本
+        if game_status == GameStatus.PLAYING:
+            content = text_content
+        else:
+            # 选择阶段返回 JSON 结构化数据
+            content = {
+                "title": structured_data.get("title", ""),
+                "description": text_content,
+                "selections": selections
+            }
+            # 添加属性数据
             if "attributes" in structured_data:
-                content += "\n\n| 属性 | 值 |\n|------|------|\n"
-                for attr in structured_data["attributes"]:
-                    content += f"| {attr.get('display', attr.get('name', ''))} | {attr.get('value', '')} |\n"
+                content["attributes"] = structured_data["attributes"]
+            # 添加职业数据
             if "professions" in structured_data:
-                for prof in structured_data["professions"]:
-                    content += f"\n\n### {prof.get('name', '')}\n{prof.get('description', '')}"
-        
-        # playing 阶段不添加选项按钮，纯 markdown 叙事
-        # 其他阶段保留选项（角色创建流程需要选择）
-        if game_status != GameStatus.PLAYING and selections:
-            content += "\n\n---\n**请选择：**\n"
-            for sel in selections:
-                content += f"- `{sel.get('id')}`: {sel.get('text')}\n"
+                content["professions"] = structured_data["professions"]
+            # 添加人物卡数据
+            if "investigatorCard" in structured_data:
+                content["investigatorCard"] = structured_data["investigatorCard"]
+            # 添加角色数据
+            if "character" in structured_data:
+                content["character"] = structured_data["character"]
         
         return IWChatResponse(
             session_id=old_response.get("sessionId") or "",
