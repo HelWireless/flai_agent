@@ -638,12 +638,12 @@ async def coc_chat(
     ## 核心机制
     
     1. **Java 层创建会话**：Java 层先调用独立接口创建 sessionId
-    2. **用户选择 GM**：用户开始游戏时选择 GM
-    3. **用户创建角色**：step 0-5 为角色创建流程（属性、职业、背景等）
+    2. **用户选择 GM（前置）**：用户在调用本接口前已选好 GM，通过 `gmId` 传入
+    3. **角色创建流程**：`action: "start"` 直接进入属性分配（step 1），无需再选 GM
     4. **playing 阶段返回 markdown**：step=6 时，所有内容为纯 markdown 叙事文本
     5. **换人**：换的是游戏角色，不是 GM
     
-    > **说明**：`action: "start"` 表示新游戏，Python 端自动创建会话记录
+    > **说明**：`action: "start"` 表示新游戏，GM 已由 `gmId` 指定，直接开始角色创建
     
     ## 请求参数（与副本世界统一）
     
@@ -663,14 +663,15 @@ async def coc_chat(
     
     | step | 含义 | 响应格式 | 说明 |
     |------|------|----------|------|
-    | 0 | char_create | **JSON** | 角色创建开始 |
-    | 1 | step1_attributes | **JSON** | 常规属性分配 |
+    | 1 | step1_attributes | **JSON** | 常规属性分配（action=start 直接进入） |
     | 2 | step2_secondary | **JSON** | 次要属性确认 |
     | 3 | step3_profession | **JSON** | 职业选择 |
     | 4 | step4_background | **JSON** | 背景确认 |
     | 5 | step5_summary | **JSON** | 人物卡总结 |
     | 6 | playing | **markdown** | 游戏进行中（纯文本叙事） |
     | 7 | ended | **markdown** | 游戏结束 |
+    
+    > **注意**：GM 已由用户提前选择，`action: "start"` 时直接从 step=1（属性分配）开始
     
     ## extParam 扩展参数说明
     
@@ -682,7 +683,7 @@ async def coc_chat(
     
     ## 请求示例
     
-    ### 1. 开始新游戏（用户选择GM）
+    ### 1. 开始新游戏（直接进入角色创建）
     ```json
     {
         "userId": "1000001",
@@ -694,6 +695,7 @@ async def coc_chat(
         "extParam": {"action": "start"}
     }
     ```
+    > GM 已通过 `gmId` 指定，start 后直接进入属性分配阶段（返回 step=1）
     
     ### 2. 确认属性（角色创建流程）
     ```json
@@ -762,9 +764,9 @@ async def coc_chat(
     
     ## 响应格式
     
-    ### 角色创建阶段响应（step 0-5，JSON 结构化数据）
+    ### 角色创建阶段响应（step 1-5，JSON 结构化数据）
     
-    #### step=1 常规属性分配
+    #### step=1 常规属性分配（action=start 后的首个响应）
     ```json
     {
         "sessionId": "coc_abc123",

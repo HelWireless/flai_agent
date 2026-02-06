@@ -15,6 +15,7 @@ from ..custom_logger import custom_logger
 from ..models.coc_game_state import COCGameState
 from ..models.instance_world import FreakWorldDialogue
 from .llm_service import LLMService
+from .instance_world_prompts import get_gm_config
 from .coc_generator import (
     COCGenerator, PrimaryAttributes, SecondaryAttributes, Profession,
     PRIMARY_ATTRIBUTES, PROFESSIONS
@@ -22,10 +23,10 @@ from .coc_generator import (
 
 
 # COC step 常量（对应 IWChatRequest.step）
-# GM 由后端分配，用户选择的是角色属性、职业等
+# GM 由用户提前选择（gmId 参数），action=start 直接进入属性分配
 class COCStep:
-    CHAR_CREATE = "0"         # 角色创建开始（GM由后端分配）
-    STEP1_ATTRIBUTES = "1"    # 常规属性分配
+    CHAR_CREATE = "0"         # 已废弃：GM 由用户提前选择
+    STEP1_ATTRIBUTES = "1"    # 常规属性分配（action=start 的首个响应）
     STEP2_SECONDARY = "2"     # 次要属性确认
     STEP3_PROFESSION = "3"    # 职业选择
     STEP4_BACKGROUND = "4"    # 背景确认
@@ -170,6 +171,7 @@ class COCService:
         """
         session_id = request.get("sessionId")
         account_id = request.get("accountId")
+        gm_id = request.get("gmId")  # GM 由用户选择
         action = request.get("action", "input")
         message = request.get("message", "")
         selection = request.get("selection")
@@ -185,20 +187,61 @@ class COCService:
         
         # 获取或创建会话
         if action == "start":
-            # action=start 表示新游戏，直接用传入的 session_id 创建
+            # action=start 表示新游戏
             if session_id:
                 session = self._get_session_db(session_id)
                 if not session:
                     session = self._create_session_db(account_id, session_id=session_id)
                 # 如果 session 已存在但要重新开始，重置状态
-                elif session.game_status != GameStatus.GM_SELECT:
-                    session.game_status = GameStatus.GM_SELECT
-                    session.gm_gender = None
+                else:
                     session.investigator_card = None
                     session.temp_data = None
-                    self._update_session_db(session)
             else:
                 session = self._create_session_db(account_id)
+            
+            # GM 已由用户选择，直接进入属性分配阶段
+            if gm_id and gm_id != "0":
+                session.gm_id = gm_id
+                session.game_status = GameStatus.STEP1_ATTRIBUTES
+                
+                # 获取 GM 配置
+                gm_config = get_gm_config(gm_id)
+                gm_name = gm_config.get("name", "GM")
+                gm_traits = gm_config.get("traits", "")
+                
+                # 初始化属性
+                self.generator = COCGenerator()
+                primary = self.generator.roll_primary_attributes()
+                session.set_temp_data({
+                    "primary_attributes": primary.to_dict(),
+                    "gm_name": gm_name,
+                    "gm_traits": gm_traits
+                })
+                self._update_session_db(session)
+                
+                # 返回属性分配响应
+                intro = f"（{gm_name}微微颔首）\n\n"
+                intro += f"你好，我是{gm_name}，将作为你的Game Master陪伴你完成这次《克苏鲁的呼唤》冒险。\n\n"
+                intro += "接下来，让我们开始创建你的调查员角色。\n\n"
+                intro += "**第一步：常规属性分配**\n\n"
+                intro += "以下是你随机分配的8个常规属性值："
+                
+                return self._build_response(
+                    session,
+                    content=intro,
+                    structured_data={
+                        "title": "第一步：常规属性分配结果",
+                        "attributes": primary.to_display_list()
+                    },
+                    selections=[
+                        {"id": "confirm", "text": "确认属性"},
+                        {"id": "reroll", "text": "重新随机"}
+                    ]
+                )
+            else:
+                # 没有 gm_id，进入 GM 选择阶段（兼容旧逻辑）
+                session.game_status = GameStatus.GM_SELECT
+                self._update_session_db(session)
         elif session_id:
             session = self._get_session_db(session_id)
             if not session:
@@ -1186,6 +1229,7 @@ class COCService:
         return {
             "sessionId": request.session_id if request.session_id else None,
             "accountId": int(request.user_id),
+            "gmId": request.gm_id,  # 传递 GM ID
             "action": ext_param.get("action", "input"),
             "message": request.message,
             "selection": ext_param.get("selection"),
