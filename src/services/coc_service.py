@@ -1082,7 +1082,7 @@ class COCService:
     def _error_response(self, message: str) -> Dict[str, Any]:
         """构建错误响应"""
         return {
-            "sessionId": None,
+            "sessionId": "",
             "gameStatus": "error",
             "content": message,
             "structuredData": {"error": True},
@@ -1139,7 +1139,7 @@ class COCService:
                 content += f"- `{sel.get('id')}`: {sel.get('text')}\n"
         
         return IWChatResponse(
-            session_id=old_response.get("sessionId", ""),
+            session_id=old_response.get("sessionId") or "",
             gm_id=gm_id,
             step=self._game_status_to_step(game_status),
             content=content,
