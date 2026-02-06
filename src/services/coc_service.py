@@ -343,20 +343,28 @@ class COCService:
         primary_dict = temp.get("primary_attributes", {})
         gm_name = temp.get("gm_name", "GM")
         
-        if selection == "reroll" or action == "reroll":
-            # 重新随机
+        # 如果没有属性数据或要求重新随机，生成属性
+        if not primary_dict or selection == "reroll" or action == "reroll":
             self.generator = COCGenerator()
             primary = self.generator.roll_primary_attributes()
             temp["primary_attributes"] = primary.to_dict()
+            primary_dict = temp["primary_attributes"]  # 更新本地变量
             session.set_temp_data(temp)
             self._update_session_db(session)
             
-            content = f"（{gm_name}点点头）好的，为你重新分配属性。\n\n**新的属性分配：**"
+            # 根据是否是重新随机调整文案
+            if selection == "reroll" or action == "reroll":
+                content = f"（{gm_name}点点头）好的，为你重新分配属性。\n\n**新的属性分配：**"
+                title = "第一步：常规属性分配结果（重新随机）"
+            else:
+                content = f"（{gm_name}）以下是你随机分配的8个常规属性值："
+                title = "第一步：常规属性分配结果"
+            
             return self._build_response(
                 session,
                 content=content,
                 structured_data={
-                    "title": "第一步：常规属性分配结果（重新随机）",
+                    "title": title,
                     "attributes": primary.to_display_list()
                 },
                 selections=[
@@ -419,13 +427,30 @@ class COCService:
         
         temp = session.get_temp_data()
         gm_name = temp.get("gm_name", "GM")
+        primary_dict = temp.get("primary_attributes", {})
+        secondary_dict = temp.get("secondary_attributes", {})
+        
+        # 如果缺少属性数据，先生成
+        if not primary_dict:
+            self.generator = COCGenerator()
+            primary = self.generator.roll_primary_attributes()
+            temp["primary_attributes"] = primary.to_dict()
+            primary_dict = temp["primary_attributes"]
+        
+        if not secondary_dict:
+            primary = PrimaryAttributes(**primary_dict)
+            secondary = self.generator.calc_secondary_attributes(primary)
+            temp["secondary_attributes"] = secondary.to_dict()
+            secondary_dict = temp["secondary_attributes"]
+            session.set_temp_data(temp)
+            self._update_session_db(session)
         
         if selection == "back":
             # 返回修改常规属性
             session.game_status = GameStatus.STEP1_ATTRIBUTES
             self._update_session_db(session)
             
-            primary = PrimaryAttributes(**temp.get("primary_attributes", {}))
+            primary = PrimaryAttributes(**primary_dict)
             return self._build_response(
                 session,
                 content=f"（{gm_name}）好的，让我们重新调整常规属性。",
@@ -474,8 +499,8 @@ class COCService:
             )
         
         # 默认显示当前次要属性
-        primary = PrimaryAttributes(**temp.get("primary_attributes", {}))
-        secondary = SecondaryAttributes(**temp.get("secondary_attributes", {}))
+        primary = PrimaryAttributes(**primary_dict)
+        secondary = SecondaryAttributes(**secondary_dict)
         return self._build_response(
             session,
             content="请确认次要属性：",
@@ -502,10 +527,11 @@ class COCService:
         gm_name = temp.get("gm_name", "GM")
         professions_data = temp.get("professions", [])
         
-        if selection == "reroll":
-            # 重新随机职业
+        # 如果没有职业数据或要求重新随机，生成职业
+        if not professions_data or selection == "reroll":
             professions = self.generator.roll_professions(3)
             temp["professions"] = [p.to_dict() for p in professions]
+            professions_data = temp["professions"]  # 更新本地变量
             session.set_temp_data(temp)
             self._update_session_db(session)
             
@@ -515,11 +541,19 @@ class COCService:
                 selections.append({"id": f"prof_{i}", "text": f"选择 {p.name}"})
             selections.append({"id": "reroll", "text": "重新随机3个职业"})
             
+            # 根据是否是重新随机调整文案
+            if selection == "reroll":
+                content = f"（{gm_name}）好的，为你重新生成职业选项："
+                title = "第三步：职业与技能生成（重新随机）"
+            else:
+                content = f"（{gm_name}）接下来为你的调查员选择一个职业："
+                title = "第三步：职业与技能生成"
+            
             return self._build_response(
                 session,
-                content=f"（{gm_name}）好的，为你重新生成职业选项：",
+                content=content,
                 structured_data={
-                    "title": "第三步：职业与技能生成（重新随机）",
+                    "title": title,
                     "professions": profession_data
                 },
                 selections=selections
