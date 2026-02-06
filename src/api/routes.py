@@ -555,48 +555,6 @@ async def freak_world_chat(
     }
     ```
     
-    ### C# (Unity)
-    ```csharp
-    using UnityEngine;
-    using UnityEngine.Networking;
-    using System.Collections;
-    
-    IEnumerator StreamChat(string jsonBody) {
-        using (var request = new UnityWebRequest("https://api.example.com/pillow/freak-world/chat", "POST")) {
-            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonBody);
-            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-            request.downloadHandler = new DownloadHandlerBuffer();
-            request.SetRequestHeader("Content-Type", "application/json");
-            
-            yield return request.SendWebRequest();
-            
-            string[] lines = request.downloadHandler.text.Split(new[] { "\\n\\n" }, System.StringSplitOptions.RemoveEmptyEntries);
-            foreach (string line in lines) {
-                if (!line.StartsWith("data: ")) continue;
-                string jsonStr = line.Substring(6);
-                var data = JsonUtility.FromJson<SSEData>(jsonStr);
-                
-                switch (data.type) {
-                    case "delta":
-                        AppendContent(data.content);  // 追加 markdown 内容
-                        break;
-                    case "done":
-                        RenderResult(data.result);    // 渲染最终结果
-                        break;
-                    case "error":
-                        Debug.LogError($"错误: {data.message}");
-                        break;
-                }
-                
-                if (data.complete) {
-                    Debug.Log("SSE 流已结束");
-                    yield break;
-                }
-            }
-        }
-    }
-    ```
-    
     ### Flutter (Dart)
     ```dart
     import 'dart:convert';
