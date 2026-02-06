@@ -23,8 +23,9 @@ from .instance_world_prompts import (
 
 
 # step 常量定义
+# GM 由用户提前选择（gmId 参数），step 0 为游戏角色选择
 class GameStep:
-    CHAR_SELECT = "0"    # 角色选择阶段（GM由后端分配）
+    CHAR_SELECT = "0"    # 角色选择阶段（用户选择游戏中的角色）
     PLAYING = "1"        # 游戏进行中
     ENDED = "2"          # 游戏正常结束
     DEATH = "3"          # 角色死亡
@@ -382,7 +383,7 @@ class FreakWorldService:
             return IWChatResponse(
                 session_id=request.session_id or "",
                 gm_id="0",
-                step=GameStep.GM_SELECT,
+                step=GameStep.CHAR_SELECT,
                 content="会话不存在，无法保存。",
                 complete=True
             )
@@ -432,7 +433,7 @@ class FreakWorldService:
             return IWChatResponse(
                 session_id="",
                 gm_id="0",
-                step=GameStep.GM_SELECT,
+                step=GameStep.CHAR_SELECT,
                 content="未指定存档 ID。",
                 complete=True
             )
@@ -469,7 +470,7 @@ class FreakWorldService:
         return IWChatResponse(
             session_id="",
             gm_id="0",
-            step=GameStep.GM_SELECT,
+            step=GameStep.CHAR_SELECT,
             content="请通过存档接口获取存档数据后再加载。",
             complete=True,
             save_id=request.save_id
