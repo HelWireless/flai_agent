@@ -1251,15 +1251,18 @@ class COCService:
             # 调用同步处理
             response = await self.process_request(request)
             
-            # 将内容作为 delta 事件发送（模拟流式）
             content = response.content
-            chunk_size = 50  # 每次发送的字符数
             
-            for i in range(0, len(content), chunk_size):
-                yield {
-                    "type": "delta",
-                    "content": content[i:i+chunk_size]
-                }
+            # 选择阶段 content 是 dict，直接发送完整结果
+            # playing 阶段 content 是 string，模拟流式发送
+            if isinstance(content, str):
+                # 将内容作为 delta 事件发送（模拟流式）
+                chunk_size = 50  # 每次发送的字符数
+                for i in range(0, len(content), chunk_size):
+                    yield {
+                        "type": "delta",
+                        "content": content[i:i+chunk_size]
+                    }
             
             # 发送完成事件
             yield {
