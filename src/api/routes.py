@@ -638,26 +638,19 @@ async def coc_chat(
     ## 游戏流程图
     
     ```
-                         ┌──重roll──┐         ┌──重roll──┐
-                         │          │         │          │
-                         ▼          │         ▼          │
-    step=0  ──→  step=1  ──→  step=2  ──→  step=3  ──→  step=4  ──→  step=5
-    开始游戏      属性分配      次级属性      职业选择      人物卡       游戏开始
-    (markdown)   (JSON)       (JSON)       (JSON)       (JSON)      (markdown)
-                                                                      │
-                                                                      ▼
-                                                                   持续对话
-                                                                   step=5
-                                                                  (markdown)
+                              ┌─reroll─┐       ┌─reroll─┐
+                              │        │       │        │
+    action=start → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
+    背景介绍       属性分配   次级属性   职业选择   人物卡    游戏开始
+    (markdown)    (JSON)    (JSON)    (JSON)    (JSON)   (markdown)
     ```
     
     ## 核心机制
     
-    1. **请求带 step，响应不返回 step**：前端根据自己发的 step 知道当前阶段
-    2. **进入下一个 step = 确认上一步**：如 step=2 表示确认了 step=1 的常规属性
-    3. **重roll = 再次发送当前 step**：如重roll属性 → 再发 step=1，重roll职业 → 再发 step=3
-    4. **存档/读档通过 extParam.action 控制**，不需要 step
-    5. **step=5 为游戏阶段**：首次发送开始游戏，之后持续发送 step=5 + message 进行对话
+    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`save` 存档、`load` 读档
+    2. **step + extParam.selection 控制游戏流程**：selection 传 `confirm`/`reroll`/职业ID
+    3. **职业 ID 格式为 `prof_01`~`prof_N`**：对应 step=3 返回的职业列表索引
+    4. **step=5 为游戏阶段**：首次发送开始游戏，之后持续发送 step=5 + message 进行对话
     
     ## 请求参数
     
@@ -668,33 +661,35 @@ async def coc_chat(
     | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
     | step | str | 是 | 游戏阶段（见下方说明） |
-    | message | str | 是 | 用户消息，step=4 传职业名称，step=5 传游戏输入，其余可空串 |
+    | message | str | 是 | step=5 传游戏输入，其余可空串 |
     | saveId | str | 否 | 存档ID，读档时必填 |
-    | extParam | object | 否 | 扩展参数（存档/读档用） |
+    | extParam | object | 是 | 扩展参数（action/selection，见下方说明） |
     | stream | bool | 否 | true=SSE（默认），false=同步JSON |
     
     ## step 说明（请求）
     
-    | step | 请求含义 | message 内容 | 响应内容 | 响应格式 |
-    |------|----------|-------------|----------|----------|
-    | 0 | 开始游戏 | 空串 | — | 背景介绍 | markdown |
-    | 1 | 属性分配 | 空串 | confirm/reroll/空 | 常规属性 + 选择器 | JSON |
-    | 2 | 次级属性 | 空串 | confirm/reroll/空 | 次级属性 + 选择器 | JSON |
-    | 3 | 职业选择 | 空串 | 职业名/reroll/空 | 职业选项 | JSON |
-    | 4 | 人物卡总结 | 空串 | confirm/reroll/空 | 人物卡 + 选择器 | JSON |
-    | 5 | 游戏对话 | 游戏输入 | — | 游戏叙事 | markdown |
+    | step | 含义 | extParam | 响应格式 |
+    |------|------|----------|----------|
+    | — | 开始游戏 | `action: "start"` | markdown（背景介绍） |
+    | 1 | 属性分配 | `selection: "confirm"/"reroll"/空` | JSON（常规属性 + 选择器） |
+    | 2 | 次级属性 | `selection: "confirm"/"reroll"/空` | JSON（次级属性 + 选择器） |
+    | 3 | 职业选择 | `selection: "prof_01"~"prof_N"/"reroll"/空` | JSON（职业选项） |
+    | 4 | 人物卡 | `selection: "confirm"/"reroll"/空` | JSON（人物卡 + 选择器） |
+    | 5 | 游戏对话 | — | markdown（游戏叙事） |
     
     ## extParam 扩展参数说明
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
-    | selection | str | 用户选择（`"confirm"` 确认、`"reroll"` 重roll、或职业名称） |
-    | action | str | `"save"` 存档、`"load"` 读档 |
+    | action | str | 操作类型：`"start"` 开始游戏、`"save"` 存档、`"load"` 读档 |
+    | selection | str | 用户选择：`"confirm"` 确认、`"reroll"` 重roll、或职业ID（`prof_01`~`prof_N`） |
     | saveId | str | 存档ID（存档时由前端生成传入，读档时传入要恢复的存档ID） |
     
-    ## extParam.selection 使用说明
+    ## extParam 使用说明
     
-    前端收到响应后，根据 `selections` 数组显示选项按钮。用户点击后，前端在下次请求中通过 `extParam.selection` 传回选择的 id：
+    **action 驱动**：`start`/`save`/`load` 通过 `extParam.action` 触发，不依赖 step。
+    
+    **selection 驱动**：前端收到响应后，根据 `selections` 数组显示选项按钮。用户点击后，前端在下次请求中通过 `extParam.selection` 传回选择的 id：
     
     | step | selection 值 | 后端行为 |
     |------|-------------|---------|
@@ -702,14 +697,14 @@ async def coc_chat(
     | 1 | `"reroll"` 或空 | 重新 roll 属性 |
     | 2 | `"confirm"` | 确认次级属性，返回职业选项（相当于进入 step 3） |
     | 2 | `"reroll"` 或空 | 返回 step 1 重新分配常规属性 |
-    | 3 | 职业名称 | 选择职业，返回人物卡（相当于进入 step 4） |
+    | 3 | `"prof_01"`~`"prof_N"` | 选择职业，返回人物卡（相当于进入 step 4） |
     | 3 | `"reroll"` 或空 | 重新 roll 职业 |
     | 4 | `"confirm"` | 确认人物卡，开始游戏（相当于进入 step 5） |
     | 4 | `"reroll"` 或空 | 返回 step 3 重新选择职业 |
     
     ## 请求示例
     
-    ### 1. 开始新游戏（step=0 → 返回背景）
+    ### 1. 开始新游戏（action=start → 返回背景）
     ```json
     {
         "userId": "1000001",
@@ -717,7 +712,8 @@ async def coc_chat(
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "0",
-        "message": ""
+        "message": "",
+        "extParam": {"action": "start"}
     }
     ```
     
@@ -785,7 +781,7 @@ async def coc_chat(
     }
     ```
     
-    ### 7. 选择职业（step=3 + selection=职业名 → 返回人物卡）
+    ### 7. 选择职业（step=3 + selection=prof_01 → 返回人物卡）
     ```json
     {
         "userId": "1000001",
@@ -794,7 +790,7 @@ async def coc_chat(
         "gmId": "gm_02",
         "step": "3",
         "message": "",
-        "extParam": {"selection": "考古学家"}
+        "extParam": {"selection": "prof_01"}
     }
     ```
     
@@ -938,14 +934,28 @@ async def coc_chat(
             "description": "（璃满意地点头）以下是随机生成的3个职业供你选择：",
             "professions": [
                 {
+                    "id": "prof_01",
                     "name": "考古学家",
                     "description": "探索古代遗迹的冒险学者",
                     "skills": [{"name": "考古学", "value": 60, "display": "考古学: 60%"}]
+                },
+                {
+                    "id": "prof_02",
+                    "name": "作家",
+                    "description": "以笔为剑的文字工作者",
+                    "skills": [{"name": "母语", "value": 60, "display": "母语: 60%"}]
+                },
+                {
+                    "id": "prof_03",
+                    "name": "私家侦探",
+                    "description": "追寻真相的独立调查者",
+                    "skills": [{"name": "侦查", "value": 60, "display": "侦查: 60%"}]
                 }
             ],
             "selections": [
-                {"id": "考古学家", "text": "选择 考古学家"},
-                {"id": "作家", "text": "选择 作家"},
+                {"id": "prof_01", "text": "选择 考古学家"},
+                {"id": "prof_02", "text": "选择 作家"},
+                {"id": "prof_03", "text": "选择 私家侦探"},
                 {"id": "reroll", "text": "重新随机职业"}
             ]
         },

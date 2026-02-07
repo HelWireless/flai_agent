@@ -1,19 +1,20 @@
 """
 克苏鲁跑团(COC)服务 - 处理跑团游戏的核心业务逻辑
 
-游戏流程（一来一回，请求带 step + extParam.selection）：
+游戏流程（extParam.action + step + extParam.selection 驱动）：
 
-                     ┌─reroll─┐       ┌─reroll─┐
-                     │        │       │        │
-    step=0 → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
-    背景      属性      次级属性   职业      人物卡     游戏开始
-    (md)     (JSON)    (JSON)   (JSON)    (JSON)     (md)
+                          ┌─reroll─┐       ┌─reroll─┐
+                          │        │       │        │
+    action=start → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
+    背景介绍       属性      次级属性   职业      人物卡     游戏开始
+    (md)          (JSON)    (JSON)   (JSON)    (JSON)     (md)
 
 前端交互方式：
-- 发送 step + extParam.selection=confirm → 确认当前 step，进入下一步
-- 发送 step + extParam.selection=reroll（或 selection 为空）→ 重新 roll
-- step=3 可发送 extParam.selection=职业名 → 选择职业，进入 step 4
-- 存档/读档通过 extParam.action 控制，不需要 step
+- extParam.action="start" → 开始游戏，返回背景介绍
+- step + extParam.selection=confirm → 确认当前 step，进入下一步
+- step + extParam.selection=reroll（或 selection 为空）→ 重新 roll
+- step=3 发送 extParam.selection=prof_01~prof_N → 选择职业，进入 step 4
+- extParam.action="save"/"load" → 存档/读档
 - 响应不返回 step 字段
 """
 import json
@@ -200,8 +201,10 @@ class COCService:
         """
         处理 COC 请求（step 驱动）
 
-        请求的 step 决定当前阶段，extParam.selection 决定操作：
-        - step=0: 开始游戏，返回背景
+        extParam.action 控制特殊操作（start / save / load）；
+        step + extParam.selection 控制游戏流程：
+
+        - action=start: 开始游戏，返回背景
         - step=1: 属性分配
           - selection=null/reroll → 重新 roll 属性
           - selection=confirm → 确认属性，进入 step 2
@@ -210,13 +213,13 @@ class COCService:
           - selection=confirm → 确认，进入 step 3
         - step=3: 职业选择
           - selection=null/reroll → 重新 roll 职业
-          - selection=职业名 → 选择职业，进入 step 4
+          - selection=prof_01~prof_N → 选择职业，进入 step 4
         - step=4: 人物卡总结
           - selection=null/reroll → 返回 step 3 重新选择
           - selection=confirm → 确认，进入 step 5
         - step=5: 游戏对话
-
-        存档/读档通过 extParam.action 控制，不需要 step。
+        - action=save: 存档
+        - action=load: 读档
         """
         ext_param = request.ext_param or {}
         action = ext_param.get("action", "")
@@ -230,7 +233,11 @@ class COCService:
         )
 
         try:
-            # 存档/读档统一通过 extParam.action 控制
+            # extParam.action 驱动（start / save / load）
+            if action == "start":
+                session = self._get_or_create_session(request)
+                self._init_gm_info(session, request.gm_id)
+                return await self._step0_background(session, request)
             if action == "save":
                 return await self._handle_save_action(request)
             if action == "load":
@@ -244,7 +251,7 @@ class COCService:
 
             # Step + Selection 驱动分发
             if step == "0":
-                return await self._step0_background(session, request)
+                return self._error_response("step=0 需要 extParam.action=\"start\"")
             elif step == "1":
                 return await self._handle_step1(session, request, selection)
             elif step == "2":
@@ -355,14 +362,13 @@ class COCService:
         """
         处理 step=3 请求：
         - selection=reroll 或空 → 重新 roll 职业
-        - selection=职业名 → 选择职业，进入 step 4（返回人物卡）
+        - selection=prof_01~prof_N → 选择职业，进入 step 4（返回人物卡）
         """
         if not selection or selection == "reroll":
             # 重新 roll 职业
             return await self._step3_profession(session, request)
         else:
-            # 选择了某个职业，进入 step 4
-            # 将 selection 传给 _step4_character_card 处理
+            # 根据 prof_XX id 查找对应职业
             return await self._step4_character_card(session, request, selection)
 
     async def _handle_step4(
@@ -488,13 +494,17 @@ class COCService:
         session.set_temp_data(temp)
         self._update_session_db(session)
 
-        # 构建职业展示数据
-        profession_data = [p.to_display_dict() for p in professions]
+        # 构建职业展示数据（带 prof_XX id）
+        profession_data = []
+        for i, p in enumerate(professions):
+            d = p.to_display_dict()
+            d["id"] = f"prof_{i + 1:02d}"
+            profession_data.append(d)
 
-        # 构建选择项（职业名称作为 id）
+        # 构建选择项（prof_01~prof_N 作为 id）
         selections = []
-        for p in professions:
-            selections.append({"id": p.name, "text": f"选择 {p.name}"})
+        for i, p in enumerate(professions):
+            selections.append({"id": f"prof_{i + 1:02d}", "text": f"选择 {p.name}"})
         selections.append({"id": "reroll", "text": "重新随机职业"})
 
         content = {
@@ -512,59 +522,39 @@ class COCService:
         self,
         session: COCGameState,
         request: IWChatRequest,
-        profession_name: str = ""
+        profession_id: str = ""
     ) -> Dict[str, Any]:
         """
         Step 4: 选择职业，返回人物卡总结
 
-        职业名称优先级：
-        1. 参数传入的 profession_name（来自 extParam.selection）
-        2. request.message
-        3. extParam.selection
+        profession_id 格式为 prof_01 ~ prof_N，对应 step=3 返回的职业列表索引。
         """
         temp = session.get_temp_data()
         gm_name = temp.get("gm_name", "GM")
         professions_data = temp.get("professions", [])
-        
-        # 优先使用参数传入的职业名
-        if not profession_name:
-            profession_name = request.message.strip()
-        
-        if not profession_name:
-            # 如果 message 为空，尝试从 extParam 读取
+
+        # 获取职业 ID
+        if not profession_id:
             ext_param = request.ext_param or {}
-            profession_name = ext_param.get("selection", "").strip()
+            profession_id = ext_param.get("selection", "").strip()
 
-        if not profession_name:
-            names = [p.get("name", "") for p in professions_data]
-            return self._error_response(f"请在 extParam.selection 中传入选择的职业名称，可选：{', '.join(names)}")
+        if not profession_id:
+            ids = [f"prof_{i + 1:02d}" for i in range(len(professions_data))]
+            return self._error_response(f"请在 extParam.selection 中传入职业ID，可选：{', '.join(ids)}")
 
-        # 查找匹配的职业（精确匹配 → 包含匹配 → 全局查找）
+        # 根据 prof_XX 解析索引
         selected_profession = None
-
-        # 1. 从 step=3 给出的职业中精确匹配
-        for p in professions_data:
-            if p.get("name") == profession_name:
-                selected_profession = p
-                break
-
-        # 2. 包含匹配
-        if not selected_profession:
-            for p in professions_data:
-                if profession_name in p.get("name", "") or p.get("name", "") in profession_name:
-                    selected_profession = p
-                    break
-
-        # 3. 从所有职业中查找
-        if not selected_profession and profession_name in PROFESSIONS:
-            self.generator = COCGenerator()
-            prof = self.generator.get_profession_by_name(profession_name)
-            if prof:
-                selected_profession = prof.to_dict()
+        if profession_id.startswith("prof_"):
+            try:
+                idx = int(profession_id.replace("prof_", "")) - 1
+                if 0 <= idx < len(professions_data):
+                    selected_profession = professions_data[idx]
+            except (ValueError, IndexError):
+                pass
 
         if not selected_profession:
-            names = [p.get("name", "") for p in professions_data]
-            return self._error_response(f"未找到职业 '{profession_name}'，可选职业：{', '.join(names)}")
+            ids = [f"prof_{i + 1:02d}" for i in range(len(professions_data))]
+            return self._error_response(f"未找到职业 '{profession_id}'，可选：{', '.join(ids)}")
 
         # 生成兴趣技能
         self.generator = COCGenerator()
