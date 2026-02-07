@@ -41,10 +41,33 @@ CREATE TABLE `t_coc_game_state` (
 
 
 -- =====================================================
+-- 2. 克苏鲁跑团存档槽表（一个 session 可有多个存档）
+-- =====================================================
+CREATE TABLE `t_coc_save_slot` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `save_id` VARCHAR(32) NOT NULL COMMENT '存档ID',
+  `session_id` CHAR(16) NOT NULL COMMENT '关联会话ID',
+  `account_id` INT UNSIGNED NOT NULL COMMENT '用户ID',
+  `gm_id` VARCHAR(16) DEFAULT NULL COMMENT 'GM ID',
+  `game_status` VARCHAR(32) NOT NULL COMMENT '存档时的游戏状态',
+  `investigator_card` JSON DEFAULT NULL COMMENT '人物卡快照',
+  `round_number` INT NOT NULL DEFAULT 1 COMMENT '回合数',
+  `turn_number` INT NOT NULL DEFAULT 0 COMMENT '轮数',
+  `temp_data` JSON DEFAULT NULL COMMENT 'GM信息等临时数据',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `del` BIT(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_save_id` (`save_id`),
+  KEY `idx_session_id` (`session_id`),
+  KEY `idx_account_id` (`account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='克苏鲁跑团存档槽表';
+
+
+-- =====================================================
 -- 说明：
 -- - 对话历史复用 t_freak_world_dialogue 表
 -- - GM配置复用 t_prompt_config 表 (type='coc_gm')
--- - 存档槽复用 t_freak_world_save_slot 表
 -- =====================================================
 
 -- 调查员人物卡JSON结构示例:

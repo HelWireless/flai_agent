@@ -689,7 +689,7 @@ async def coc_chat(
     | 字段 | 类型 | 说明 |
     |------|------|------|
     | action | str | `"save"` 存档、`"load"` 读档（不需要 step） |
-    | save_data | object | 读档时传入的存档数据（由 Java 层提供） |
+    | saveId | str | 读档时可通过此字段传入存档ID（也可用顶层 `saveId` 字段） |
     
     ## 请求示例
     
@@ -780,7 +780,7 @@ async def coc_chat(
     }
     ```
     
-    ### 8. 存档（不需要 step）
+    ### 8. 存档（extParam.action = "save"）
     ```json
     {
         "userId": "1000001",
@@ -792,17 +792,32 @@ async def coc_chat(
         "extParam": {"action": "save"}
     }
     ```
+    > 存档写入 `t_coc_save_slot` 表，返回 `saveId`
     
-    ### 9. 读档（不需要 step）
+    ### 9. 读档（只需传 saveId）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_coc",
-        "sessionId": "coc_abc123",
+        "sessionId": "",
         "gmId": "gm_02",
         "step": "0",
         "message": "",
-        "extParam": {"action": "load", "save_data": {"gmId": "gm_02", "investigator": {...}, "gameProgress": {...}}}
+        "saveId": "save_abc123"
+    }
+    ```
+    > 后端根据 `saveId` 查 `t_coc_save_slot` 表恢复游戏状态，调用 LLM 生成继续对话
+    
+    也可以通过 extParam 传 saveId：
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "",
+        "gmId": "gm_02",
+        "step": "0",
+        "message": "",
+        "extParam": {"action": "load", "saveId": "save_abc123"}
     }
     ```
     
@@ -938,15 +953,28 @@ async def coc_chat(
     }
     ```
     
-    ### 存档响应
+    ### 存档响应（saveId 为存档表中的 ID）
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "content": "（璃点点头）\\n\\n**【存档 001】**\\n\\n存档已保存。",
+        "content": "（璃点点头）\\n\\n**【存档 001】**\\n\\n调查员：张明远\\n职业：考古学家\\n当前轮数：5 / 回合：1\\n状态：HP 10 / MP 16 / SAN 80\\n\\n存档已保存。",
         "complete": false,
-        "saveId": "save_abc123",
-        "extData": {"save_data": {"gmId": "gm_02", "investigator": {...}, "gameProgress": {...}}}
+        "saveId": "save_b2186656bc60",
+        "extData": {"investigatorCard": {...}, "turn": 5, "round": 1}
+    }
+    ```
+    > `saveId` 是存档表 `t_coc_save_slot` 中的唯一ID，读档时直接传此 ID
+    
+    ### 读档响应（后端查表恢复 + 调用 LLM 生成继续对话）
+    ```json
+    {
+        "sessionId": "coc_new_session",
+        "gmId": "gm_02",
+        "content": "**【读档成功】**\\n\\n**【05轮 / 01回合】**\\n\\n（璃翻开记录本）你之前正在调查一座废弃的档案馆...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
+        "complete": false,
+        "saveId": null,
+        "extData": {"investigatorCard": {...}, "turn": 5, "round": 1}
     }
     ```
     

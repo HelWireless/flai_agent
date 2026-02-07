@@ -27,6 +27,7 @@ from sqlalchemy import and_, desc
 from ..schemas import IWChatRequest
 from ..custom_logger import custom_logger
 from ..models.coc_game_state import COCGameState
+from ..models.coc_save_slot import COCSaveSlot
 from ..models.instance_world import FreakWorldDialogue
 from .llm_service import LLMService
 from .instance_world_prompts import get_gm_config
@@ -241,7 +242,7 @@ class COCService:
             # 存档/读档不需要 step
             if action == "save":
                 return await self._handle_save_action(request)
-            if action == "load":
+            if action == "load" or request.save_id:
                 return await self._handle_load_action(request)
 
             # 获取或创建会话
@@ -661,6 +662,39 @@ class COCService:
 
     # ==================== 存档/读档 ====================
 
+    def _generate_save_id(self) -> str:
+        """生成存档 ID"""
+        return f"save_{uuid.uuid4().hex[:12]}"
+
+    def _get_save_slot(self, save_id: str) -> Optional[COCSaveSlot]:
+        """根据 save_id 查询存档"""
+        return self.db.query(COCSaveSlot).filter(
+            and_(
+                COCSaveSlot.save_id == save_id,
+                COCSaveSlot.del_ == 0
+            )
+        ).first()
+
+    def _create_save_slot(self, session: COCGameState) -> COCSaveSlot:
+        """将当前 session 快照写入存档表"""
+        save_slot = COCSaveSlot(
+            save_id=self._generate_save_id(),
+            session_id=session.session_id,
+            account_id=session.account_id,
+            gm_id=session.gm_id,
+            game_status=session.game_status,
+            investigator_card=session.investigator_card,
+            round_number=session.round_number,
+            turn_number=session.turn_number,
+            temp_data=session.get_temp_data(),
+            del_=0
+        )
+        self.db.add(save_slot)
+        self.db.commit()
+        self.db.refresh(save_slot)
+        custom_logger.info(f"Created save slot: {save_slot.save_id} for session {session.session_id}")
+        return save_slot
+
     async def _handle_save_action(self, request: IWChatRequest) -> Dict[str, Any]:
         """处理存档请求（extParam.action = "save"）"""
         session = self._get_session_db(request.session_id)
@@ -672,14 +706,17 @@ class COCService:
         return await self._handle_save_internal(session)
 
     async def _handle_save_internal(self, session: COCGameState) -> Dict[str, Any]:
-        """存档内部逻辑"""
+        """存档内部逻辑：将快照写入 t_coc_save_slot 表"""
+        # 增加存档计数
         save_number = session.increment_save_count()
         self._update_session_db(session)
+
+        # 写入存档表
+        save_slot = self._create_save_slot(session)
 
         temp = session.get_temp_data()
         gm_name = temp.get("gm_name", "GM")
         investigator = session.investigator_card or {}
-        save_data = self._generate_save_data(session)
 
         content = f"（{gm_name}点点头）\n\n"
         content += f"**【存档 {save_number:03d}】**\n\n"
@@ -694,77 +731,106 @@ class COCService:
         return self._build_response(
             session,
             content=content,
-            save_id=f"save_{uuid.uuid4().hex[:12]}",
-            ext_data={"save_data": save_data}
+            save_id=save_slot.save_id
         )
 
     async def _handle_load_action(self, request: IWChatRequest) -> Dict[str, Any]:
-        """处理读档请求（extParam.action = "load"）"""
-        ext_param = request.ext_param or {}
-        save_data = ext_param.get("save_data")
+        """
+        处理读档请求
 
-        if not save_data:
+        前端只需传 saveId，后端自行查表恢复：
+        1. 根据 saveId 查 t_coc_save_slot
+        2. 创建新 session，恢复人物卡/进度/GM
+        3. 构建 system prompt + 存档进度
+        4. 调用 LLM 生成"继续冒险"对话
+        """
+        # 从 request.save_id 或 extParam 获取 saveId
+        save_id = request.save_id
+        if not save_id:
+            ext_param = request.ext_param or {}
+            save_id = ext_param.get("saveId") or ext_param.get("save_id")
+
+        if not save_id:
             return self._error_response(
-                "缺少存档数据（extParam.save_data）",
+                "缺少存档ID（saveId）",
+                request.session_id or "", request.gm_id or "0"
+            )
+
+        # 查询存档
+        save_slot = self._get_save_slot(save_id)
+        if not save_slot:
+            return self._error_response(
+                f"未找到存档: {save_id}",
                 request.session_id or "", request.gm_id or "0"
             )
 
         # 创建新会话
         session = self._create_session_db(
-            account_id=int(request.user_id),
+            account_id=save_slot.account_id,
             session_id=request.session_id if request.session_id else None,
-            gm_id=save_data.get("gmId")
+            gm_id=save_slot.gm_id
         )
 
-        # 恢复调查员人物卡
-        session.investigator_card = save_data.get("investigator", {})
+        # 恢复游戏状态
+        session.investigator_card = save_slot.investigator_card
+        session.round_number = save_slot.round_number
+        session.turn_number = save_slot.turn_number
+        session.game_status = save_slot.game_status or GameStatus.PLAYING
 
-        # 恢复游戏进度
-        progress = save_data.get("gameProgress", {})
-        session.round_number = progress.get("roundNumber", 1)
-        session.turn_number = progress.get("turnNumber", 0)
-        session.game_status = progress.get("gameStatus", GameStatus.PLAYING)
-        session.save_count = save_data.get("saveNumber", 0)
-
-        # 恢复临时数据
-        temp_data = save_data.get("tempData", {})
-        if not temp_data.get("gm_name"):
-            temp_data["gm_name"] = save_data.get("gmName", "GM")
+        # 恢复临时数据（含 GM 信息）
+        temp_data = save_slot.temp_data or {}
         session.set_temp_data(temp_data)
         self._update_session_db(session)
 
         investigator = session.investigator_card or {}
         gm_name = temp_data.get("gm_name", "GM")
+        gm_traits = temp_data.get("gm_traits", "")
 
-        content = f"（{gm_name}翻开记录本）\n\n"
-        content += f"**【读档成功 - 存档 {session.save_count:03d}】**\n\n"
-        content += f"欢迎回来，{investigator.get('name', '调查员')}。\n\n"
+        # 构建 system prompt + 对话历史，调用 LLM 生成继续对话
+        system_prompt = self._build_game_system_prompt(session, investigator, temp_data)
+
+        # 从原 session 获取对话历史
+        history = self._get_dialogue_history(save_slot.session_id)
+
+        resume_msg = (
+            f"玩家从存档恢复游戏。当前是第{session.turn_number}轮/第{session.round_number}回合。"
+            f"调查员{investigator.get('name', '调查员')}（{investigator.get('profession', '职业')}）"
+            f"当前状态：HP={investigator.get('currentHP')}, "
+            f"MP={investigator.get('currentMP')}, SAN={investigator.get('currentSAN')}。"
+            f"请简短描述当前场景氛围，然后提示玩家继续行动。"
+        )
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history[-20:])
+        messages.append({"role": "user", "content": resume_msg})
+
+        try:
+            response = await self.llm.chat_completion(
+                messages=messages,
+                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"],
+                parse_json=False,
+                response_format="text"
+            )
+            ai_content = response.get("content", "")
+        except Exception as e:
+            custom_logger.error(f"LLM call failed on load: {e}")
+            ai_content = (
+                f"（{gm_name}翻开记录本）\n\n"
+                f"欢迎回来，{investigator.get('name', '调查员')}。"
+                f"\n\n请继续你的冒险。"
+            )
+
+        # 构建状态行
+        status_line = f"❤ 生命 {investigator.get('currentHP', '?')}   "
+        status_line += f"💎 魔法 {investigator.get('currentMP', '?')}   "
+        status_line += f"🧠 理智 {investigator.get('currentSAN', '?')}"
+
+        content = f"**【读档成功】**\n\n"
         content += f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
-        content += f"❤ 生命 {investigator.get('currentHP')}   "
-        content += f"💎 魔法 {investigator.get('currentMP')}   "
-        content += f"🧠 理智 {investigator.get('currentSAN')}\n\n"
-        content += "请继续你的冒险："
+        content += ai_content
+        content += f"\n\n{status_line}"
 
         return self._build_response(session, content=content)
-
-    def _generate_save_data(self, session: COCGameState) -> Dict[str, Any]:
-        """生成完整存档数据"""
-        temp = session.get_temp_data()
-        investigator = session.investigator_card or {}
-
-        return {
-            "saveNumber": session.save_count,
-            "gmId": session.gm_id,
-            "gmName": temp.get("gm_name"),
-            "investigator": investigator,
-            "gameProgress": {
-                "roundNumber": session.round_number,
-                "turnNumber": session.turn_number,
-                "gameStatus": session.game_status,
-            },
-            "tempData": temp,
-            "savedAt": datetime.now().isoformat()
-        }
 
     # ==================== LLM 辅助方法 ====================
 
