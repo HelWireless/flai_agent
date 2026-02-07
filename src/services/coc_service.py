@@ -243,13 +243,11 @@ class COCService:
             if action == "select_character":
                 session = self._get_or_create_session(request)
                 self._init_gm_info(session, request.gm_id)
-                # 重置角色数据（换人），保留 GM 信息
+                # 换人：只清角色数据，保留 GM 信息 + round/turn（剧情不变）
                 temp = session.get_temp_data()
                 kept_keys = {"gm_name", "gm_traits"}
                 session.set_temp_data({k: v for k, v in temp.items() if k in kept_keys})
                 session.investigator_card = None
-                session.turn_number = 0
-                session.round_number = 1
                 self._update_session_db(session)
                 return await self._step1_attributes(session, request)
             if action == "save":
