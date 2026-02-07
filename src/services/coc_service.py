@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, AsyncGenerator
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import and_, desc
 
 from ..schemas import IWChatRequest, IWChatResponse
@@ -25,7 +26,8 @@ from .coc_generator import (
 # COC step 常量（对应 IWChatRequest.step）
 # GM 由用户提前选择（gmId 参数），action=start 直接进入属性分配
 class COCStep:
-    STEP1_ATTRIBUTES = "1"    # 常规属性分配（action=start 的首个响应）
+    STEP0_INTRO = "0"         # 背景文案介绍（action=start，返回 markdown 流式）
+    STEP1_ATTRIBUTES = "1"    # 常规属性分配
     STEP2_SECONDARY = "2"     # 次要属性确认
     STEP3_PROFESSION = "3"    # 职业选择
     STEP4_BACKGROUND = "4"    # 背景确认
@@ -40,14 +42,16 @@ class COCStep:
 
 class GameStatus:
     """游戏状态枚举"""
+    STEP0_INTRO = "step0_intro"           # 背景文案介绍
+    STEP1_ATTRIBUTES = "step1_attributes"  # 常规属性分配
+    STEP2_SECONDARY = "step2_secondary"    # 次要属性确认
+    STEP3_PROFESSION = "step3_profession"  # 职业选择
+    STEP4_BACKGROUND = "step4_background"  # 背景确认
+    STEP5_SUMMARY = "step5_summary"        # 人物卡总结
+    PLAYING = "playing"                    # 游戏进行中
+    ENDED = "ended"                        # 游戏结束
+    # 兼容旧数据
     GM_SELECT = "gm_select"
-    STEP1_ATTRIBUTES = "step1_attributes"
-    STEP2_SECONDARY = "step2_secondary"
-    STEP3_PROFESSION = "step3_profession"
-    STEP4_BACKGROUND = "step4_background"
-    STEP5_SUMMARY = "step5_summary"
-    PLAYING = "playing"
-    ENDED = "ended"
 
 
 # GM列表（后续从数据库读取）
@@ -113,7 +117,7 @@ class COCService:
             session_id=session_id or self._generate_session_id(),
             account_id=account_id,
             gm_gender=gm_gender,
-            game_status=GameStatus.GM_SELECT,
+            game_status=GameStatus.STEP0_INTRO,  # 从 Step 0 背景介绍开始
             del_=0
         )
         self.db.add(session)
@@ -133,6 +137,9 @@ class COCService:
     
     def _update_session_db(self, session: COCGameState):
         """更新游戏状态"""
+        # 标记 JSON 列为已修改，确保 SQLAlchemy 检测到变化
+        flag_modified(session, "temp_data")
+        flag_modified(session, "investigator_card")
         self.db.commit()
         self.db.refresh(session)
     
@@ -190,7 +197,7 @@ class COCService:
         
         # 获取或创建会话
         if action == "start":
-            # action=start 表示新游戏
+            # action=start 表示新游戏，进入 Step 0 背景介绍
             if session_id:
                 session = self._get_session_db(session_id)
                 if not session:
@@ -199,51 +206,33 @@ class COCService:
                 else:
                     session.investigator_card = None
                     session.temp_data = None
+                    session.game_status = GameStatus.STEP0_INTRO
             else:
                 session = self._create_session_db(account_id)
             
-            # GM 已由用户选择，直接进入属性分配阶段
+            # GM 已由用户选择，保存 GM 信息，进入 Step 0 背景介绍
             if gm_id and gm_id != "0":
                 session.gm_id = gm_id
-                session.game_status = GameStatus.STEP1_ATTRIBUTES
+                session.game_status = GameStatus.STEP0_INTRO
                 
                 # 获取 GM 配置
                 gm_config = get_gm_config(gm_id)
                 gm_name = gm_config.get("name", "GM")
-                gm_traits = gm_config.get("traits", "")
+                gm_traits = gm_config.get("traits", "神秘深邃")
                 
-                # 初始化属性
-                self.generator = COCGenerator()
-                primary = self.generator.roll_primary_attributes()
+                # 保存 GM 信息到 temp_data
                 session.set_temp_data({
-                    "primary_attributes": primary.to_dict(),
                     "gm_name": gm_name,
                     "gm_traits": gm_traits
                 })
                 self._update_session_db(session)
-                
-                # 返回属性分配响应
-                intro = f"（{gm_name}微微颔首）\n\n"
-                intro += f"你好，我是{gm_name}，将作为你的Game Master陪伴你完成这次《克苏鲁的呼唤》冒险。\n\n"
-                intro += "接下来，让我们开始创建你的调查员角色。\n\n"
-                intro += "**第一步：常规属性分配**\n\n"
-                intro += "以下是你随机分配的8个常规属性值："
-                
-                return self._build_response(
-                    session,
-                    content=intro,
-                    structured_data={
-                        "title": "第一步：常规属性分配结果",
-                        "attributes": primary.to_display_list()
-                    },
-                    selections=[
-                        {"id": "confirm", "text": "确认属性"},
-                        {"id": "reroll", "text": "重新随机"}
-                    ]
-                )
             else:
-                # 没有 gm_id，进入 GM 选择阶段（兼容旧逻辑）
-                session.game_status = GameStatus.GM_SELECT
+                # 没有 gm_id，使用默认 GM
+                session.game_status = GameStatus.STEP0_INTRO
+                session.set_temp_data({
+                    "gm_name": "GM",
+                    "gm_traits": "神秘深邃"
+                })
                 self._update_session_db(session)
         elif session_id:
             session = self._get_session_db(session_id)
@@ -257,7 +246,7 @@ class COCService:
         
         # 状态处理器映射
         handlers = {
-            GameStatus.GM_SELECT: self._handle_gm_select,
+            GameStatus.STEP0_INTRO: self._handle_step0_intro,
             GameStatus.STEP1_ATTRIBUTES: self._handle_step1_attributes,
             GameStatus.STEP2_SECONDARY: self._handle_step2_secondary,
             GameStatus.STEP3_PROFESSION: self._handle_step3_profession,
@@ -265,6 +254,8 @@ class COCService:
             GameStatus.STEP5_SUMMARY: self._handle_step5_summary,
             GameStatus.PLAYING: self._handle_playing,
             GameStatus.ENDED: self._handle_ended,
+            # 兼容旧数据
+            GameStatus.GM_SELECT: self._handle_step0_intro,
         }
         
         handler = handlers.get(session.game_status, self._handle_error)
@@ -272,67 +263,85 @@ class COCService:
     
     # ==================== 阶段处理器 ====================
     
-    async def _handle_gm_select(
+    async def _handle_step0_intro(
         self, 
         session: COCGameState, 
         action: str, 
         message: str, 
         selection: Optional[str]
     ) -> Dict[str, Any]:
-        """处理GM选择阶段"""
+        """
+        Step 0: 背景文案介绍
+        - GM 已由前端选好（通过 request.gm_id 传入）
+        - 返回 Markdown 格式的背景文案
+        - 用户点击"开始创建角色"后进入 Step 1
+        """
+        temp = session.get_temp_data()
+        gm_name = temp.get("gm_name", "GM")
+        gm_traits = temp.get("gm_traits", "神秘深邃")
         
-        if action == "start" or not selection:
-            # 初始状态，显示性别选择
+        # 如果用户选择继续，进入 Step 1 属性分配
+        if selection == "create_character" or action == "create_character":
+            session.game_status = GameStatus.STEP1_ATTRIBUTES
+            
+            # 随机生成初始属性
+            self.generator = COCGenerator()
+            primary = self.generator.roll_primary_attributes()
+            temp["primary_attributes"] = primary.to_dict()
+            session.set_temp_data(temp)
+            self._update_session_db(session)
+            
+            intro = f"（{gm_name}微微颔首）\n\n"
+            intro += "好的，让我们开始创建你的调查员角色。\n\n"
+            intro += "**第一步：常规属性分配**\n\n"
+            intro += "以下是你随机分配的8个常规属性值："
+            
             return self._build_response(
                 session,
-                content="欢迎来到《克苏鲁的呼唤》跑团游戏！\n\n请选择你希望的引导者（Game Master）性别：",
+                content=intro,
                 structured_data={
-                    "title": "选择GM性别",
-                    "description": "GM将陪伴你完成整个冒险旅程"
+                    "title": "第一步：常规属性分配结果",
+                    "attributes": primary.to_display_list()
                 },
                 selections=[
-                    {"id": "female", "text": "女性GM"},
-                    {"id": "male", "text": "男性GM"}
+                    {"id": "confirm", "text": "确认属性"},
+                    {"id": "reroll", "text": "重新随机"}
                 ]
             )
         
-        # 玩家选择了性别
-        gender = selection if selection in ["male", "female"] else "female"
-        gm = self._get_random_gm(gender)
-        
-        session.gm_gender = gender
-        session.gm_id = gm["id"]
-        session.game_status = GameStatus.STEP1_ATTRIBUTES
-        
-        # 随机生成初始属性
-        self.generator = COCGenerator()  # 新的随机实例
-        primary = self.generator.roll_primary_attributes()
-        session.set_temp_data({
-            "primary_attributes": primary.to_dict(),
-            "gm_name": gm["name"],
-            "gm_traits": gm["traits"]
-        })
-        self._update_session_db(session)
-        
-        # 构建GM自我介绍
-        intro = f"（{gm['name']}微微颔首，{gm['traits'][:20]}...）\n\n"
-        intro += f"你好，我是{gm['name']}，将作为你的Game Master陪伴你完成这次《克苏鲁的呼唤》冒险。\n\n"
-        intro += "接下来，让我们开始创建你的调查员角色。\n\n"
-        intro += "**第一步：常规属性分配**\n\n"
-        intro += "以下是你随机分配的8个常规属性值："
-        
-        return self._build_response(
-            session,
-            content=intro,
-            structured_data={
-                "title": "第一步：常规属性分配结果",
-                "attributes": primary.to_display_list()
-            },
-            selections=[
-                {"id": "confirm", "text": "确认属性"},
-                {"id": "reroll", "text": "重新随机"}
-            ]
-        )
+        # action=start: 返回背景文案（Markdown格式）
+        # GM信息已在 _create_session_db 或 chat 入口设置
+        intro_content = f"""（{gm_name}{gm_traits[:15]}...）
+
+你好，我是{gm_name}，将作为你的 Game Master 陪伴你完成这次《克苏鲁的呼唤》冒险。
+
+---
+
+**克苏鲁的呼唤**
+
+人类从未真正掌控宇宙——那些怪异的异星生物、神祗般的存在，正以冷漠的目光注视着这个世界。
+
+在这个世界中，你将扮演一名**调查员**，深入那些被常人遗忘的角落，揭开藏在迷雾后的可怖谜团。你可能是一名记者、侦探、学者，或任何被命运卷入神秘事件的普通人。
+
+你的理智将面临考验，你的生命悬于一线。但真相，正在黑暗中等待着你。
+
+---
+
+准备好了吗？让我们开始创建你的调查员角色。"""
+
+        # Step 0 返回纯 Markdown 内容
+        return {
+            "sessionId": session.session_id,
+            "gameStatus": session.game_status,
+            "content": intro_content,
+            "structuredData": {},
+            "selections": [
+                {"id": "create_character", "text": "开始创建角色"}
+            ],
+            "investigatorCard": None,
+            "turn": 0,
+            "round": 0
+        }
     
     async def _handle_step1_attributes(
         self, 
@@ -1208,7 +1217,7 @@ class COCService:
     def _game_status_to_step(self, game_status: str) -> str:
         """将内部 game_status 转换为 step"""
         mapping = {
-            GameStatus.GM_SELECT: COCStep.STEP1_ATTRIBUTES,  # 兼容旧数据，映射到属性分配
+            GameStatus.STEP0_INTRO: COCStep.STEP0_INTRO,
             GameStatus.STEP1_ATTRIBUTES: COCStep.STEP1_ATTRIBUTES,
             GameStatus.STEP2_SECONDARY: COCStep.STEP2_SECONDARY,
             GameStatus.STEP3_PROFESSION: COCStep.STEP3_PROFESSION,
@@ -1216,8 +1225,10 @@ class COCService:
             GameStatus.STEP5_SUMMARY: COCStep.STEP5_SUMMARY,
             GameStatus.PLAYING: COCStep.PLAYING,
             GameStatus.ENDED: COCStep.ENDED,
+            # 兼容旧数据
+            GameStatus.GM_SELECT: COCStep.STEP0_INTRO,
         }
-        return mapping.get(game_status, COCStep.STEP1_ATTRIBUTES)
+        return mapping.get(game_status, COCStep.STEP0_INTRO)
     
     def _convert_to_iw_response(self, old_response: Dict[str, Any], gm_id: str = "0") -> IWChatResponse:
         """
@@ -1231,8 +1242,8 @@ class COCService:
         selections = old_response.get("selections", [])
         game_status = old_response.get("gameStatus", "")
         
-        # playing 阶段返回 markdown 纯文本
-        if game_status == GameStatus.PLAYING:
+        # Step 0 背景介绍 和 playing 阶段返回 markdown 纯文本
+        if game_status in [GameStatus.STEP0_INTRO, GameStatus.PLAYING, GameStatus.GM_SELECT]:
             content = text_content
         else:
             # 选择阶段返回 JSON 结构化数据
