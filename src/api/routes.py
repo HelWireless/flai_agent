@@ -635,18 +635,31 @@ async def coc_chat(
     - `stream=true`（默认）：SSE 流式响应
     - `stream=false`：同步 JSON 响应
     
+    ## 游戏流程图
+    
+    ```
+                         ┌──重roll──┐         ┌──重roll──┐
+                         │          │         │          │
+                         ▼          │         ▼          │
+    step=0  ──→  step=1  ──→  step=2  ──→  step=3  ──→  step=4  ──→  step=5
+    开始游戏      属性分配      次级属性      职业选择      人物卡       游戏开始
+    (markdown)   (JSON)       (JSON)       (JSON)       (JSON)      (markdown)
+                                                                      │
+                                                                      ▼
+                                                                   持续对话
+                                                                   step=5
+                                                                  (markdown)
+    ```
+    
     ## 核心机制
     
-    1. **Java 层创建会话**：Java 层先调用独立接口创建 sessionId
-    2. **用户选择 GM（前置）**：用户在调用本接口前已选好 GM，通过 `gmId` 传入
-    3. **Step 0 背景介绍**：`action: "start"` 返回 Step 0 背景文案（markdown），用户点击"开始创建角色"后进入 Step 1
-    4. **角色创建流程**：Step 1-5 为角色创建阶段（JSON 结构化数据）
-    5. **playing 阶段返回 markdown**：step=6 时，所有内容为纯 markdown 叙事文本
-    6. **换人**：换的是游戏角色，不是 GM
+    1. **请求带 step，响应不返回 step**：前端根据自己发的 step 知道当前阶段
+    2. **进入下一个 step = 确认上一步**：如 step=2 表示确认了 step=1 的常规属性
+    3. **重roll = 再次发送当前 step**：如重roll属性 → 再发 step=1，重roll职业 → 再发 step=3
+    4. **存档/读档通过 extParam.action 控制**，不需要 step
+    5. **step=5 为游戏阶段**：首次发送开始游戏，之后持续发送 step=5 + message 进行对话
     
-    > **说明**：`action: "start"` 表示新游戏，GM 已由 `gmId` 指定，首先返回 Step 0 背景介绍
-    
-    ## 请求参数（与副本世界统一）
+    ## 请求参数
     
     | 字段 | 类型 | 必填 | 说明 |
     |------|------|------|------|
@@ -654,38 +667,33 @@ async def coc_chat(
     | worldId | str | 是 | 世界 config_id（COC 固定为 "world_coc"） |
     | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
-    | step | str | 是 | 游戏阶段，初始传 "0" |
-    | message | str | 是 | 用户消息/选择，可为空串 |
+    | step | str | 是 | 游戏阶段（见下方说明） |
+    | message | str | 是 | 用户消息，step=4 传职业名称，step=5 传游戏输入，其余可空串 |
     | saveId | str | 否 | 存档ID，读档时必填 |
-    | extParam | object | 否 | 扩展参数（见下方说明） |
+    | extParam | object | 否 | 扩展参数（存档/读档用） |
     | stream | bool | 否 | true=SSE（默认），false=同步JSON |
     
-    ## step 游戏阶段说明（COC 特有）
+    ## step 说明（请求）
     
-    | step | 含义 | 响应格式 | 说明 |
-    |------|------|----------|------|
-    | 0 | step0_intro | **markdown** | 背景文案介绍（`action: "start"` 首个响应） |
-    | 1 | step1_attributes | **JSON** | 常规属性分配 |
-    | 2 | step2_secondary | **JSON** | 次要属性确认 |
-    | 3 | step3_profession | **JSON** | 职业选择 |
-    | 4 | step4_background | **JSON** | 背景确认 |
-    | 5 | step5_summary | **JSON** | 人物卡总结 |
-    | 6 | playing | **markdown** | 游戏进行中（纯文本叙事） |
-    | 7 | ended | **markdown** | 游戏结束 |
-    
-    > **注意**：GM 已由用户提前选择，`action: "start"` 返回 Step 0 背景介绍，用户点击"开始创建角色"后进入 Step 1
+    | step | 请求含义 | message 内容 | 响应内容 | 响应格式 |
+    |------|----------|-------------|----------|----------|
+    | 0 | 开始游戏 | 空串 | 背景介绍 | markdown |
+    | 1 | 属性分配（重发=重roll） | 空串 | 常规属性 + 选择器 | JSON |
+    | 2 | 确认常规属性 | 空串 | 次级属性 + 选择器 | JSON |
+    | 3 | 确认次级属性（重发=重roll职业） | 空串 | 职业选项 | JSON |
+    | 4 | 选择职业 | **职业名称** | 人物卡总结 | JSON |
+    | 5 | 确认人物卡 / 游戏对话 | 空串或游戏输入 | 游戏叙事 | markdown |
     
     ## extParam 扩展参数说明
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
-    | action | str | 操作类型：`"save"` 存档、`"load"` 读档、`"start"` 开始、`"confirm"` 确认、`"reroll"` 重投 |
-    | selection | str | 选择的选项ID（如 `"confirm"`, `"reroll"`, `"prof_0"`） |
+    | action | str | `"save"` 存档、`"load"` 读档（不需要 step） |
     | save_data | object | 读档时传入的存档数据（由 Java 层提供） |
     
     ## 请求示例
     
-    ### 1. 开始新游戏（获取背景介绍）
+    ### 1. 开始新游戏（step=0 → 返回背景）
     ```json
     {
         "userId": "1000001",
@@ -693,27 +701,11 @@ async def coc_chat(
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "0",
-        "message": "",
-        "extParam": {"action": "start"}
+        "message": ""
     }
     ```
-    > GM 已通过 `gmId` 指定，`action: "start"` 返回 Step 0 背景介绍（markdown）
     
-    ### 2. 开始创建角色（进入属性分配）
-    ```json
-    {
-        "userId": "1000001",
-        "worldId": "world_coc",
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
-        "step": "0",
-        "message": "",
-        "extParam": {"selection": "create_character"}
-    }
-    ```
-    > 用户点击"开始创建角色"后进入 Step 1 属性分配
-    
-    ### 3. 确认属性（角色创建流程）
+    ### 2. 属性分配（step=1 → 返回常规属性）
     ```json
     {
         "userId": "1000001",
@@ -721,12 +713,24 @@ async def coc_chat(
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "1",
-        "message": "",
-        "extParam": {"selection": "confirm"}
+        "message": ""
+    }
+    ```
+    > 重roll属性：再次发送相同请求（step=1）
+    
+    ### 3. 确认属性（step=2 → 返回次级属性）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "2",
+        "message": ""
     }
     ```
     
-    ### 4. 选择职业
+    ### 4. 确认次级属性（step=3 → 返回职业选项）
     ```json
     {
         "userId": "1000001",
@@ -734,90 +738,103 @@ async def coc_chat(
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "3",
-        "message": "",
-        "extParam": {"selection": "prof_0"}
+        "message": ""
     }
     ```
+    > 重roll职业：再次发送相同请求（step=3）
     
-    ### 5. 游戏中输入（playing 阶段，纯 markdown）
+    ### 5. 选择职业（step=4，message=职业名 → 返回人物卡）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "6",
+        "step": "4",
+        "message": "考古学家"
+    }
+    ```
+    > message 传入上一步返回的职业名称
+    
+    ### 6. 确认人物卡，开始游戏（step=5 → 返回第一个游戏对话）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "5",
+        "message": ""
+    }
+    ```
+    
+    ### 7. 游戏中对话（step=5 + message → 返回游戏叙事）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "5",
         "message": "我想调查这个房间"
     }
     ```
     
-    ### 6. 存档
+    ### 8. 存档（不需要 step）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "6",
+        "step": "5",
         "message": "",
         "extParam": {"action": "save"}
     }
     ```
     
-    ### 7. 读档
+    ### 9. 读档（不需要 step）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "1",
+        "step": "0",
         "message": "",
-        "saveId": "save_abc123",
-        "extParam": {"action": "load"}
+        "extParam": {"action": "load", "save_data": {"gmId": "gm_02", "investigator": {...}, "gameProgress": {...}}}
     }
     ```
     
-    ## 响应格式
+    ## 响应格式（不含 step 字段）
     
-    ### Step 0 背景介绍响应（action=start 首个响应，markdown）
+    ### step=0 背景介绍（markdown）
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "0",
-        "content": "（璃冷静中带着利落感...）\\n\\n你好，我是璃，将作为你的 Game Master 陪伴你完成这次《克苏鲁的呼唤》冒险。\\n\\n---\\n\\n**克苏鲁的呼唤**\\n\\n人类从未真正掌控宇宙...\\n\\n准备好了吗？让我们开始创建你的调查员角色。",
+        "content": "（璃冷静中带着利落感...）\\n\\n你好，我是璃...",
         "complete": false,
         "saveId": null,
-        "extData": {"investigatorCard": null, "turn": 0, "round": 0}
+        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
     }
     ```
-    > Step 0 返回 markdown 纯文本，用户点击"开始创建角色"后进入 Step 1
     
-    ### 角色创建阶段响应（step 1-5，JSON 结构化数据）
-    
-    #### step=1 常规属性分配
+    ### step=1 常规属性（JSON）
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "1",
         "content": {
-            "title": "第一步：常规属性分配结果",
-            "description": "（璃微微颔首）你好，我是璃...",
+            "title": "常规属性分配结果",
+            "description": "（璃）以下是你随机分配的8个常规属性值：",
+            "attributes": [
+                {"key": "STR", "name": "力量", "value": 60, "description": "衡量调查员纯粹身体力量"},
+                {"key": "CON", "name": "体质", "value": 50, "description": "衡量调查员健康与强韧程度"}
+            ],
             "selections": [
                 {"id": "confirm", "text": "确认属性"},
                 {"id": "reroll", "text": "重新随机"}
-            ],
-            "attributes": [
-                {"key": "STR", "name": "力量", "value": 60, "description": "衡量调查员纯粹身体力量"},
-                {"key": "CON", "name": "体质", "value": 50, "description": "衡量调查员健康与强韧程度"},
-                {"key": "DEX", "name": "敏捷", "value": 70, "description": "衡量调查员身体灵活性与速度"},
-                {"key": "SIZ", "name": "体型", "value": 50, "description": "反映调查员身高与体重"},
-                {"key": "INT", "name": "智力", "value": 40, "description": "衡量调查员的智慧、洞察与推理能力"},
-                {"key": "POW", "name": "意志", "value": 80, "description": "衡量调查员的精神力量与魔法天赋"},
-                {"key": "APP", "name": "外貌", "value": 60, "description": "衡量调查员的外表吸引力"},
-                {"key": "EDU", "name": "教育", "value": 50, "description": "衡量调查员通过正规教育或社会磨练积累的知识"}
             ]
         },
         "complete": false,
@@ -826,27 +843,21 @@ async def coc_chat(
     }
     ```
     
-    #### step=2 次要属性计算
+    ### step=2 次级属性（JSON）
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "2",
         "content": {
-            "title": "第二步：次要属性计算",
-            "description": "（璃记录下你的属性）很好，属性已确认...",
-            "selections": [
-                {"id": "confirm", "text": "确认次要属性"},
-                {"id": "back", "text": "返回修改常规属性"}
-            ],
+            "title": "次级属性计算结果",
+            "description": "（璃记录下你的属性）根据常规属性计算出以下次级属性：",
             "attributes": [
                 {"key": "HP", "name": "生命值", "value": 10, "formula": "(体质50 + 体型50) ÷ 10 = 10", "description": "调查员能承受的伤害量"},
-                {"key": "MP", "name": "魔法值", "value": 16, "formula": "意志80 ÷ 5 = 16", "description": "用于施法或供能"},
-                {"key": "SAN", "name": "理智值", "value": 80, "formula": "等于意志值 = 80", "description": "调查员的心理健康程度"},
-                {"key": "LUCK", "name": "幸运值", "value": 55, "formula": "3D6 × 5 随机", "description": "调查员的运气"},
-                {"key": "DB", "name": "伤害加值", "value": 0, "formula": "力量40 + 体型50 = 90 → DB=0", "description": "近战伤害加成"},
-                {"key": "Build", "name": "体格", "value": 90, "formula": "力量40 + 体型50 = 90", "description": "力量与体型的综合"},
-                {"key": "MOV", "name": "移动速度", "value": 8, "formula": "人类固定为8", "description": "行动速度"}
+                {"key": "SAN", "name": "理智值", "value": 80, "formula": "等于意志值 = 80", "description": "调查员的心理健康程度"}
+            ],
+            "selections": [
+                {"id": "confirm", "text": "确认次级属性"},
+                {"id": "reroll", "text": "返回重新分配常规属性"}
             ]
         },
         "complete": false,
@@ -855,41 +866,25 @@ async def coc_chat(
     }
     ```
     
-    #### step=3 职业选择
+    ### step=3 职业选项（JSON）
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "3",
         "content": {
-            "title": "第三步：职业与技能生成",
-            "description": "（璃满意地点头）次要属性已确定...",
-            "selections": [
-                {"id": "prof_0", "text": "选择 文物学家"},
-                {"id": "prof_1", "text": "选择 作家"},
-                {"id": "prof_2", "text": "选择 记者"},
-                {"id": "reroll", "text": "重新随机3个职业"}
-            ],
+            "title": "职业选择",
+            "description": "（璃满意地点头）以下是随机生成的3个职业供你选择：",
             "professions": [
                 {
-                    "name": "文物学家",
-                    "description": "专精于古董鉴定与文物研究",
-                    "skills": [
-                        {"name": "估价", "value": 40, "display": "估价: 40%"},
-                        {"name": "历史", "value": 60, "display": "历史: 60%"},
-                        {"name": "图书馆使用", "value": 50, "display": "图书馆使用: 50%"},
-                        {"name": "侦查", "value": 70, "display": "侦查: 70%"}
-                    ]
-                },
-                {
-                    "name": "作家",
-                    "description": "以文字为生，擅长观察与记录",
-                    "skills": [
-                        {"name": "艺术（文学）", "value": 60, "display": "艺术（文学）: 60%"},
-                        {"name": "历史", "value": 50, "display": "历史: 50%"},
-                        {"name": "心理学", "value": 40, "display": "心理学: 40%"}
-                    ]
+                    "name": "考古学家",
+                    "description": "探索古代遗迹的冒险学者",
+                    "skills": [{"name": "考古学", "value": 60, "display": "考古学: 60%"}]
                 }
+            ],
+            "selections": [
+                {"id": "考古学家", "text": "选择 考古学家"},
+                {"id": "作家", "text": "选择 作家"},
+                {"id": "reroll", "text": "重新随机职业"}
             ]
         },
         "complete": false,
@@ -898,62 +893,32 @@ async def coc_chat(
     }
     ```
     
-    #### step=4 角色背景与装备
+    ### step=4 人物卡总结（JSON）
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "4",
         "content": {
-            "title": "第四步：角色背景与装备",
-            "description": "（璃记录下你的选择）你选择了考古学家作为职业...",
-            "selections": [
-                {"id": "confirm", "text": "确认角色信息"},
-                {"id": "regenerate", "text": "重新生成背景"}
-            ],
-            "character": {
-                "name": "调查员",
-                "gender": "男",
-                "age": 30,
-                "background": "一名经验丰富的考古学家，性格沉稳，善于观察。",
-                "equipment": ["手电筒", "笔记本", "钢笔"]
-            }
-        },
-        "complete": false,
-        "saveId": null,
-        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
-    }
-    ```
-    
-    #### step=5 人物卡总结
-    ```json
-    {
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
-        "step": "5",
-        "content": {
-            "title": "第五步：调查员信息总结",
-            "description": "人物卡已生成，是否开始游戏？",
-            "selections": [
-                {"id": "start_game", "text": "开始游戏"},
-                {"id": "back", "text": "返回修改"}
-            ],
+            "title": "调查员人物卡总结",
+            "description": "（璃整理好所有资料）你的调查员人物卡已生成完毕！",
             "investigatorCard": {
-                "name": "调查员",
-                "age": 30,
+                "name": "张明远",
+                "age": 32,
                 "gender": "男",
                 "profession": "考古学家",
-                "primaryAttributes": {"STR": 60, "CON": 40, "DEX": 70, "SIZ": 80, "INT": 50, "POW": 50, "APP": 60, "EDU": 50},
-                "secondaryAttributes": {"HP": 12, "MP": 10, "SAN": 50, "LUCK": 55, "DB": 1, "Build": 140, "MOV": 8},
-                "currentHP": 12,
-                "currentMP": 10,
-                "currentSAN": 50,
-                "skills": {"考古学": 60, "侦查": 60, "攀爬": 70, "历史": 40, "图书馆使用": 50},
-                "professionSkills": ["考古学", "历史", "图书馆使用", "侦查", "攀爬"],
-                "interestSkills": ["追踪", "人类学", "汽车驾驶"],
+                "primaryAttributes": {"STR": 60, "CON": 50, "DEX": 70, "SIZ": 50, "INT": 40, "POW": 80, "APP": 60, "EDU": 50},
+                "secondaryAttributes": {"HP": 10, "MP": 16, "SAN": 80, "LUCK": 55, "DB": 0, "Build": 110, "MOV": 8},
+                "currentHP": 10,
+                "currentMP": 16,
+                "currentSAN": 80,
+                "skills": {"考古学": 60, "侦查": 60, "攀爬": 70},
                 "equipment": ["手电筒", "笔记本", "钢笔"],
-                "background": "一名经验丰富的考古学家，性格沉稳，善于观察。"
-            }
+                "background": "一名经验丰富的考古学家..."
+            },
+            "selections": [
+                {"id": "confirm", "text": "确认人物卡，开始游戏"},
+                {"id": "reroll", "text": "重新选择职业"}
+            ]
         },
         "complete": false,
         "saveId": null,
@@ -961,24 +926,49 @@ async def coc_chat(
     }
     ```
     
-    ### playing 阶段响应（step=6，markdown 纯文本）
+    ### step=5 游戏对话（markdown）
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "6",
-        "content": "## 调查结果\\n\\n你仔细打量着这个昏暗的房间。墙上的挂钟已经停止了转动，指针永远定格在3点15分...\\n\\n*你注意到书桌抽屉微微开着，里面似乎有什么东西在反光。*\\n\\n> **理智检定：成功**\\n> 你保持了冷静，没有被房间里诡异的氛围所影响。",
+        "content": "**【01轮 / 01回合】**\\n\\n你仔细打量着这个昏暗的房间...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
         "complete": false,
         "saveId": null,
-        "extData": {"investigatorCard": {...}, "turn": 5, "round": 2}
+        "extData": {"investigatorCard": {...}, "turn": 1, "round": 1}
+    }
+    ```
+    
+    ### 存档响应
+    ```json
+    {
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "content": "（璃点点头）\\n\\n**【存档 001】**\\n\\n存档已保存。",
+        "complete": false,
+        "saveId": "save_abc123",
+        "extData": {"save_data": {"gmId": "gm_02", "investigator": {...}, "gameProgress": {...}}}
     }
     ```
     
     ### SSE 响应（stream=true）
     
-    与副本世界相同的 delta/done/error 事件格式。选择阶段返回 JSON，playing 阶段返回 markdown。
+    #### delta 事件（流式内容，仅 markdown 阶段）
+    ```
+    data: {"type": "delta", "content": "（璃的眼中闪过一丝期待）\\n\\n"}
+    data: {"type": "delta", "content": "**游戏正式开始！**"}
+    ```
     
-    > **重要提示**：SSE 事件中的 `complete: true` 是流结束标识，前端收到后**必须关闭连接**。
+    #### done 事件（最终结果，流结束）
+    ```
+    data: {"type": "done", "complete": true, "result": {"sessionId": "coc_abc123", "gmId": "gm_02", "content": "...", "complete": false, "saveId": null, "extData": {...}}}
+    ```
+    
+    #### error 事件（错误，流结束）
+    ```
+    data: {"type": "error", "complete": true, "message": "错误信息"}
+    ```
+    
+    > **注意**: SSE 事件中的 `complete: true` 表示**流已结束**，前端收到后应关闭连接。响应体中的 `complete` 表示**游戏是否结束**。
     """
     custom_logger.info(
         f"COC chat request: user_id={request.user_id}, "

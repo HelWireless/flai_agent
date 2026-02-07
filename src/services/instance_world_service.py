@@ -57,8 +57,8 @@ class FreakWorldService:
         self.base_path = os.path.dirname(os.path.dirname(current_dir))
     
     def _generate_session_id(self) -> str:
-        """生成会话 ID"""
-        return f"fw_{uuid.uuid4().hex[:16]}"
+        """生成会话 ID（最长16字符，适配数据库 char(16)）"""
+        return f"fw_{uuid.uuid4().hex[:13]}"
     
     def _generate_save_id(self) -> str:
         """生成存档 ID"""
@@ -238,7 +238,7 @@ class FreakWorldService:
         # 构建系统提示词
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
-            world_id=session.freak_world_id,
+            world_id=str(session.freak_world_id),  # 转换为字符串
             is_loading=is_loading,
             base_path=self.base_path
         )
@@ -582,7 +582,7 @@ class FreakWorldService:
             # 构建系统提示词
             system_prompt = build_system_prompt(
                 gm_id=session.gm_id,
-                world_id=session.freak_world_id,
+                world_id=str(session.freak_world_id),  # 转换为字符串
                 is_loading=False,
                 base_path=self.base_path
             )
