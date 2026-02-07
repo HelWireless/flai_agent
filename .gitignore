@@ -5,6 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
+data/tmp_prompt/*
 
 # Distribution / packaging
 .Python
@@ -172,6 +173,10 @@ cython_debug/
 actions/
 output.txt
 src/*.yaml
+
+# Lingma AI assistant
+.lingma/
+.lingmaignore
 
 # Project specific - Runtime logs
 nohup.out

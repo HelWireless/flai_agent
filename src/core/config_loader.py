@@ -103,7 +103,17 @@ def get_config_loader() -> ConfigLoader:
 
 # 便捷函数
 def get_character_config(character_id: str, reload: bool = False) -> Dict[str, Any]:
-    """获取指定角色的配置"""
+    """获取指定角色的配置（优先数据库，fallback 文件）"""
+    # 尝试从数据库加载
+    try:
+        from ..services.instance_world_prompts import get_character_config as db_get_char
+        db_config = db_get_char(character_id)
+        if db_config:
+            return db_config
+    except Exception:
+        pass
+    
+    # Fallback 到文件
     loader = get_config_loader()
     characters = loader.get_characters(reload)
     return characters.get('characters', {}).get(character_id, {})

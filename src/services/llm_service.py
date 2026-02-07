@@ -5,12 +5,13 @@
 import json
 import random
 import asyncio
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, AsyncGenerator
 from functools import partial
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import urllib3
+import httpx
 from ..custom_logger import custom_logger, debug_log
 
 class LLMService:
@@ -370,6 +371,151 @@ class LLMService:
             if fallback_response is not None:
                 return {"content": fallback_response}
             raise
+    
+    async def stream_chat_completion(
+        self,
+        messages: List[Dict],
+        model_name: Optional[str] = None,
+        model_pool: Optional[List[str]] = None,
+        temperature: float = 0.9,
+        top_p: float = 0.85,
+        max_tokens: int = 4096,
+        enable_thinking: bool = False,
+        presence_penalty: float = 1.0,
+        response_format: Optional[str] = None,
+        timeout: float = 120.0
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        流式 LLM 调用接口（SSE 直通）
+        
+        Args:
+            messages: 对话消息列表
+            model_name: 指定模型名称
+            model_pool: 模型池（随机选择）
+            temperature: 温度参数
+            top_p: top_p 参数
+            max_tokens: 最大 token 数
+            enable_thinking: 是否启用思考模式
+            presence_penalty: 存在惩罚
+            response_format: 响应格式 ('json_object' or 'text' or None)
+            timeout: 超时时间（秒）
+        
+        Yields:
+            流式响应数据块
+            - {"type": "delta", "content": "部分文本"}
+            - {"type": "done", "content": "完整文本", "usage": {...}}
+            - {"type": "error", "message": "错误信息"}
+        """
+        # 1. 选择模型
+        if not model_name:
+            if model_pool:
+                model_name = self._select_model(model_pool)
+            else:
+                raise ValueError("Must provide either model_name or model_pool")
+        
+        # 2. 获取模型配置
+        try:
+            model_config = self._get_model_config(model_name)
+        except ValueError as e:
+            custom_logger.error(f"Model config error: {e}")
+            yield {"type": "error", "message": str(e)}
+            return
+        
+        # 3. 构建流式请求数据
+        request_data = {
+            "model": model_config["model"],
+            "messages": messages,
+            "stream": True,  # 启用流式
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "enable_thinking": enable_thinking,
+            "presence_penalty": presence_penalty,
+        }
+        
+        if response_format:
+            request_data["response_format"] = {"type": response_format}
+        
+        headers = {
+            "Authorization": f"Bearer {model_config['api_key']}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream"
+        }
+        
+        custom_logger.info(f"Streaming LLM request to {model_name}: {len(messages)} messages")
+        debug_log(f"Stream request data: {request_data}")
+        
+        # 4. 使用 httpx 进行流式请求
+        full_content = ""
+        usage_info = {}
+        
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST",
+                    model_config["api_base"],
+                    json=request_data,
+                    headers=headers
+                ) as response:
+                    # 检查响应状态
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        custom_logger.error(f"Stream API failed: {response.status_code} - {error_text}")
+                        yield {"type": "error", "message": f"API error: {response.status_code}"}
+                        return
+                    
+                    # 解析 SSE 流
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        
+                        # SSE 格式: "data: {...}"
+                        if line.startswith("data: "):
+                            data_str = line[6:]  # 去掉 "data: " 前缀
+                            
+                            # 检查是否结束
+                            if data_str.strip() == "[DONE]":
+                                break
+                            
+                            try:
+                                data = json.loads(data_str)
+                                
+                                # 提取内容增量
+                                choices = data.get("choices", [])
+                                if choices:
+                                    delta = choices[0].get("delta", {})
+                                    content = delta.get("content", "")
+                                    
+                                    if content:
+                                        full_content += content
+                                        yield {
+                                            "type": "delta",
+                                            "content": content
+                                        }
+                                    
+                                    # 检查是否结束
+                                    finish_reason = choices[0].get("finish_reason")
+                                    if finish_reason:
+                                        usage_info = data.get("usage", {})
+                                
+                            except json.JSONDecodeError as e:
+                                custom_logger.warning(f"Failed to parse SSE data: {data_str[:100]}")
+                                continue
+            
+            # 流结束，返回完整内容
+            custom_logger.info(f"Stream completed from {model_name}, total length: {len(full_content)}")
+            yield {
+                "type": "done",
+                "content": full_content,
+                "usage": usage_info
+            }
+            
+        except httpx.TimeoutException:
+            custom_logger.error(f"Stream request timeout: {model_name}")
+            yield {"type": "error", "message": "Request timeout"}
+        except Exception as e:
+            custom_logger.error(f"Stream error: {str(e)}")
+            yield {"type": "error", "message": str(e)}
     
     async def generate_chat_response(
         self,
