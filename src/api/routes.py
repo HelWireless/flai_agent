@@ -677,19 +677,35 @@ async def coc_chat(
     
     | step | 请求含义 | message 内容 | 响应内容 | 响应格式 |
     |------|----------|-------------|----------|----------|
-    | 0 | 开始游戏 | 空串 | 背景介绍 | markdown |
-    | 1 | 属性分配（重发=重roll） | 空串 | 常规属性 + 选择器 | JSON |
-    | 2 | 确认常规属性 | 空串 | 次级属性 + 选择器 | JSON |
-    | 3 | 确认次级属性（重发=重roll职业） | 空串 | 职业选项 | JSON |
-    | 4 | 选择职业 | **职业名称** | 人物卡总结 | JSON |
-    | 5 | 确认人物卡 / 游戏对话 | 空串或游戏输入 | 游戏叙事 | markdown |
+    | 0 | 开始游戏 | 空串 | — | 背景介绍 | markdown |
+    | 1 | 属性分配 | 空串 | confirm/reroll/空 | 常规属性 + 选择器 | JSON |
+    | 2 | 次级属性 | 空串 | confirm/reroll/空 | 次级属性 + 选择器 | JSON |
+    | 3 | 职业选择 | 空串 | 职业名/reroll/空 | 职业选项 | JSON |
+    | 4 | 人物卡总结 | 空串 | confirm/reroll/空 | 人物卡 + 选择器 | JSON |
+    | 5 | 游戏对话 | 游戏输入 | — | 游戏叙事 | markdown |
     
     ## extParam 扩展参数说明
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
+    | selection | str | 用户选择（`"confirm"` 确认、`"reroll"` 重roll、或职业名称） |
     | action | str | `"save"` 存档、`"load"` 读档 |
     | saveId | str | 存档ID（存档时由前端生成传入，读档时传入要恢复的存档ID） |
+    
+    ## extParam.selection 使用说明
+    
+    前端收到响应后，根据 `selections` 数组显示选项按钮。用户点击后，前端在下次请求中通过 `extParam.selection` 传回选择的 id：
+    
+    | step | selection 值 | 后端行为 |
+    |------|-------------|---------|
+    | 1 | `"confirm"` | 确认属性，返回次级属性（相当于进入 step 2） |
+    | 1 | `"reroll"` 或空 | 重新 roll 属性 |
+    | 2 | `"confirm"` | 确认次级属性，返回职业选项（相当于进入 step 3） |
+    | 2 | `"reroll"` 或空 | 返回 step 1 重新分配常规属性 |
+    | 3 | 职业名称 | 选择职业，返回人物卡（相当于进入 step 4） |
+    | 3 | `"reroll"` 或空 | 重新 roll 职业 |
+    | 4 | `"confirm"` | 确认人物卡，开始游戏（相当于进入 step 5） |
+    | 4 | `"reroll"` 或空 | 返回 step 3 重新选择职业 |
     
     ## 请求示例
     
@@ -705,7 +721,7 @@ async def coc_chat(
     }
     ```
     
-    ### 2. 属性分配（step=1 → 返回常规属性）
+    ### 2. 进入属性分配（step=1 → 返回常规属性）
     ```json
     {
         "userId": "1000001",
@@ -716,9 +732,34 @@ async def coc_chat(
         "message": ""
     }
     ```
-    > 重roll属性：再次发送相同请求（step=1）
     
-    ### 3. 确认属性（step=2 → 返回次级属性）
+    ### 3. 确认属性（step=1 + selection=confirm → 返回次级属性）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "1",
+        "message": "",
+        "extParam": {"selection": "confirm"}
+    }
+    ```
+    
+    ### 4. 重roll属性（step=1 + selection=reroll）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "1",
+        "message": "",
+        "extParam": {"selection": "reroll"}
+    }
+    ```
+    
+    ### 5. 确认次级属性（step=2 + selection=confirm → 返回职业选项）
     ```json
     {
         "userId": "1000001",
@@ -726,11 +767,25 @@ async def coc_chat(
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "2",
-        "message": ""
+        "message": "",
+        "extParam": {"selection": "confirm"}
     }
     ```
     
-    ### 4. 确认次级属性（step=3 → 返回职业选项）
+    ### 6. 返回重新分配常规属性（step=2 + selection=reroll）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "2",
+        "message": "",
+        "extParam": {"selection": "reroll"}
+    }
+    ```
+    
+    ### 7. 选择职业（step=3 + selection=职业名 → 返回人物卡）
     ```json
     {
         "userId": "1000001",
@@ -738,12 +793,25 @@ async def coc_chat(
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "3",
-        "message": ""
+        "message": "",
+        "extParam": {"selection": "考古学家"}
     }
     ```
-    > 重roll职业：再次发送相同请求（step=3）
     
-    ### 5. 选择职业（step=4，message=职业名 → 返回人物卡）
+    ### 8. 重roll职业（step=3 + selection=reroll）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "3",
+        "message": "",
+        "extParam": {"selection": "reroll"}
+    }
+    ```
+    
+    ### 9. 确认人物卡，开始游戏（step=4 + selection=confirm）
     ```json
     {
         "userId": "1000001",
@@ -751,24 +819,25 @@ async def coc_chat(
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "4",
-        "message": "考古学家"
+        "message": "",
+        "extParam": {"selection": "confirm"}
     }
     ```
-    > message 传入上一步返回的职业名称
     
-    ### 6. 确认人物卡，开始游戏（step=5 → 返回第一个游戏对话）
+    ### 10. 返回重新选择职业（step=4 + selection=reroll）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "5",
-        "message": ""
+        "step": "4",
+        "message": "",
+        "extParam": {"selection": "reroll"}
     }
     ```
     
-    ### 7. 游戏中对话（step=5 + message → 返回游戏叙事）
+    ### 11. 游戏中对话（step=5 + message）
     ```json
     {
         "userId": "1000001",
@@ -780,7 +849,7 @@ async def coc_chat(
     }
     ```
     
-    ### 8. 存档（extParam 传 action + saveId）
+    ### 12. 存档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -794,7 +863,7 @@ async def coc_chat(
     ```
     > `saveId` 由前端/Java 层生成并传入，后端写入 `t_coc_save_slot` 表
     
-    ### 9. 读档（extParam 传 action + saveId）
+    ### 13. 读档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -810,28 +879,22 @@ async def coc_chat(
     
     ## 响应格式
     
-    响应字段：`sessionId`, `gmId`, `content`, `complete`, `saveId`
+    响应只有 2 个字段：`content` 和 `complete`
     
-    - **不返回** `step` 和 `extData`
     - `content`：选择阶段(step 1-4)为 JSON 对象，游戏阶段(step 0,5)为 markdown 字符串
-    - `saveId`：仅存档响应时有值
+    - `complete`：游戏是否结束
     
     ### step=0 背景介绍（markdown）
     ```json
     {
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
         "content": "（璃冷静中带着利落感...）\\n\\n你好，我是璃...",
-        "complete": false,
-        "saveId": null
+        "complete": false
     }
     ```
     
     ### step=1 常规属性（JSON）
     ```json
     {
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
         "content": {
             "title": "常规属性分配结果",
             "description": "（璃）以下是你随机分配的8个常规属性值：",
@@ -844,16 +907,13 @@ async def coc_chat(
                 {"id": "reroll", "text": "重新随机"}
             ]
         },
-        "complete": false,
-        "saveId": null
+        "complete": false
     }
     ```
     
     ### step=2 次级属性（JSON）
     ```json
     {
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
         "content": {
             "title": "次级属性计算结果",
             "description": "（璃记录下你的属性）根据常规属性计算出以下次级属性：",
@@ -866,16 +926,13 @@ async def coc_chat(
                 {"id": "reroll", "text": "返回重新分配常规属性"}
             ]
         },
-        "complete": false,
-        "saveId": null
+        "complete": false
     }
     ```
     
     ### step=3 职业选项（JSON）
     ```json
     {
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
         "content": {
             "title": "职业选择",
             "description": "（璃满意地点头）以下是随机生成的3个职业供你选择：",
@@ -892,16 +949,13 @@ async def coc_chat(
                 {"id": "reroll", "text": "重新随机职业"}
             ]
         },
-        "complete": false,
-        "saveId": null
+        "complete": false
     }
     ```
     
     ### step=4 人物卡总结（JSON）
     ```json
     {
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
         "content": {
             "title": "调查员人物卡总结",
             "description": "（璃整理好所有资料）你的调查员人物卡已生成完毕！",
@@ -920,42 +974,31 @@ async def coc_chat(
                 {"id": "reroll", "text": "重新选择职业"}
             ]
         },
-        "complete": false,
-        "saveId": null
+        "complete": false
     }
     ```
     
     ### step=5 游戏对话（markdown）
     ```json
     {
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
         "content": "**【01轮 / 01回合】**\\n\\n你仔细打量着这个昏暗的房间...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
-        "complete": false,
-        "saveId": null
+        "complete": false
     }
     ```
     
     ### 存档响应
     ```json
     {
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
         "content": "（璃点点头）\\n\\n**【存档 001】**\\n\\n存档已保存。",
-        "complete": false,
-        "saveId": "save_abc123"
+        "complete": false
     }
     ```
-    > `saveId` 回显前端传入的存档ID，确认存档成功
     
     ### 读档响应（后端查表恢复 + 调用 LLM 继续对话）
     ```json
     {
-        "sessionId": "coc_new_session",
-        "gmId": "gm_02",
         "content": "**【读档成功】**\\n\\n**【05轮 / 01回合】**\\n\\n（璃翻开记录本）你之前正在调查一座废弃的档案馆...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
-        "complete": false,
-        "saveId": null
+        "complete": false
     }
     ```
     
@@ -969,7 +1012,7 @@ async def coc_chat(
     
     #### done 事件（最终结果，流结束）
     ```
-    data: {"type": "done", "complete": true, "result": {"sessionId": "coc_abc123", "gmId": "gm_02", "content": "...", "complete": false, "saveId": null}}
+    data: {"type": "done", "complete": true, "result": {"content": "...", "complete": false}}
     ```
     
     #### error 事件（错误，流结束）

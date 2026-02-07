@@ -1,16 +1,18 @@
 """
 克苏鲁跑团(COC)服务 - 处理跑团游戏的核心业务逻辑
 
-游戏流程（一来一回，请求带 step，响应不返回 step）：
+游戏流程（一来一回，请求带 step + extParam.selection）：
 
-                     ┌─重roll─┐       ┌─重roll─┐
+                     ┌─reroll─┐       ┌─reroll─┐
                      │        │       │        │
     step=0 → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
     背景      属性      次级属性   职业      人物卡     游戏开始
     (md)     (JSON)    (JSON)   (JSON)    (JSON)     (md)
 
-- 进入下一个 step = 确认上一步
-- 重roll = 再次发送当前 step
+前端交互方式：
+- 发送 step + extParam.selection=confirm → 确认当前 step，进入下一步
+- 发送 step + extParam.selection=reroll（或 selection 为空）→ 重新 roll
+- step=3 可发送 extParam.selection=职业名 → 选择职业，进入 step 4
 - 存档/读档通过 extParam.action 控制，不需要 step
 - 响应不返回 step 字段
 """
@@ -176,33 +178,20 @@ class COCService:
 
     def _build_response(
         self,
-        session: COCGameState,
         content: Any,
-        complete: bool = False,
-        save_id: Optional[str] = None
+        complete: bool = False
     ) -> Dict[str, Any]:
-        """构建 COC 响应（不含 step、extData 字段）"""
+        """构建 COC 响应"""
         return {
-            "sessionId": session.session_id,
-            "gmId": session.gm_id or "0",
             "content": content,
-            "complete": complete,
-            "saveId": save_id
+            "complete": complete
         }
 
-    def _error_response(
-        self,
-        message: str,
-        session_id: str = "",
-        gm_id: str = "0"
-    ) -> Dict[str, Any]:
+    def _error_response(self, message: str) -> Dict[str, Any]:
         """构建错误响应"""
         return {
-            "sessionId": session_id,
-            "gmId": gm_id,
             "content": message,
-            "complete": True,
-            "saveId": None
+            "complete": True
         }
 
     # ==================== 主入口 ====================
@@ -211,24 +200,33 @@ class COCService:
         """
         处理 COC 请求（step 驱动）
 
-        请求的 step 决定当前阶段：
+        请求的 step 决定当前阶段，extParam.selection 决定操作：
         - step=0: 开始游戏，返回背景
-        - step=1: 属性分配（重发=重roll）
-        - step=2: 确认常规属性，返回次级属性
-        - step=3: 确认次级属性，返回职业（重发=重roll职业）
-        - step=4: 选择职业（message=职业名），返回人物卡
-        - step=5: 确认人物卡/游戏对话
+        - step=1: 属性分配
+          - selection=null/reroll → 重新 roll 属性
+          - selection=confirm → 确认属性，进入 step 2
+        - step=2: 次级属性
+          - selection=null/reroll → 返回 step 1 重新分配
+          - selection=confirm → 确认，进入 step 3
+        - step=3: 职业选择
+          - selection=null/reroll → 重新 roll 职业
+          - selection=职业名 → 选择职业，进入 step 4
+        - step=4: 人物卡总结
+          - selection=null/reroll → 返回 step 3 重新选择
+          - selection=confirm → 确认，进入 step 5
+        - step=5: 游戏对话
 
         存档/读档通过 extParam.action 控制，不需要 step。
         """
         ext_param = request.ext_param or {}
         action = ext_param.get("action", "")
+        selection = ext_param.get("selection", "")
         step = request.step
 
         custom_logger.info(
             f"Processing COC request: user={request.user_id}, "
             f"session={request.session_id}, gm_id={request.gm_id}, "
-            f"step={step}, action={action}"
+            f"step={step}, action={action}, selection={selection}"
         )
 
         try:
@@ -244,34 +242,26 @@ class COCService:
             # 确保 GM 信息已设置
             self._init_gm_info(session, request.gm_id)
 
-            # Step 驱动分发
+            # Step + Selection 驱动分发
             if step == "0":
                 return await self._step0_background(session, request)
             elif step == "1":
-                return await self._step1_attributes(session, request)
+                return await self._handle_step1(session, request, selection)
             elif step == "2":
-                return await self._step2_secondary(session, request)
+                return await self._handle_step2(session, request, selection)
             elif step == "3":
-                return await self._step3_profession(session, request)
+                return await self._handle_step3(session, request, selection)
             elif step == "4":
-                return await self._step4_character_card(session, request)
+                return await self._handle_step4(session, request, selection)
             elif step == "5":
                 return await self._step5_playing(session, request)
             else:
-                return self._error_response(
-                    f"无效的游戏阶段: {step}",
-                    request.session_id or "",
-                    request.gm_id or "0"
-                )
+                return self._error_response(f"无效的游戏阶段: {step}")
 
         except Exception as e:
             custom_logger.error(f"Error processing COC request: {e}", exc_info=True)
             self.db.rollback()
-            return self._error_response(
-                f"处理请求时发生错误：{str(e)}",
-                request.session_id or "",
-                request.gm_id or "0"
-            )
+            return self._error_response(f"处理请求时发生错误：{str(e)}")
 
     # ==================== Step 0: 背景介绍 ====================
 
@@ -316,7 +306,82 @@ class COCService:
 
 准备好了吗？让我们开始创建你的调查员角色。"""
 
-        return self._build_response(session, content=intro)
+        return self._build_response(content=intro)
+
+    # ==================== Step 处理（根据 selection 分发）====================
+
+    async def _handle_step1(
+        self,
+        session: COCGameState,
+        request: IWChatRequest,
+        selection: str
+    ) -> Dict[str, Any]:
+        """
+        处理 step=1 请求：
+        - selection=confirm → 确认属性，进入 step 2（返回次级属性）
+        - selection=reroll 或空 → 重新 roll 属性
+        """
+        if selection == "confirm":
+            # 确认属性，进入 step 2
+            return await self._step2_secondary(session, request)
+        else:
+            # 重新 roll 属性（包括 reroll 和空值）
+            return await self._step1_attributes(session, request)
+
+    async def _handle_step2(
+        self,
+        session: COCGameState,
+        request: IWChatRequest,
+        selection: str
+    ) -> Dict[str, Any]:
+        """
+        处理 step=2 请求：
+        - selection=confirm → 确认次级属性，进入 step 3（返回职业选项）
+        - selection=reroll → 返回 step 1 重新分配常规属性
+        """
+        if selection == "confirm":
+            # 确认次级属性，进入 step 3
+            return await self._step3_profession(session, request)
+        else:
+            # 返回 step 1 重新分配（包括 reroll 和空值）
+            return await self._step1_attributes(session, request)
+
+    async def _handle_step3(
+        self,
+        session: COCGameState,
+        request: IWChatRequest,
+        selection: str
+    ) -> Dict[str, Any]:
+        """
+        处理 step=3 请求：
+        - selection=reroll 或空 → 重新 roll 职业
+        - selection=职业名 → 选择职业，进入 step 4（返回人物卡）
+        """
+        if not selection or selection == "reroll":
+            # 重新 roll 职业
+            return await self._step3_profession(session, request)
+        else:
+            # 选择了某个职业，进入 step 4
+            # 将 selection 传给 _step4_character_card 处理
+            return await self._step4_character_card(session, request, selection)
+
+    async def _handle_step4(
+        self,
+        session: COCGameState,
+        request: IWChatRequest,
+        selection: str
+    ) -> Dict[str, Any]:
+        """
+        处理 step=4 请求：
+        - selection=confirm → 确认人物卡，进入 step 5（开始游戏）
+        - selection=reroll → 返回 step 3 重新选择职业
+        """
+        if selection == "confirm":
+            # 确认人物卡，进入 step 5 开始游戏
+            return await self._step5_playing(session, request)
+        else:
+            # 返回 step 3 重新选择职业（包括 reroll 和空值）
+            return await self._step3_profession(session, request)
 
     # ==================== Step 1: 常规属性分配 ====================
 
@@ -353,7 +418,7 @@ class COCService:
             ]
         }
 
-        return self._build_response(session, content=content)
+        return self._build_response(content=content)
 
     # ==================== Step 2: 次级属性确认 ====================
 
@@ -373,10 +438,7 @@ class COCService:
         primary_dict = temp.get("primary_attributes")
 
         if not primary_dict:
-            return self._error_response(
-                "请先完成属性分配（发送 step=1）",
-                session.session_id, session.gm_id or "0"
-            )
+            return self._error_response("请先完成属性分配（发送 step=1）")
 
         # 计算次级属性
         primary = PrimaryAttributes(**primary_dict)
@@ -397,7 +459,7 @@ class COCService:
             ]
         }
 
-        return self._build_response(session, content=content)
+        return self._build_response(content=content)
 
     # ==================== Step 3: 职业选择 ====================
 
@@ -416,10 +478,7 @@ class COCService:
         gm_name = temp.get("gm_name", "GM")
 
         if not temp.get("primary_attributes") or not temp.get("secondary_attributes"):
-            return self._error_response(
-                "请先完成属性分配（step=1 → step=2）",
-                session.session_id, session.gm_id or "0"
-            )
+            return self._error_response("请先完成属性分配（step=1 → step=2）")
 
         # 每次请求 step=3 都重新 roll 职业
         self.generator = COCGenerator()
@@ -445,26 +504,32 @@ class COCService:
             "selections": selections
         }
 
-        return self._build_response(session, content=content)
+        return self._build_response(content=content)
 
     # ==================== Step 4: 人物卡总结 ====================
 
     async def _step4_character_card(
         self,
         session: COCGameState,
-        request: IWChatRequest
+        request: IWChatRequest,
+        profession_name: str = ""
     ) -> Dict[str, Any]:
         """
-        Step 4: 选择职业（message=职业名），返回人物卡总结
+        Step 4: 选择职业，返回人物卡总结
 
-        前端在 message 中传入选择的职业名称。
-        如果想重roll职业，前端应发送 step=3。
+        职业名称优先级：
+        1. 参数传入的 profession_name（来自 extParam.selection）
+        2. request.message
+        3. extParam.selection
         """
         temp = session.get_temp_data()
         gm_name = temp.get("gm_name", "GM")
         professions_data = temp.get("professions", [])
-        profession_name = request.message.strip()
-
+        
+        # 优先使用参数传入的职业名
+        if not profession_name:
+            profession_name = request.message.strip()
+        
         if not profession_name:
             # 如果 message 为空，尝试从 extParam 读取
             ext_param = request.ext_param or {}
@@ -472,10 +537,7 @@ class COCService:
 
         if not profession_name:
             names = [p.get("name", "") for p in professions_data]
-            return self._error_response(
-                f"请在 message 中传入选择的职业名称，可选：{', '.join(names)}",
-                session.session_id, session.gm_id or "0"
-            )
+            return self._error_response(f"请在 extParam.selection 中传入选择的职业名称，可选：{', '.join(names)}")
 
         # 查找匹配的职业（精确匹配 → 包含匹配 → 全局查找）
         selected_profession = None
@@ -502,10 +564,7 @@ class COCService:
 
         if not selected_profession:
             names = [p.get("name", "") for p in professions_data]
-            return self._error_response(
-                f"未找到职业 '{profession_name}'，可选职业：{', '.join(names)}",
-                session.session_id, session.gm_id or "0"
-            )
+            return self._error_response(f"未找到职业 '{profession_name}'，可选职业：{', '.join(names)}")
 
         # 生成兴趣技能
         self.generator = COCGenerator()
@@ -553,7 +612,7 @@ class COCService:
             ]
         }
 
-        return self._build_response(session, content=content)
+        return self._build_response(content=content)
 
     # ==================== Step 5: 游戏对话 ====================
 
@@ -575,10 +634,7 @@ class COCService:
         # 首次进入游戏
         if session.game_status != GameStatus.PLAYING:
             if not investigator:
-                return self._error_response(
-                    "请先完成角色创建（step=1 到 step=4）",
-                    session.session_id, session.gm_id or "0"
-                )
+                return self._error_response("请先完成角色创建（step=1 到 step=4）")
 
             session.game_status = GameStatus.PLAYING
             session.turn_number = 1
@@ -599,16 +655,13 @@ class COCService:
 
 请输入你的行动或对话："""
 
-            return self._build_response(session, content=content)
+            return self._build_response(content=content)
 
         # ---- 已在游戏中，处理玩家输入 ----
 
         message = request.message.strip()
         if not message:
-            return self._build_response(
-                session,
-                content="请输入你的行动或对话。"
-            )
+            return self._build_response(content="请输入你的行动或对话。")
 
         # 检查存档密钥
         if message == self.SAVE_KEY:
@@ -631,7 +684,7 @@ class COCService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"],
+                model_pool=["qwen3_max"],
                 parse_json=False,
                 response_format="text"
             )
@@ -651,7 +704,7 @@ class COCService:
         content += ai_content
         content += f"\n\n{status_line}"
 
-        return self._build_response(session, content=content)
+        return self._build_response(content=content)
 
     # ==================== 存档/读档 ====================
 
@@ -697,10 +750,7 @@ class COCService:
         """
         session = self._get_session_db(request.session_id)
         if not session:
-            return self._error_response(
-                "会话不存在，无法存档",
-                request.session_id or "", request.gm_id or "0"
-            )
+            return self._error_response("会话不存在，无法存档")
 
         # saveId 由前端传入
         save_id = request.save_id
@@ -709,10 +759,7 @@ class COCService:
             save_id = ext_param.get("saveId") or ext_param.get("save_id")
 
         if not save_id:
-            return self._error_response(
-                "缺少存档ID（saveId），存档ID由前端传入",
-                session.session_id, session.gm_id or "0"
-            )
+            return self._error_response("缺少存档ID（saveId），存档ID由前端传入")
 
         # 增加存档计数
         save_number = session.increment_save_count()
@@ -735,11 +782,7 @@ class COCService:
         content += f"SAN {investigator.get('currentSAN')}\n\n"
         content += "存档已保存。"
 
-        return self._build_response(
-            session,
-            content=content,
-            save_id=save_slot.save_id
-        )
+        return self._build_response(content=content)
 
     async def _handle_load_action(self, request: IWChatRequest) -> Dict[str, Any]:
         """
@@ -756,18 +799,12 @@ class COCService:
         save_id = ext_param.get("saveId") or ext_param.get("save_id")
 
         if not save_id:
-            return self._error_response(
-                "缺少存档ID（saveId）",
-                request.session_id or "", request.gm_id or "0"
-            )
+            return self._error_response("缺少存档ID（saveId）")
 
         # 查询存档
         save_slot = self._get_save_slot(save_id)
         if not save_slot:
-            return self._error_response(
-                f"未找到存档: {save_id}",
-                request.session_id or "", request.gm_id or "0"
-            )
+            return self._error_response(f"未找到存档: {save_id}")
 
         # 创建新会话
         session = self._create_session_db(
@@ -812,7 +849,7 @@ class COCService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"],
+                model_pool=["qwen3_max"],
                 parse_json=False,
                 response_format="text"
             )
@@ -835,7 +872,7 @@ class COCService:
         content += ai_content
         content += f"\n\n{status_line}"
 
-        return self._build_response(session, content=content)
+        return self._build_response(content=content)
 
     # ==================== LLM 辅助方法 ====================
 
@@ -884,7 +921,7 @@ class COCService:
         try:
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen3_32b_custom", "qwen_max", "deepseek"],
+                model_pool=["qwen3_max"],
                 parse_json=True,
                 response_format="json_object"
             )
