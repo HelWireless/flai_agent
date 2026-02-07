@@ -11,6 +11,7 @@
 
 前端交互方式：
 - extParam.action="start" → 开始游戏，返回背景介绍
+- extParam.action="select_character" → 进入角色创建（属性分配）
 - step + extParam.selection=confirm → 确认当前 step，进入下一步
 - step + extParam.selection=reroll（或 selection 为空）→ 重新 roll
 - step=3 发送 extParam.selection=prof_01~prof_N → 选择职业，进入 step 4
@@ -201,10 +202,11 @@ class COCService:
         """
         处理 COC 请求（step 驱动）
 
-        extParam.action 控制特殊操作（start / save / load）；
+        extParam.action 控制特殊操作（start / select_character / save / load）；
         step + extParam.selection 控制游戏流程：
 
         - action=start: 开始游戏，返回背景
+        - action=select_character: 进入角色创建，返回属性分配
         - step=1: 属性分配
           - selection=null/reroll → 重新 roll 属性
           - selection=confirm → 确认属性，进入 step 2
@@ -233,11 +235,15 @@ class COCService:
         )
 
         try:
-            # extParam.action 驱动（start / save / load）
+            # extParam.action 驱动（start / select_character / save / load）
             if action == "start":
                 session = self._get_or_create_session(request)
                 self._init_gm_info(session, request.gm_id)
                 return await self._step0_background(session, request)
+            if action == "select_character":
+                session = self._get_or_create_session(request)
+                self._init_gm_info(session, request.gm_id)
+                return await self._step1_attributes(session, request)
             if action == "save":
                 return await self._handle_save_action(request)
             if action == "load":

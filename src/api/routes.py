@@ -647,7 +647,7 @@ async def coc_chat(
     
     ## 核心机制
     
-    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`save` 存档、`load` 读档
+    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`select_character` 进入角色创建、`save` 存档、`load` 读档
     2. **step + extParam.selection 控制游戏流程**：selection 传 `confirm`/`reroll`/职业ID
     3. **职业 ID 格式为 `prof_01`~`prof_N`**：对应 step=3 返回的职业列表索引
     4. **step=5 为游戏阶段**：首次发送开始游戏，之后持续发送 step=5 + message 进行对话
@@ -671,6 +671,7 @@ async def coc_chat(
     | step | 含义 | extParam | 响应格式 |
     |------|------|----------|----------|
     | — | 开始游戏 | `action: "start"` | markdown（背景介绍） |
+    | — | 角色创建 | `action: "select_character"` | JSON（常规属性 + 选择器） |
     | 1 | 属性分配 | `selection: "confirm"/"reroll"/空` | JSON（常规属性 + 选择器） |
     | 2 | 次级属性 | `selection: "confirm"/"reroll"/空` | JSON（次级属性 + 选择器） |
     | 3 | 职业选择 | `selection: "prof_01"~"prof_N"/"reroll"/空` | JSON（职业选项） |
@@ -681,7 +682,7 @@ async def coc_chat(
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
-    | action | str | 操作类型：`"start"` 开始游戏、`"save"` 存档、`"load"` 读档 |
+    | action | str | 操作类型：`"start"` 开始游戏、`"select_character"` 角色创建、`"save"` 存档、`"load"` 读档 |
     | selection | str | 用户选择：`"confirm"` 确认、`"reroll"` 重roll、或职业ID（`prof_01`~`prof_N`） |
     | saveId | str | 存档ID（存档时由前端生成传入，读档时传入要恢复的存档ID） |
     
@@ -717,7 +718,7 @@ async def coc_chat(
     }
     ```
     
-    ### 2. 进入属性分配（step=1 → 返回常规属性）
+    ### 2. 进入角色创建（action=select_character → 返回常规属性）
     ```json
     {
         "userId": "1000001",
@@ -725,7 +726,8 @@ async def coc_chat(
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "1",
-        "message": ""
+        "message": "",
+        "extParam": {"action": "select_character"}
     }
     ```
     
