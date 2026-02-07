@@ -639,11 +639,12 @@ async def coc_chat(
     
     1. **Java 层创建会话**：Java 层先调用独立接口创建 sessionId
     2. **用户选择 GM（前置）**：用户在调用本接口前已选好 GM，通过 `gmId` 传入
-    3. **角色创建流程**：`action: "start"` 直接进入属性分配（step 1），无需再选 GM
-    4. **playing 阶段返回 markdown**：step=6 时，所有内容为纯 markdown 叙事文本
-    5. **换人**：换的是游戏角色，不是 GM
+    3. **Step 0 背景介绍**：`action: "start"` 返回 Step 0 背景文案（markdown），用户点击"开始创建角色"后进入 Step 1
+    4. **角色创建流程**：Step 1-5 为角色创建阶段（JSON 结构化数据）
+    5. **playing 阶段返回 markdown**：step=6 时，所有内容为纯 markdown 叙事文本
+    6. **换人**：换的是游戏角色，不是 GM
     
-    > **说明**：`action: "start"` 表示新游戏，GM 已由 `gmId` 指定，直接开始角色创建
+    > **说明**：`action: "start"` 表示新游戏，GM 已由 `gmId` 指定，首先返回 Step 0 背景介绍
     
     ## 请求参数（与副本世界统一）
     
@@ -653,7 +654,7 @@ async def coc_chat(
     | worldId | str | 是 | 世界 config_id（COC 固定为 "world_coc"） |
     | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
-    | step | str | 是 | 游戏阶段，初始传 "1" |
+    | step | str | 是 | 游戏阶段，初始传 "0" |
     | message | str | 是 | 用户消息/选择，可为空串 |
     | saveId | str | 否 | 存档ID，读档时必填 |
     | extParam | object | 否 | 扩展参数（见下方说明） |
@@ -663,7 +664,8 @@ async def coc_chat(
     
     | step | 含义 | 响应格式 | 说明 |
     |------|------|----------|------|
-    | 1 | step1_attributes | **JSON** | 常规属性分配（`action: "start"` 直接进入） |
+    | 0 | step0_intro | **markdown** | 背景文案介绍（`action: "start"` 首个响应） |
+    | 1 | step1_attributes | **JSON** | 常规属性分配 |
     | 2 | step2_secondary | **JSON** | 次要属性确认 |
     | 3 | step3_profession | **JSON** | 职业选择 |
     | 4 | step4_background | **JSON** | 背景确认 |
@@ -671,7 +673,7 @@ async def coc_chat(
     | 6 | playing | **markdown** | 游戏进行中（纯文本叙事） |
     | 7 | ended | **markdown** | 游戏结束 |
     
-    > **注意**：GM 已由用户提前选择，`action: "start"` 时直接从 step=1（属性分配）开始
+    > **注意**：GM 已由用户提前选择，`action: "start"` 返回 Step 0 背景介绍，用户点击"开始创建角色"后进入 Step 1
     
     ## extParam 扩展参数说明
     
@@ -683,21 +685,35 @@ async def coc_chat(
     
     ## 请求示例
     
-    ### 1. 开始新游戏（直接进入角色创建）
+    ### 1. 开始新游戏（获取背景介绍）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "1",
+        "step": "0",
         "message": "",
         "extParam": {"action": "start"}
     }
     ```
-    > GM 已通过 `gmId` 指定，`action: "start"` 直接进入属性分配阶段
+    > GM 已通过 `gmId` 指定，`action: "start"` 返回 Step 0 背景介绍（markdown）
     
-    ### 2. 确认属性（角色创建流程）
+    ### 2. 开始创建角色（进入属性分配）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "0",
+        "message": "",
+        "extParam": {"selection": "create_character"}
+    }
+    ```
+    > 用户点击"开始创建角色"后进入 Step 1 属性分配
+    
+    ### 3. 确认属性（角色创建流程）
     ```json
     {
         "userId": "1000001",
@@ -710,7 +726,7 @@ async def coc_chat(
     }
     ```
     
-    ### 3. 选择职业
+    ### 4. 选择职业
     ```json
     {
         "userId": "1000001",
@@ -723,7 +739,7 @@ async def coc_chat(
     }
     ```
     
-    ### 4. 游戏中输入（playing 阶段，纯 markdown）
+    ### 5. 游戏中输入（playing 阶段，纯 markdown）
     ```json
     {
         "userId": "1000001",
@@ -735,7 +751,7 @@ async def coc_chat(
     }
     ```
     
-    ### 5. 存档
+    ### 6. 存档
     ```json
     {
         "userId": "1000001",
@@ -748,7 +764,7 @@ async def coc_chat(
     }
     ```
     
-    ### 6. 读档
+    ### 7. 读档
     ```json
     {
         "userId": "1000001",
@@ -764,9 +780,23 @@ async def coc_chat(
     
     ## 响应格式
     
+    ### Step 0 背景介绍响应（action=start 首个响应，markdown）
+    ```json
+    {
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "0",
+        "content": "（璃冷静中带着利落感...）\\n\\n你好，我是璃，将作为你的 Game Master 陪伴你完成这次《克苏鲁的呼唤》冒险。\\n\\n---\\n\\n**克苏鲁的呼唤**\\n\\n人类从未真正掌控宇宙...\\n\\n准备好了吗？让我们开始创建你的调查员角色。",
+        "complete": false,
+        "saveId": null,
+        "extData": {"investigatorCard": null, "turn": 0, "round": 0}
+    }
+    ```
+    > Step 0 返回 markdown 纯文本，用户点击"开始创建角色"后进入 Step 1
+    
     ### 角色创建阶段响应（step 1-5，JSON 结构化数据）
     
-    #### step=1 常规属性分配（action=start 后的首个响应）
+    #### step=1 常规属性分配
     ```json
     {
         "sessionId": "coc_abc123",
