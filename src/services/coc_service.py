@@ -179,21 +179,15 @@ class COCService:
         session: COCGameState,
         content: Any,
         complete: bool = False,
-        save_id: Optional[str] = None,
-        ext_data: Optional[Dict] = None
+        save_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """构建 COC 响应（不含 step 字段）"""
+        """构建 COC 响应（不含 step、extData 字段）"""
         return {
             "sessionId": session.session_id,
             "gmId": session.gm_id or "0",
             "content": content,
             "complete": complete,
-            "saveId": save_id,
-            "extData": ext_data or {
-                "investigatorCard": session.investigator_card,
-                "turn": session.turn_number,
-                "round": session.round_number
-            }
+            "saveId": save_id
         }
 
     def _error_response(
@@ -208,8 +202,7 @@ class COCService:
             "gmId": gm_id,
             "content": message,
             "complete": True,
-            "saveId": None,
-            "extData": None
+            "saveId": None
         }
 
     # ==================== 主入口 ====================
@@ -239,10 +232,10 @@ class COCService:
         )
 
         try:
-            # 存档/读档不需要 step
+            # 存档/读档统一通过 extParam.action 控制
             if action == "save":
                 return await self._handle_save_action(request)
-            if action == "load" or request.save_id:
+            if action == "load":
                 return await self._handle_load_action(request)
 
             # 获取或创建会话
@@ -662,10 +655,6 @@ class COCService:
 
     # ==================== 存档/读档 ====================
 
-    def _generate_save_id(self) -> str:
-        """生成存档 ID"""
-        return f"save_{uuid.uuid4().hex[:12]}"
-
     def _get_save_slot(self, save_id: str) -> Optional[COCSaveSlot]:
         """根据 save_id 查询存档"""
         return self.db.query(COCSaveSlot).filter(
@@ -675,10 +664,15 @@ class COCService:
             )
         ).first()
 
-    def _create_save_slot(self, session: COCGameState) -> COCSaveSlot:
-        """将当前 session 快照写入存档表"""
+    def _create_save_slot(self, save_id: str, session: COCGameState) -> COCSaveSlot:
+        """将当前 session 快照写入存档表
+
+        Args:
+            save_id: 前端/Java 层传入的存档ID
+            session: 当前游戏会话
+        """
         save_slot = COCSaveSlot(
-            save_id=self._generate_save_id(),
+            save_id=save_id,
             session_id=session.session_id,
             account_id=session.account_id,
             gm_id=session.gm_id,
@@ -696,23 +690,36 @@ class COCService:
         return save_slot
 
     async def _handle_save_action(self, request: IWChatRequest) -> Dict[str, Any]:
-        """处理存档请求（extParam.action = "save"）"""
+        """
+        处理存档请求（extParam.action = "save"）
+
+        saveId 由前端/Java 层传入（通过 request.save_id 或 extParam.saveId）
+        """
         session = self._get_session_db(request.session_id)
         if not session:
             return self._error_response(
                 "会话不存在，无法存档",
                 request.session_id or "", request.gm_id or "0"
             )
-        return await self._handle_save_internal(session)
 
-    async def _handle_save_internal(self, session: COCGameState) -> Dict[str, Any]:
-        """存档内部逻辑：将快照写入 t_coc_save_slot 表"""
+        # saveId 由前端传入
+        save_id = request.save_id
+        if not save_id:
+            ext_param = request.ext_param or {}
+            save_id = ext_param.get("saveId") or ext_param.get("save_id")
+
+        if not save_id:
+            return self._error_response(
+                "缺少存档ID（saveId），存档ID由前端传入",
+                session.session_id, session.gm_id or "0"
+            )
+
         # 增加存档计数
         save_number = session.increment_save_count()
         self._update_session_db(session)
 
         # 写入存档表
-        save_slot = self._create_save_slot(session)
+        save_slot = self._create_save_slot(save_id, session)
 
         temp = session.get_temp_data()
         gm_name = temp.get("gm_name", "GM")
@@ -736,19 +743,17 @@ class COCService:
 
     async def _handle_load_action(self, request: IWChatRequest) -> Dict[str, Any]:
         """
-        处理读档请求
+        处理读档请求（extParam.action = "load"）
 
-        前端只需传 saveId，后端自行查表恢复：
+        前端通过 extParam 传入 saveId，后端查表恢复：
         1. 根据 saveId 查 t_coc_save_slot
         2. 创建新 session，恢复人物卡/进度/GM
         3. 构建 system prompt + 存档进度
         4. 调用 LLM 生成"继续冒险"对话
         """
-        # 从 request.save_id 或 extParam 获取 saveId
-        save_id = request.save_id
-        if not save_id:
-            ext_param = request.ext_param or {}
-            save_id = ext_param.get("saveId") or ext_param.get("save_id")
+        # 统一从 extParam 获取 saveId
+        ext_param = request.ext_param or {}
+        save_id = ext_param.get("saveId") or ext_param.get("save_id")
 
         if not save_id:
             return self._error_response(

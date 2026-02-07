@@ -688,8 +688,8 @@ async def coc_chat(
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
-    | action | str | `"save"` 存档、`"load"` 读档（不需要 step） |
-    | saveId | str | 读档时可通过此字段传入存档ID（也可用顶层 `saveId` 字段） |
+    | action | str | `"save"` 存档、`"load"` 读档 |
+    | saveId | str | 存档ID（存档时由前端生成传入，读档时传入要恢复的存档ID） |
     
     ## 请求示例
     
@@ -780,7 +780,7 @@ async def coc_chat(
     }
     ```
     
-    ### 8. 存档（extParam.action = "save"）
+    ### 8. 存档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -789,26 +789,12 @@ async def coc_chat(
         "gmId": "gm_02",
         "step": "5",
         "message": "",
-        "extParam": {"action": "save"}
+        "extParam": {"action": "save", "saveId": "save_abc123"}
     }
     ```
-    > 存档写入 `t_coc_save_slot` 表，返回 `saveId`
+    > `saveId` 由前端/Java 层生成并传入，后端写入 `t_coc_save_slot` 表
     
-    ### 9. 读档（只需传 saveId）
-    ```json
-    {
-        "userId": "1000001",
-        "worldId": "world_coc",
-        "sessionId": "",
-        "gmId": "gm_02",
-        "step": "0",
-        "message": "",
-        "saveId": "save_abc123"
-    }
-    ```
-    > 后端根据 `saveId` 查 `t_coc_save_slot` 表恢复游戏状态，调用 LLM 生成继续对话
-    
-    也可以通过 extParam 传 saveId：
+    ### 9. 读档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -820,8 +806,15 @@ async def coc_chat(
         "extParam": {"action": "load", "saveId": "save_abc123"}
     }
     ```
+    > 后端根据 `saveId` 查 `t_coc_save_slot` 表恢复游戏状态，调用 LLM 生成继续对话
     
-    ## 响应格式（不含 step 字段）
+    ## 响应格式
+    
+    响应字段：`sessionId`, `gmId`, `content`, `complete`, `saveId`
+    
+    - **不返回** `step` 和 `extData`
+    - `content`：选择阶段(step 1-4)为 JSON 对象，游戏阶段(step 0,5)为 markdown 字符串
+    - `saveId`：仅存档响应时有值
     
     ### step=0 背景介绍（markdown）
     ```json
@@ -830,8 +823,7 @@ async def coc_chat(
         "gmId": "gm_02",
         "content": "（璃冷静中带着利落感...）\\n\\n你好，我是璃...",
         "complete": false,
-        "saveId": null,
-        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
+        "saveId": null
     }
     ```
     
@@ -853,8 +845,7 @@ async def coc_chat(
             ]
         },
         "complete": false,
-        "saveId": null,
-        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
+        "saveId": null
     }
     ```
     
@@ -876,8 +867,7 @@ async def coc_chat(
             ]
         },
         "complete": false,
-        "saveId": null,
-        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
+        "saveId": null
     }
     ```
     
@@ -903,8 +893,7 @@ async def coc_chat(
             ]
         },
         "complete": false,
-        "saveId": null,
-        "extData": {"investigatorCard": null, "turn": 0, "round": 1}
+        "saveId": null
     }
     ```
     
@@ -918,14 +907,10 @@ async def coc_chat(
             "description": "（璃整理好所有资料）你的调查员人物卡已生成完毕！",
             "investigatorCard": {
                 "name": "张明远",
-                "age": 32,
-                "gender": "男",
                 "profession": "考古学家",
                 "primaryAttributes": {"STR": 60, "CON": 50, "DEX": 70, "SIZ": 50, "INT": 40, "POW": 80, "APP": 60, "EDU": 50},
                 "secondaryAttributes": {"HP": 10, "MP": 16, "SAN": 80, "LUCK": 55, "DB": 0, "Build": 110, "MOV": 8},
-                "currentHP": 10,
-                "currentMP": 16,
-                "currentSAN": 80,
+                "currentHP": 10, "currentMP": 16, "currentSAN": 80,
                 "skills": {"考古学": 60, "侦查": 60, "攀爬": 70},
                 "equipment": ["手电筒", "笔记本", "钢笔"],
                 "background": "一名经验丰富的考古学家..."
@@ -936,8 +921,7 @@ async def coc_chat(
             ]
         },
         "complete": false,
-        "saveId": null,
-        "extData": {"investigatorCard": {"...同上..."}, "turn": 0, "round": 1}
+        "saveId": null
     }
     ```
     
@@ -948,33 +932,30 @@ async def coc_chat(
         "gmId": "gm_02",
         "content": "**【01轮 / 01回合】**\\n\\n你仔细打量着这个昏暗的房间...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
         "complete": false,
-        "saveId": null,
-        "extData": {"investigatorCard": {...}, "turn": 1, "round": 1}
+        "saveId": null
     }
     ```
     
-    ### 存档响应（saveId 为存档表中的 ID）
+    ### 存档响应
     ```json
     {
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "content": "（璃点点头）\\n\\n**【存档 001】**\\n\\n调查员：张明远\\n职业：考古学家\\n当前轮数：5 / 回合：1\\n状态：HP 10 / MP 16 / SAN 80\\n\\n存档已保存。",
+        "content": "（璃点点头）\\n\\n**【存档 001】**\\n\\n存档已保存。",
         "complete": false,
-        "saveId": "save_b2186656bc60",
-        "extData": {"investigatorCard": {...}, "turn": 5, "round": 1}
+        "saveId": "save_abc123"
     }
     ```
-    > `saveId` 是存档表 `t_coc_save_slot` 中的唯一ID，读档时直接传此 ID
+    > `saveId` 回显前端传入的存档ID，确认存档成功
     
-    ### 读档响应（后端查表恢复 + 调用 LLM 生成继续对话）
+    ### 读档响应（后端查表恢复 + 调用 LLM 继续对话）
     ```json
     {
         "sessionId": "coc_new_session",
         "gmId": "gm_02",
         "content": "**【读档成功】**\\n\\n**【05轮 / 01回合】**\\n\\n（璃翻开记录本）你之前正在调查一座废弃的档案馆...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
         "complete": false,
-        "saveId": null,
-        "extData": {"investigatorCard": {...}, "turn": 5, "round": 1}
+        "saveId": null
     }
     ```
     
@@ -988,7 +969,7 @@ async def coc_chat(
     
     #### done 事件（最终结果，流结束）
     ```
-    data: {"type": "done", "complete": true, "result": {"sessionId": "coc_abc123", "gmId": "gm_02", "content": "...", "complete": false, "saveId": null, "extData": {...}}}
+    data: {"type": "done", "complete": true, "result": {"sessionId": "coc_abc123", "gmId": "gm_02", "content": "...", "complete": false, "saveId": null}}
     ```
     
     #### error 事件（错误，流结束）
