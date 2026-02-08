@@ -1019,19 +1019,27 @@ async def coc_chat(
     {
         "content": {
             "equipmentList": {
-                "title": "装备清单",
+                "title": "随身装备",
                 "equipment": [
-                    {"name": "左轮手枪", "description": "可靠的.38口径左轮手枪", "damage": "1D10"},
-                    {"name": "考古工具包", "description": "包含刷子、铲子等田野工具", "damage": "—"},
-                    {"name": "手电筒", "description": "便携照明工具", "damage": "—"},
-                    {"name": "笔记本", "description": "记录线索的随身本", "damage": "—"},
-                    {"name": "绳索", "description": "10米结实麻绳", "damage": "—"}
+                    {"name": "左轮手枪", "description": "可靠的.38口径左轮手枪\n伤害：1D10"},
+                    {"name": "考古工具包", "description": "包含刷子、铲子等田野工具"},
+                    {"name": "手电筒", "description": "便携照明工具"},
+                    {"name": "笔记本", "description": "记录线索的随身本"},
+                    {"name": "绳索", "description": "10米结实麻绳"}
                 ]
             },
             "investigatorCard": {
                 "title": "人物属性摘要",
-                "primaryAttributes": {"STR": 60, "CON": 50, "DEX": 70, "SIZ": 50, "INT": 40, "POW": 80, "APP": 60, "EDU": 50},
-                "secondaryAttributes": {"HP": 10, "MP": 16, "SAN": 80, "LUCK": 55, "DB": 0, "Build": 110, "MOV": 8},
+                "attributes": [
+                    {"key": "STR", "name": "力量", "value": 60, "description": "衡量调查员纯粹身体力量"},
+                    {"key": "CON", "name": "体质", "value": 50, "description": "衡量调查员健康与强韧程度"},
+                    {"key": "DEX", "name": "敏捷", "value": 70, "description": "衡量调查员身体灵活性与速度"},
+                    {"key": "SIZ", "name": "体型", "value": 50, "description": "反映调查员身高与体重"},
+                    {"key": "INT", "name": "智力", "value": 40, "description": "衡量调查员的智慧、洞察与推理能力"},
+                    {"key": "POW", "name": "意志", "value": 80, "description": "衡量调查员的精神力量与魔法天赋"},
+                    {"key": "APP", "name": "外貌", "value": 60, "description": "衡量调查员的外表吸引力"},
+                    {"key": "EDU", "name": "教育", "value": 50, "description": "衡量调查员通过正规教育积累的知识"}
+                ],
                 "background": "一名经验丰富的考古学家，性格沉稳，善于观察。",
                 "currentHP": 10,
                 "currentMP": 16,

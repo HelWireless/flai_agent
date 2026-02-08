@@ -696,22 +696,28 @@ class COCService:
         session.set_temp_data(temp)
         self._update_session_db(session)
 
-        # 构建装备清单
+        # 构建装备清单（description 合并所有描述，用 \n 分隔）
         raw_equipment = background_data.get("equipment", [])
         equipment_display = []
         for eq in raw_equipment:
             if isinstance(eq, dict):
+                desc_parts = []
+                if eq.get("description"):
+                    desc_parts.append(eq["description"])
+                if eq.get("damage") and eq["damage"] != "—":
+                    desc_parts.append(f"伤害：{eq['damage']}")
                 equipment_display.append({
                     "name": eq.get("name", "未知装备"),
-                    "description": eq.get("description", ""),
-                    "damage": eq.get("damage", "—")
+                    "description": "\n".join(desc_parts) if desc_parts else ""
                 })
             else:
                 equipment_display.append({
                     "name": str(eq),
-                    "description": "",
-                    "damage": "—"
+                    "description": ""
                 })
+
+        # primaryAttributes 转为数组格式 [{key, name, value}]，和 step 1/2 一致
+        primary_display = primary.to_display_list()
 
         content = {
             "equipmentList": {
@@ -720,8 +726,7 @@ class COCService:
             },
             "investigatorCard": {
                 "title": "人物属性摘要",
-                "primaryAttributes": investigator_card.get("primaryAttributes", {}),
-                "secondaryAttributes": investigator_card.get("secondaryAttributes", {}),
+                "attributes": primary_display,
                 "background": investigator_card.get("background", ""),
                 "currentHP": investigator_card.get("currentHP", 0),
                 "currentMP": investigator_card.get("currentMP", 0),
