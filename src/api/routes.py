@@ -951,32 +951,29 @@ async def coc_chat(
     }
     ```
     
-    ### step=4 装备+人物卡（JSON，只有确认按钮）
+    ### step=4 装备清单+角色属性摘要（JSON，只有确认按钮）
     ```json
     {
         "content": {
-            "title": "调查员人物卡",
-            "description": "（璃整理好所有资料）你的调查员已准备就绪！",
-            "equipment": [
-                {"id": "equip_01", "name": "左轮手枪", "description": "可靠的.38口径左轮手枪", "damage": "1D10", "range": "15m"},
-                {"id": "equip_02", "name": "考古工具包", "description": "包含刷子、铲子等田野工具", "damage": "—", "range": "—"},
-                {"id": "equip_03", "name": "手电筒", "description": "便携照明工具", "damage": "—", "range": "—"},
-                {"id": "equip_04", "name": "笔记本", "description": "记录线索的随身本", "damage": "—", "range": "—"},
-                {"id": "equip_05", "name": "绳索", "description": "10米结实麻绳", "damage": "—", "range": "—"}
-            ],
+            "equipmentList": {
+                "title": "装备清单",
+                "equipment": [
+                    {"name": "左轮手枪", "description": "可靠的.38口径左轮手枪", "damage": "1D10"},
+                    {"name": "考古工具包", "description": "包含刷子、铲子等田野工具", "damage": "—"},
+                    {"name": "手电筒", "description": "便携照明工具", "damage": "—"},
+                    {"name": "笔记本", "description": "记录线索的随身本", "damage": "—"},
+                    {"name": "绳索", "description": "10米结实麻绳", "damage": "—"}
+                ]
+            },
             "investigatorCard": {
-                "name": "张明远",
-                "profession": "考古学家",
+                "title": "角色属性摘要",
                 "primaryAttributes": {"STR": 60, "CON": 50, "DEX": 70, "SIZ": 50, "INT": 40, "POW": 80, "APP": 60, "EDU": 50},
                 "secondaryAttributes": {"HP": 10, "MP": 16, "SAN": 80, "LUCK": 55, "DB": 0, "Build": 110, "MOV": 8},
-                "currentHP": 10, "currentMP": 16, "currentSAN": 80,
-                "skills": {"考古学": 60, "侦查": 60, "攀爬": 70},
-                "equipment": [
-                    {"name": "左轮手枪", "description": "可靠的.38口径左轮手枪", "damage": "1D10", "range": "15m"},
-                    {"name": "考古工具包", "description": "包含刷子、铲子等田野工具", "damage": "—", "range": "—"},
-                    {"name": "手电筒", "description": "便携照明工具", "damage": "—", "range": "—"}
-                ],
-                "background": "一名经验丰富的考古学家..."
+                "skills": {"考古学": 60, "侦查": 60, "攀爬": 70, "图书馆使用": 60},
+                "background": "一名经验丰富的考古学家，性格沉稳，善于观察。",
+                "currentHP": 10,
+                "currentMP": 16,
+                "currentSAN": 80
             },
             "selections": [
                 {"id": "confirm", "text": "确认，开始游戏"}

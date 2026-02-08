@@ -601,34 +601,38 @@ class COCService:
         session.set_temp_data(temp)
         self._update_session_db(session)
 
-        # 构建装备展示数据（带 equip_XX id）
+        # 构建装备清单（name/description/damage）
         raw_equipment = background_data.get("equipment", [])
         equipment_display = []
-        for i, eq in enumerate(raw_equipment):
+        for eq in raw_equipment:
             if isinstance(eq, dict):
-                item = {
-                    "id": f"equip_{i + 1:02d}",
+                equipment_display.append({
                     "name": eq.get("name", "未知装备"),
                     "description": eq.get("description", ""),
-                    "damage": eq.get("damage", "—"),
-                    "range": eq.get("range", "—")
-                }
+                    "damage": eq.get("damage", "—")
+                })
             else:
-                # 兼容旧的字符串格式
-                item = {
-                    "id": f"equip_{i + 1:02d}",
+                equipment_display.append({
                     "name": str(eq),
                     "description": "",
-                    "damage": "—",
-                    "range": "—"
-                }
-            equipment_display.append(item)
+                    "damage": "—"
+                })
 
         content = {
-            "title": "调查员人物卡",
-            "description": f"（{gm_name}整理好所有资料）你的调查员已准备就绪！",
-            "equipment": equipment_display,
-            "investigatorCard": investigator_card,
+            "equipmentList": {
+                "title": "装备清单",
+                "equipment": equipment_display
+            },
+            "investigatorCard": {
+                "title": "角色属性摘要",
+                "primaryAttributes": investigator_card.get("primaryAttributes", {}),
+                "secondaryAttributes": investigator_card.get("secondaryAttributes", {}),
+                "skills": investigator_card.get("skills", {}),
+                "background": investigator_card.get("background", ""),
+                "currentHP": investigator_card.get("currentHP", 0),
+                "currentMP": investigator_card.get("currentMP", 0),
+                "currentSAN": investigator_card.get("currentSAN", 0)
+            },
             "selections": [
                 {"id": "confirm", "text": "确认，开始游戏"}
             ]
@@ -932,7 +936,6 @@ class COCService:
    - name: 装备名称
    - description: 装备简介（一句话）
    - damage: 伤害值（武器填如"1D6"，非武器填"—"）
-   - range: 射程/有效距离（武器填如"15m"，非武器填"—"）
 
 请以JSON格式返回：
 {{
@@ -941,8 +944,8 @@ class COCService:
   "age": 数字,
   "background": "背景故事",
   "equipment": [
-    {{"name": "装备名", "description": "简介", "damage": "1D6", "range": "10m"}},
-    {{"name": "手电筒", "description": "便携照明工具", "damage": "—", "range": "—"}}
+    {{"name": "装备名", "description": "简介", "damage": "1D6"}},
+    {{"name": "手电筒", "description": "便携照明工具", "damage": "—"}}
   ]
 }}
 只返回JSON，不要其他内容。"""
@@ -972,9 +975,9 @@ class COCService:
                 "age": 30,
                 "background": f"一名经验丰富的{profession.get('name', '调查员')}，性格沉稳，善于观察。",
                 "equipment": [
-                    {"name": "手电筒", "description": "便携照明工具", "damage": "—", "range": "—"},
-                    {"name": "笔记本", "description": "记录线索的随身本", "damage": "—", "range": "—"},
-                    {"name": "钢笔", "description": "书写工具", "damage": "—", "range": "—"}
+                    {"name": "手电筒", "description": "便携照明工具", "damage": "—"},
+                    {"name": "笔记本", "description": "记录线索的随身本", "damage": "—"},
+                    {"name": "钢笔", "description": "书写工具", "damage": "—"}
                 ]
             }
 
