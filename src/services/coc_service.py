@@ -634,13 +634,18 @@ class COCService:
         skills_list = [{"name": name, "value": value} for name, value in all_skills.items()]
 
         # 返回角色确认页
+        char_name = background_data.get("name", "调查员")
+        profession_name = selected_profession.get("name", "调查员")
+
         content = {
+            "description": f"（{gm_name}翻阅着你的资料，满意地点了点头）\n"
+                           f"「{char_name}，{profession_name}——一个有故事的人。来，确认你的身份吧。」",
             "investigatorCard": {
                 "title": "人物卡",
-                "name": background_data.get("name", "调查员"),
+                "name": char_name,
                 "gender": background_data.get("gender", "男"),
                 "age": background_data.get("age", 30),
-                "profession": selected_profession.get("name", ""),
+                "profession": profession_name,
                 "background": background_data.get("background", "")
             },
             "skillList": {
@@ -719,7 +724,11 @@ class COCService:
         # primaryAttributes 转为数组格式 [{key, name, value}]，和 step 1/2 一致
         primary_display = primary.to_display_list()
 
+        char_name = investigator_card.get("name", "调查员")
+
         content = {
+            "description": f"（{gm_name}将角色卡卷起，系上红绳，递向你）\n"
+                           f"「准备好了，{char_name}。检查你的装备和属性——接下来，由你执笔。」",
             "equipmentList": {
                 "title": "随身装备",
                 "equipment": equipment_display

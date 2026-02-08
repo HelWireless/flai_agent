@@ -985,6 +985,7 @@ async def coc_chat(
     ```json
     {
         "content": {
+            "description": "（璃翻阅着你的资料，满意地点了点头）\n「张明远，考古学家——一个有故事的人。来，确认你的身份吧。」",
             "investigatorCard": {
                 "title": "人物卡",
                 "name": "张明远",
@@ -1018,6 +1019,7 @@ async def coc_chat(
     ```json
     {
         "content": {
+            "description": "（璃将角色卡卷起，系上红绳，递向你）\n「准备好了，张明远。检查你的装备和属性——接下来，由你执笔。」",
             "equipmentList": {
                 "title": "随身装备",
                 "equipment": [
@@ -1031,14 +1033,14 @@ async def coc_chat(
             "investigatorCard": {
                 "title": "人物属性摘要",
                 "attributes": [
-                    {"key": "STR", "name": "力量", "value": 60, "description": "衡量调查员纯粹身体力量"},
-                    {"key": "CON", "name": "体质", "value": 50, "description": "衡量调查员健康与强韧程度"},
-                    {"key": "DEX", "name": "敏捷", "value": 70, "description": "衡量调查员身体灵活性与速度"},
-                    {"key": "SIZ", "name": "体型", "value": 50, "description": "反映调查员身高与体重"},
-                    {"key": "INT", "name": "智力", "value": 40, "description": "衡量调查员的智慧、洞察与推理能力"},
-                    {"key": "POW", "name": "意志", "value": 80, "description": "衡量调查员的精神力量与魔法天赋"},
-                    {"key": "APP", "name": "外貌", "value": 60, "description": "衡量调查员的外表吸引力"},
-                    {"key": "EDU", "name": "教育", "value": 50, "description": "衡量调查员通过正规教育积累的知识"}
+                    {"key": "STR", "name": "力量", "value": 60},
+                    {"key": "CON", "name": "体质", "value": 50},
+                    {"key": "DEX", "name": "敏捷", "value": 70},
+                    {"key": "SIZ", "name": "体型", "value": 50},
+                    {"key": "INT", "name": "智力", "value": 40},
+                    {"key": "POW", "name": "意志", "value": 80},
+                    {"key": "APP", "name": "外貌", "value": 60},
+                    {"key": "EDU", "name": "教育", "value": 50}
                 ]
             },
             "selections": [
