@@ -627,6 +627,11 @@ class COCService:
         session.set_temp_data(temp)
         self._update_session_db(session)
 
+        # 合并职业技能+兴趣技能用于展示
+        selected_profession = temp.get("selected_profession", {})
+        interest_skills = temp.get("interest_skills", {})
+        all_skills = {**selected_profession.get("skill_points", {}), **interest_skills}
+
         # 返回角色确认页
         content = {
             "title": "角色确认",
@@ -635,8 +640,9 @@ class COCService:
                 "name": background_data.get("name", "调查员"),
                 "gender": background_data.get("gender", "男"),
                 "age": background_data.get("age", 30),
-                "profession": temp.get("selected_profession", {}).get("name", ""),
-                "background": background_data.get("background", "")
+                "profession": selected_profession.get("name", ""),
+                "background": background_data.get("background", ""),
+                "skills": all_skills
             },
             "selections": [
                 {"id": "confirm", "text": "确认角色"}
@@ -713,7 +719,6 @@ class COCService:
                 "title": "人物属性摘要",
                 "primaryAttributes": investigator_card.get("primaryAttributes", {}),
                 "secondaryAttributes": investigator_card.get("secondaryAttributes", {}),
-                "skills": investigator_card.get("skills", {}),
                 "background": investigator_card.get("background", ""),
                 "currentHP": investigator_card.get("currentHP", 0),
                 "currentMP": investigator_card.get("currentMP", 0),

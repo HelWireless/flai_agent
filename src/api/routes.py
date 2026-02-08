@@ -992,7 +992,8 @@ async def coc_chat(
                 "gender": "男",
                 "age": 32,
                 "profession": "考古学家",
-                "background": "出生于北京的书香门第，自幼对古代文明充满好奇。大学主修考古学，曾参与多次田野发掘..."
+                "background": "出生于北京的书香门第，自幼对古代文明充满好奇。大学主修考古学，曾参与多次田野发掘...",
+                "skills": {"考古学": 60, "侦查": 50, "图书馆使用": 60, "攀爬": 50, "历史": 40, "导航": 40, "聆听": 20, "游泳": 20}
             },
             "selections": [
                 {"id": "confirm", "text": "确认角色"}
@@ -1020,7 +1021,6 @@ async def coc_chat(
                 "title": "人物属性摘要",
                 "primaryAttributes": {"STR": 60, "CON": 50, "DEX": 70, "SIZ": 50, "INT": 40, "POW": 80, "APP": 60, "EDU": 50},
                 "secondaryAttributes": {"HP": 10, "MP": 16, "SAN": 80, "LUCK": 55, "DB": 0, "Build": 110, "MOV": 8},
-                "skills": {"考古学": 60, "侦查": 60, "攀爬": 70, "图书馆使用": 60},
                 "background": "一名经验丰富的考古学家，性格沉稳，善于观察。",
                 "currentHP": 10,
                 "currentMP": 16,
