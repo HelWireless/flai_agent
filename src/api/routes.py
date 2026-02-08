@@ -985,7 +985,7 @@ async def coc_chat(
     ```json
     {
         "content": {
-            "description": "（璃微微前倾，语气温和）\n「这是张明远的故事——但你可以改写开头。」",
+            "description": "（璃微微前倾，语气温和）\\n「这是张明远的故事——但你可以改写开头。」",
             "investigatorCard": {
                 "title": "人物卡",
                 "name": "张明远",
@@ -1019,7 +1019,7 @@ async def coc_chat(
     ```json
     {
         "content": {
-            "description": "（璃将角色卡卷起，系上红绳，递向你）\n「准备好了，张明远。检查你的装备和属性——接下来，由你执笔。」",
+            "description": "（璃将角色卡卷起，系上红绳，递向你）\\n「准备好了，张明远。检查你的装备和属性——接下来，由你执笔。」",
             "equipmentList": {
                 "title": "随身装备",
                 "equipment": [
