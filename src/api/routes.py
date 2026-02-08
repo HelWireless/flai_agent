@@ -971,9 +971,9 @@ async def coc_chat(
                 }
             ],
             "selections": [
-                {"id": "prof_01", "text": "选择 考古学家"},
-                {"id": "prof_02", "text": "选择 作家"},
-                {"id": "prof_03", "text": "选择 私家侦探"},
+                {"id": "prof_01", "text": "考古学家"},
+                {"id": "prof_02", "text": "作家"},
+                {"id": "prof_03", "text": "私家侦探"},
                 {"id": "reroll", "text": "重新随机职业"}
             ]
         },

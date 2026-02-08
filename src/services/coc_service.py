@@ -532,7 +532,7 @@ class COCService:
         # 构建选择项（prof_01~prof_N 作为 id）
         selections = []
         for i, p in enumerate(professions):
-            selections.append({"id": f"prof_{i + 1:02d}", "text": f"选择 {p.name}"})
+            selections.append({"id": f"prof_{i + 1:02d}", "text": p.name})
         selections.append({"id": "reroll", "text": "重新随机职业"})
 
         content = {
