@@ -5,9 +5,9 @@
 
                         ┌─reroll─┐      ┌─reroll─┐
                         │        │      │        │
-    action=start → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
-        背景介绍          属性    次级属性   职业    装备+人物卡  游戏开始
-        (md)          (JSON)    (JSON)   (JSON)    (JSON)      (md)
+    action=start → step=1 → step=2 → step=3 → step=4 → step=5 → step=6 → 持续对话
+    背景介绍       属性      次级属性   职业     角色确认  装备+属性摘要 游戏开始
+    (md)         (JSON)    (JSON)   (JSON)    (JSON)    (JSON)      (md)
 
 前端交互方式：
 - extParam.action="start" → 开始游戏，返回背景介绍
@@ -15,7 +15,8 @@
 - step + extParam.selection=confirm → 确认当前 step，进入下一步
 - step + extParam.selection=reroll（或 selection 为空）→ 重新 roll
 - step=3 发送 extParam.selection=prof_01~prof_N → 选择职业，进入 step 4
-- step=4 装备+人物卡，只有 confirm（不可 reroll）
+- step=4 角色确认，可发 message 修改姓名/性别/年龄，confirm 进入 step 5
+- step=5 随身装备+人物属性摘要，只有 confirm
 - extParam.action="save"/"load" → 存档/读档
 - 响应不返回 step 字段
 """
@@ -52,7 +53,8 @@ class GameStatus:
     STEP1_ATTRIBUTES = "step1_attributes"
     STEP2_SECONDARY = "step2_secondary"
     STEP3_PROFESSION = "step3_profession"
-    STEP4_CARD = "step4_card"       # 装备 + 人物卡
+    STEP4_CHARACTER = "step4_character"   # 角色确认（姓名/性别/年龄/背景）
+    STEP5_CARD = "step5_card"             # 随身装备 + 人物属性摘要
     PLAYING = "playing"
     ENDED = "ended"
     # 兼容旧数据
@@ -217,9 +219,12 @@ class COCService:
         - step=3: 职业选择
           - selection=null/reroll → 重新 roll 职业
           - selection=prof_01~prof_N → 选择职业，进入 step 4
-        - step=4: 装备+人物卡（只有 confirm）
-          - selection=confirm → 确认，进入 step 5
-        - step=5: 游戏对话
+        - step=4: 角色确认（姓名/性别/年龄/背景）
+          - message → 修改角色信息
+          - selection=confirm → 确认角色，进入 step 5
+        - step=5: 随身装备+人物属性摘要（只有 confirm）
+          - selection=confirm → 确认，进入 step 6
+        - step=6: 游戏对话
         - action=save: 存档
         - action=load: 读档
         """
@@ -273,7 +278,9 @@ class COCService:
             elif step == "4":
                 return await self._handle_step4(session, request, selection)
             elif step == "5":
-                return await self._step5_playing(session, request)
+                return await self._handle_step5(session, request, selection)
+            elif step == "6":
+                return await self._step6_playing(session, request)
             else:
                 return self._error_response(f"无效的游戏阶段: {step}")
 
@@ -374,12 +381,12 @@ class COCService:
         """
         处理 step=3 请求：
         - selection=reroll 或空 → 重新 roll 职业
-        - selection=prof_01~prof_N → 选择职业，进入 step 4（装备+人物卡）
+        - selection=prof_01~prof_N → 选择职业，进入 step 4（角色确认）
         """
         if not selection or selection == "reroll":
             return await self._step3_profession(session, request)
         else:
-            return await self._step4_character_card(session, request, selection)
+            return await self._step4_character(session, request, selection)
 
     async def _handle_step4(
         self,
@@ -389,13 +396,26 @@ class COCService:
     ) -> Dict[str, Any]:
         """
         处理 step=4 请求：
-        - selection=confirm → 确认人物卡，进入 step 5（开始游戏）
+        - selection=confirm → 确认角色，进入 step 5（随身装备+属性摘要）
+        - 其他（含 message）→ 修改角色信息后重新展示
         """
         if selection == "confirm":
-            return await self._step5_playing(session, request)
+            return await self._step5_equipment_summary(session, request)
         else:
-            # step 4 只有 confirm，其他值也当 confirm 处理
-            return await self._step5_playing(session, request)
+            # 用户发 message 修改姓名/性别/年龄，重新展示角色确认页
+            return await self._step4_character(session, request)
+
+    async def _handle_step5(
+        self,
+        session: COCGameState,
+        request: IWChatRequest,
+        selection: str
+    ) -> Dict[str, Any]:
+        """
+        处理 step=5 请求：
+        - selection=confirm → 确认，进入 step 6（开始游戏）
+        """
+        return await self._step6_playing(session, request)
 
     # ==================== Step 1: 常规属性分配 ====================
 
@@ -524,66 +544,132 @@ class COCService:
 
         return self._build_response(content=content)
 
-    # ==================== Step 4: 装备 + 人物卡（只有确认）====================
+    # ==================== Step 4: 角色确认（姓名/性别/年龄/背景）====================
 
-    async def _step4_character_card(
+    async def _step4_character(
         self,
         session: COCGameState,
         request: IWChatRequest,
         profession_id: str = ""
     ) -> Dict[str, Any]:
         """
-        Step 4: 选择职业后，调用 LLM 生成角色背景和装备，组装人物卡。
-        返回装备 + 人物卡，只有确认按钮（不可 reroll）。
+        Step 4: 选择职业后，调用 LLM 生成角色信息，展示角色确认页。
+        用户可通过 message 修改姓名/性别/年龄，confirm 后进入 step 5。
 
-        profession_id 格式为 prof_01 ~ prof_N，对应 step=3 返回的职业列表索引。
+        首次进入：profession_id 传入，调 LLM 生成角色。
+        修改模式：profession_id 为空，从 temp 读取已有数据并根据 message 修改。
         """
         temp = session.get_temp_data()
         gm_name = temp.get("gm_name", "GM")
-        professions_data = temp.get("professions", [])
+        background_data = temp.get("background_data")
 
-        # 获取职业 ID
-        if not profession_id:
-            ext_param = request.ext_param or {}
-            profession_id = ext_param.get("selection", "").strip()
+        # 首次进入（从 step 3 选完职业过来）
+        if profession_id:
+            professions_data = temp.get("professions", [])
 
-        if not profession_id:
-            ids = [f"prof_{i + 1:02d}" for i in range(len(professions_data))]
-            return self._error_response(f"请在 extParam.selection 中传入职业ID，可选：{', '.join(ids)}")
+            # 根据 prof_XX 解析索引
+            selected_profession = None
+            if profession_id.startswith("prof_"):
+                try:
+                    idx = int(profession_id.replace("prof_", "")) - 1
+                    if 0 <= idx < len(professions_data):
+                        selected_profession = professions_data[idx]
+                except (ValueError, IndexError):
+                    pass
 
-        # 根据 prof_XX 解析索引
-        selected_profession = None
-        if profession_id.startswith("prof_"):
-            try:
-                idx = int(profession_id.replace("prof_", "")) - 1
-                if 0 <= idx < len(professions_data):
-                    selected_profession = professions_data[idx]
-            except (ValueError, IndexError):
-                pass
+            if not selected_profession:
+                ids = [f"prof_{i + 1:02d}" for i in range(len(professions_data))]
+                return self._error_response(f"未找到职业 '{profession_id}'，可选：{', '.join(ids)}")
 
-        if not selected_profession:
-            ids = [f"prof_{i + 1:02d}" for i in range(len(professions_data))]
-            return self._error_response(f"未找到职业 '{profession_id}'，可选：{', '.join(ids)}")
+            # 生成兴趣技能
+            self.generator = COCGenerator()
+            interest_skills = self.generator.roll_interest_skills(
+                selected_profession.get("skills", [])
+            )
 
-        # 生成兴趣技能
-        self.generator = COCGenerator()
-        interest_skills = self.generator.roll_interest_skills(
-            selected_profession.get("skills", [])
-        )
+            temp["selected_profession"] = selected_profession
+            temp["interest_skills"] = interest_skills
 
-        temp["selected_profession"] = selected_profession
-        temp["interest_skills"] = interest_skills
+            # 调用 LLM 生成角色背景故事和装备
+            background_data = await self._generate_background_data(
+                session, selected_profession, temp
+            )
+            temp["background_data"] = background_data
 
-        # 调用 LLM 生成角色背景故事和装备
-        background_data = await self._generate_background_data(
-            session, selected_profession, temp
-        )
-        temp["background_data"] = background_data
+        if not background_data:
+            return self._error_response("请先完成职业选择（step=3）")
+
+        # 处理 message 修改（姓名/性别/年龄）
+        message = request.message.strip() if request.message else ""
+        if message and session.game_status == GameStatus.STEP4_CHARACTER:
+            # 简单解析修改请求
+            if "名" in message or "叫" in message:
+                # 提取最后出现的非空名字部分
+                for keyword in ["改名为", "改名", "名字改为", "名字改成", "名字是", "名叫", "叫"]:
+                    if keyword in message:
+                        new_name = message.split(keyword)[-1].strip().rstrip("。，！")
+                        if new_name:
+                            background_data["name"] = new_name
+                            break
+            if "男" in message:
+                background_data["gender"] = "男"
+            elif "女" in message:
+                background_data["gender"] = "女"
+            # 年龄修改
+            import re
+            age_match = re.search(r'(\d{2})\s*岁', message)
+            if age_match:
+                background_data["age"] = int(age_match.group(1))
+
+            temp["background_data"] = background_data
+
+        session.game_status = GameStatus.STEP4_CHARACTER
+        session.set_temp_data(temp)
+        self._update_session_db(session)
+
+        # 返回角色确认页
+        content = {
+            "title": "角色确认",
+            "description": f"（{gm_name}翻阅着你的资料）以下是你的调查员信息，可以通过输入消息修改姓名、性别和年龄：",
+            "character": {
+                "name": background_data.get("name", "调查员"),
+                "gender": background_data.get("gender", "男"),
+                "age": background_data.get("age", 30),
+                "profession": temp.get("selected_profession", {}).get("name", ""),
+                "background": background_data.get("background", "")
+            },
+            "selections": [
+                {"id": "confirm", "text": "确认角色"}
+            ]
+        }
+
+        return self._build_response(content=content)
+
+    # ==================== Step 5: 随身装备 + 人物属性摘要（只有确认）====================
+
+    async def _step5_equipment_summary(
+        self,
+        session: COCGameState,
+        request: IWChatRequest
+    ) -> Dict[str, Any]:
+        """
+        Step 5: 确认角色后，组装完整人物卡，展示随身装备 + 人物属性摘要。
+        只有 confirm 按钮。
+        """
+        temp = session.get_temp_data()
+        gm_name = temp.get("gm_name", "GM")
+        selected_profession = temp.get("selected_profession", {})
+        interest_skills = temp.get("interest_skills", [])
+        background_data = temp.get("background_data", {})
+
+        if not selected_profession or not background_data:
+            return self._error_response("请先完成角色确认（step=4）")
 
         # 组装完整人物卡
         primary = PrimaryAttributes(**temp.get("primary_attributes", {}))
         secondary = SecondaryAttributes(**temp.get("secondary_attributes", {}))
 
+        self.generator = COCGenerator()
         investigator_card = self.generator.generate_investigator_card(
             primary=primary,
             secondary=secondary,
@@ -597,11 +683,11 @@ class COCService:
         )
 
         session.investigator_card = investigator_card
-        session.game_status = GameStatus.STEP4_CARD
+        session.game_status = GameStatus.STEP5_CARD
         session.set_temp_data(temp)
         self._update_session_db(session)
 
-        # 构建装备清单（name/description/damage）
+        # 构建装备清单
         raw_equipment = background_data.get("equipment", [])
         equipment_display = []
         for eq in raw_equipment:
@@ -620,11 +706,11 @@ class COCService:
 
         content = {
             "equipmentList": {
-                "title": "装备清单",
+                "title": "随身装备",
                 "equipment": equipment_display
             },
             "investigatorCard": {
-                "title": "角色属性摘要",
+                "title": "人物属性摘要",
                 "primaryAttributes": investigator_card.get("primaryAttributes", {}),
                 "secondaryAttributes": investigator_card.get("secondaryAttributes", {}),
                 "skills": investigator_card.get("skills", {}),
@@ -640,18 +726,18 @@ class COCService:
 
         return self._build_response(content=content)
 
-    # ==================== Step 5: 游戏对话 ====================
+    # ==================== Step 6: 游戏对话 ====================
 
-    async def _step5_playing(
+    async def _step6_playing(
         self,
         session: COCGameState,
         request: IWChatRequest
     ) -> Dict[str, Any]:
         """
-        Step 5: 确认人物卡并开始游戏 / 持续游戏对话 (markdown)
+        Step 6: 确认后开始游戏 / 持续游戏对话 (markdown)
 
-        - 首次发送 step=5（game_status != playing）：开始游戏，返回第一个对话
-        - 后续发送 step=5 + message：继续游戏对话
+        - 首次发送 step=6（game_status != playing）：开始游戏，返回第一个对话
+        - 后续发送 step=6 + message：继续游戏对话
         """
         temp = session.get_temp_data()
         gm_name = temp.get("gm_name", "GM")

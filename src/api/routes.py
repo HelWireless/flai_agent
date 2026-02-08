@@ -640,17 +640,19 @@ async def coc_chat(
     ```
                               ┌─reroll─┐       ┌─reroll─┐
                               │        │       │        │
-    action=start → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
-    背景介绍       属性分配   次级属性   职业选择  装备+人物卡  游戏开始
-    (markdown)    (JSON)    (JSON)    (JSON)    (JSON)     (markdown)
+    action=start → step=1 → step=2 → step=3 → step=4 → step=5 → step=6 → 持续对话
+    背景介绍       属性分配   次级属性   职业选择  角色确认  装备+属性摘要  游戏开始
+    (markdown)    (JSON)    (JSON)    (JSON)    (JSON)    (JSON)      (markdown)
     ```
     
     ## 核心机制
     
-    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`select_character` 进入角色创建（也用于换人，会清除旧角色数据）、`save` 存档、`load` 读档
+    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`select_character` 角色创建/换人、`save` 存档、`load` 读档
     2. **step + extParam.selection 控制游戏流程**：selection 传 `confirm`/`reroll`/职业ID
     3. **职业 ID 格式为 `prof_01`~`prof_N`**：对应 step=3 返回的职业列表索引
-    4. **step=5 为游戏阶段**：首次发送开始游戏，之后持续发送 step=5 + message 进行对话
+    4. **step=4 角色确认**：可发 message 修改姓名/性别/年龄，confirm 进入 step 5
+    5. **step=5 随身装备+人物属性摘要**：只有 confirm
+    6. **step=6 为游戏阶段**：首次发送开始游戏，之后持续发送 step=6 + message 进行对话
     
     ## 请求参数
     
@@ -661,7 +663,7 @@ async def coc_chat(
     | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
     | step | str | 是 | 游戏阶段（见下方说明） |
-    | message | str | 是 | step=5 传游戏输入，其余可空串 |
+    | message | str | 是 | step=4 可传修改信息，step=6 传游戏输入，其余可空串 |
     | saveId | str | 否 | 存档ID，读档时必填 |
     | extParam | object | 是 | 扩展参数（action/selection，见下方说明） |
     | stream | bool | 否 | true=SSE（默认），false=同步JSON |
@@ -675,8 +677,9 @@ async def coc_chat(
     | 1 | 属性分配 | `selection: "confirm"/"reroll"/空` | JSON（常规属性 + 选择器） |
     | 2 | 次级属性 | `selection: "confirm"/"reroll"/空` | JSON（次级属性 + 选择器） |
     | 3 | 职业选择 | `selection: "prof_01"~"prof_N"/"reroll"/空` | JSON（职业选项） |
-    | 4 | 装备+人物卡 | `selection: "confirm"`（只有确认） | JSON（装备+人物卡） |
-    | 5 | 游戏对话 | — | markdown（游戏叙事） |
+    | 4 | 角色确认 | `selection: "confirm"` 或发 `message` 修改 | JSON（角色信息） |
+    | 5 | 随身装备+属性摘要 | `selection: "confirm"`（只有确认） | JSON（装备+属性） |
+    | 6 | 游戏对话 | — | markdown（游戏叙事） |
     
     ## extParam 扩展参数说明
     
@@ -698,9 +701,11 @@ async def coc_chat(
     | 1 | `"reroll"` 或空 | 重新 roll 属性 |
     | 2 | `"confirm"` | 确认次级属性，返回职业选项（相当于进入 step 3） |
     | 2 | `"reroll"` 或空 | 返回 step 1 重新分配常规属性 |
-    | 3 | `"prof_01"`~`"prof_N"` | 选择职业，返回装备+人物卡（相当于进入 step 4） |
+    | 3 | `"prof_01"`~`"prof_N"` | 选择职业，返回角色确认（相当于进入 step 4） |
     | 3 | `"reroll"` 或空 | 重新 roll 职业 |
-    | 4 | `"confirm"` | 确认人物卡，开始游戏（相当于进入 step 5） |
+    | 4 | `"confirm"` | 确认角色，返回随身装备+属性摘要（相当于进入 step 5） |
+    | 4 | 发 `message` | 修改姓名/性别/年龄，重新展示角色确认页 |
+    | 5 | `"confirm"` | 确认装备+属性，开始游戏（相当于进入 step 6） |
     
     ## 请求示例
     
@@ -808,7 +813,7 @@ async def coc_chat(
     }
     ```
     
-    ### 9. 确认人物卡，开始游戏（step=4 + selection=confirm）
+    ### 9. 确认角色（step=4 + selection=confirm → 随身装备+属性摘要）
     ```json
     {
         "userId": "1000001",
@@ -821,19 +826,19 @@ async def coc_chat(
     }
     ```
     
-    ### 10. 游戏中对话（step=5 + message）
+    ### 10. 修改角色信息（step=4 + message）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_coc",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
-        "step": "5",
-        "message": "我想调查这个房间"
+        "step": "4",
+        "message": "名字改为李明远，女，28岁"
     }
     ```
     
-    ### 11. 存档（extParam 传 action + saveId）
+    ### 11. 确认装备+属性，开始游戏（step=5 + selection=confirm）
     ```json
     {
         "userId": "1000001",
@@ -842,12 +847,37 @@ async def coc_chat(
         "gmId": "gm_02",
         "step": "5",
         "message": "",
+        "extParam": {"selection": "confirm"}
+    }
+    ```
+    
+    ### 12. 游戏中对话（step=6 + message）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "6",
+        "message": "我想调查这个房间"
+    }
+    ```
+    
+    ### 13. 存档（extParam 传 action + saveId）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_coc",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "6",
+        "message": "",
         "extParam": {"action": "save", "saveId": "save_abc123"}
     }
     ```
     > `saveId` 由前端/Java 层生成并传入，后端写入 `t_coc_save_slot` 表
     
-    ### 12. 读档（extParam 传 action + saveId）
+    ### 14. 读档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -951,7 +981,28 @@ async def coc_chat(
     }
     ```
     
-    ### step=4 装备清单+角色属性摘要（JSON，只有确认按钮）
+    ### step=4 角色确认（JSON，可发 message 修改姓名/性别/年龄）
+    ```json
+    {
+        "content": {
+            "title": "角色确认",
+            "description": "（璃翻阅着你的资料）以下是你的调查员信息，可以通过输入消息修改姓名、性别和年龄：",
+            "character": {
+                "name": "张明远",
+                "gender": "男",
+                "age": 32,
+                "profession": "考古学家",
+                "background": "出生于北京的书香门第，自幼对古代文明充满好奇。大学主修考古学，曾参与多次田野发掘..."
+            },
+            "selections": [
+                {"id": "confirm", "text": "确认角色"}
+            ]
+        },
+        "complete": false
+    }
+    ```
+    
+    ### step=5 随身装备+人物属性摘要（JSON，只有确认按钮）
     ```json
     {
         "content": {
@@ -966,7 +1017,7 @@ async def coc_chat(
                 ]
             },
             "investigatorCard": {
-                "title": "角色属性摘要",
+                "title": "人物属性摘要",
                 "primaryAttributes": {"STR": 60, "CON": 50, "DEX": 70, "SIZ": 50, "INT": 40, "POW": 80, "APP": 60, "EDU": 50},
                 "secondaryAttributes": {"HP": 10, "MP": 16, "SAN": 80, "LUCK": 55, "DB": 0, "Build": 110, "MOV": 8},
                 "skills": {"考古学": 60, "侦查": 60, "攀爬": 70, "图书馆使用": 60},
@@ -983,7 +1034,7 @@ async def coc_chat(
     }
     ```
     
-    ### step=5 游戏对话（markdown）
+    ### step=6 游戏对话（markdown）
     ```json
     {
         "content": "**【01轮 / 01回合】**\\n\\n你仔细打量着这个昏暗的房间...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
