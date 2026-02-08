@@ -638,8 +638,8 @@ class COCService:
         profession_name = selected_profession.get("name", "调查员")
 
         content = {
-            "description": f"（{gm_name}微微前倾，语气温和）\n"
-                           f"「这是{char_name}的故事——但你可以改写开头。」",
+            "description": background_data.get("character_narration",
+                           f"（{gm_name}微微前倾，语气温和）\n「这是{char_name}的故事——但你可以改写开头。」"),
             "investigatorCard": {
                 "title": "人物卡",
                 "name": char_name,
@@ -727,8 +727,8 @@ class COCService:
         char_name = investigator_card.get("name", "调查员")
 
         content = {
-            "description": f"（{gm_name}将角色卡卷起，系上红绳，递向你）\n"
-                           f"「准备好了，{char_name}。检查你的装备和属性——接下来，由你执笔。」",
+            "description": background_data.get("equipment_narration",
+                           f"（{gm_name}将角色卡卷起，系上红绳，递向你）\n「准备好了，{char_name}。检查你的装备和属性——接下来，由你执笔。」"),
             "equipmentList": {
                 "title": "随身装备",
                 "equipment": equipment_display
@@ -1012,11 +1012,15 @@ class COCService:
         profession: Dict,
         temp: Dict
     ) -> Dict[str, Any]:
-        """调用 LLM 生成角色背景故事和装备"""
+        """调用 LLM 生成角色背景故事、装备和 GM 旁白"""
 
         primary = temp.get("primary_attributes", {})
+        gm_name = temp.get("gm_name", "GM")
+        gm_traits = temp.get("gm_traits", "神秘深邃")
 
-        prompt = f"""你是一个克苏鲁跑团游戏的角色生成器。请为以下调查员生成背景故事和装备。
+        prompt = f"""你是一个克苏鲁跑团游戏的角色生成器。你同时扮演名为"{gm_name}"的GM，性格特质：{gm_traits}。
+
+请为以下调查员生成背景故事、装备和两段GM旁白。
 
 职业：{profession.get('name', '调查员')}
 职业技能：{', '.join(profession.get('skills', []))}
@@ -1040,6 +1044,8 @@ class COCService:
    - name: 装备名称
    - description: 装备简介（一句话）
    - damage: 伤害值（武器填如"1D6"，非武器填"—"）
+6. 角色确认旁白（GM用括号描写动作神态+一句台词，引导玩家确认或修改角色，50字以内）
+7. 装备确认旁白（GM用括号描写动作神态+一句台词，将角色卡交给玩家，暗示冒险即将开始，50字以内）
 
 请以JSON格式返回：
 {{
@@ -1050,7 +1056,9 @@ class COCService:
   "equipment": [
     {{"name": "装备名", "description": "简介", "damage": "1D6"}},
     {{"name": "手电筒", "description": "便携照明工具", "damage": "—"}}
-  ]
+  ],
+  "character_narration": "（{gm_name}微微前倾）「这是他的故事——但你可以改写开头。」",
+  "equipment_narration": "（{gm_name}将角色卡卷起，递向你）「检查你的装备——接下来，由你执笔。」"
 }}
 只返回JSON，不要其他内容。"""
 
@@ -1092,7 +1100,9 @@ class COCService:
                     {"name": "手电筒", "description": "便携照明工具", "damage": "—"},
                     {"name": "笔记本", "description": "记录线索的随身本", "damage": "—"},
                     {"name": "钢笔", "description": "书写工具", "damage": "—"}
-                ]
+                ],
+                "character_narration": f"（{gm_name}微微前倾，语气温和）\n「这是他的故事——但你可以改写开头。」",
+                "equipment_narration": f"（{gm_name}将角色卡卷起，系上红绳，递向你）\n「检查你的装备和属性——接下来，由你执笔。」"
             }
 
     def _build_game_system_prompt(
