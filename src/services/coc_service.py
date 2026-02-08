@@ -638,8 +638,8 @@ class COCService:
         profession_name = selected_profession.get("name", "调查员")
 
         content = {
-            "description": f"（{gm_name}翻阅着你的资料，满意地点了点头）\n"
-                           f"「{char_name}，{profession_name}——一个有故事的人。来，确认你的身份吧。」",
+            "description": f"（{gm_name}微微前倾，语气温和）\n"
+                           f"「这是{char_name}的故事——但你可以改写开头。」",
             "investigatorCard": {
                 "title": "人物卡",
                 "name": char_name,

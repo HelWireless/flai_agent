@@ -985,7 +985,7 @@ async def coc_chat(
     ```json
     {
         "content": {
-            "description": "（璃翻阅着你的资料，满意地点了点头）\n「张明远，考古学家——一个有故事的人。来，确认你的身份吧。」",
+            "description": "（璃微微前倾，语气温和）\n「这是张明远的故事——但你可以改写开头。」",
             "investigatorCard": {
                 "title": "人物卡",
                 "name": "张明远",
