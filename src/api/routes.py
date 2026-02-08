@@ -985,9 +985,8 @@ async def coc_chat(
     ```json
     {
         "content": {
-            "title": "角色确认",
-            "description": "（璃翻阅着你的资料）以下是你的调查员信息，可以通过输入消息修改姓名、性别和年龄：",
-            "character": {
+            "investigatorCard": {
+                "title": "人物卡",
                 "name": "张明远",
                 "gender": "男",
                 "age": 32,

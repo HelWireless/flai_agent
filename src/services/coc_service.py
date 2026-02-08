@@ -635,9 +635,8 @@ class COCService:
 
         # 返回角色确认页
         content = {
-            "title": "角色确认",
-            "description": f"（{gm_name}翻阅着你的资料）以下是你的调查员信息，可以通过输入消息修改姓名、性别和年龄：",
-            "character": {
+            "investigatorCard": {
+                "title": "人物卡",
                 "name": background_data.get("name", "调查员"),
                 "gender": background_data.get("gender", "男"),
                 "age": background_data.get("age", 30),
