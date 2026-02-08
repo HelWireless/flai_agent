@@ -706,7 +706,7 @@ class COCService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen3_coder_plus"],
                 parse_json=False,
                 response_format="text"
             )
@@ -871,7 +871,7 @@ class COCService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen3_coder_plus"],
                 parse_json=False,
                 response_format="text"
             )
@@ -950,7 +950,7 @@ class COCService:
         try:
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen3_max"],
+                model_pool=["qwen3_coder_plus"],
                 parse_json=True,
                 response_format="json_object"
             )
