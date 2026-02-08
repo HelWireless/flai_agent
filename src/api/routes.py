@@ -992,8 +992,20 @@ async def coc_chat(
                 "gender": "男",
                 "age": 32,
                 "profession": "考古学家",
-                "background": "出生于北京的书香门第，自幼对古代文明充满好奇。大学主修考古学，曾参与多次田野发掘...",
-                "skills": {"考古学": 60, "侦查": 50, "图书馆使用": 60, "攀爬": 50, "历史": 40, "导航": 40, "聆听": 20, "游泳": 20}
+                "background": "出生于北京的书香门第，自幼对古代文明充满好奇。大学主修考古学，曾参与多次田野发掘..."
+            },
+            "skillList": {
+                "title": "技能清单",
+                "skills": [
+                    {"name": "考古学", "value": 60},
+                    {"name": "侦查", "value": 50},
+                    {"name": "图书馆使用", "value": 60},
+                    {"name": "攀爬", "value": 50},
+                    {"name": "历史", "value": 40},
+                    {"name": "导航", "value": 40},
+                    {"name": "聆听", "value": 20},
+                    {"name": "游泳", "value": 20}
+                ]
             },
             "selections": [
                 {"id": "confirm", "text": "确认角色"}

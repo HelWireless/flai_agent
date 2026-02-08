@@ -627,10 +627,11 @@ class COCService:
         session.set_temp_data(temp)
         self._update_session_db(session)
 
-        # 合并职业技能+兴趣技能用于展示
+        # 合并职业技能+兴趣技能，构建技能清单
         selected_profession = temp.get("selected_profession", {})
         interest_skills = temp.get("interest_skills", {})
         all_skills = {**selected_profession.get("skill_points", {}), **interest_skills}
+        skills_list = [{"name": name, "value": value} for name, value in all_skills.items()]
 
         # 返回角色确认页
         content = {
@@ -641,8 +642,11 @@ class COCService:
                 "gender": background_data.get("gender", "男"),
                 "age": background_data.get("age", 30),
                 "profession": selected_profession.get("name", ""),
-                "background": background_data.get("background", ""),
-                "skills": all_skills
+                "background": background_data.get("background", "")
+            },
+            "skillList": {
+                "title": "技能清单",
+                "skills": skills_list
             },
             "selections": [
                 {"id": "confirm", "text": "确认角色"}
