@@ -895,7 +895,7 @@ async def coc_chat(
     
     响应只有 2 个字段：`content` 和 `complete`
     
-    - `content`：选择阶段(step 1-4)为 JSON 对象，游戏阶段(step 0,5)为 markdown 字符串
+    - `content`：选择阶段(step 1-5)为 JSON 对象，游戏阶段(step 0,6)为 markdown 字符串
     - `complete`：游戏是否结束
     
     ### step=0 背景介绍（markdown）
