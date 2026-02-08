@@ -1039,11 +1039,7 @@ async def coc_chat(
                     {"key": "POW", "name": "意志", "value": 80, "description": "衡量调查员的精神力量与魔法天赋"},
                     {"key": "APP", "name": "外貌", "value": 60, "description": "衡量调查员的外表吸引力"},
                     {"key": "EDU", "name": "教育", "value": 50, "description": "衡量调查员通过正规教育积累的知识"}
-                ],
-                "background": "一名经验丰富的考古学家，性格沉稳，善于观察。",
-                "currentHP": 10,
-                "currentMP": 16,
-                "currentSAN": 80
+                ]
             },
             "selections": [
                 {"id": "confirm", "text": "确认，开始游戏"}

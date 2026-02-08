@@ -726,11 +726,7 @@ class COCService:
             },
             "investigatorCard": {
                 "title": "人物属性摘要",
-                "attributes": primary_display,
-                "background": investigator_card.get("background", ""),
-                "currentHP": investigator_card.get("currentHP", 0),
-                "currentMP": investigator_card.get("currentMP", 0),
-                "currentSAN": investigator_card.get("currentSAN", 0)
+                "attributes": primary_display
             },
             "selections": [
                 {"id": "confirm", "text": "确认，开始游戏"}
