@@ -1021,7 +1021,7 @@ async def coc_chat(
             "equipmentList": {
                 "title": "随身装备",
                 "equipment": [
-                    {"name": "左轮手枪", "description": "可靠的.38口径左轮手枪\n伤害：1D10"},
+                    {"name": "左轮手枪", "description": "可靠的.38口径左轮手枪\\n伤害：1D10"},
                     {"name": "考古工具包", "description": "包含刷子、铲子等田野工具"},
                     {"name": "手电筒", "description": "便携照明工具"},
                     {"name": "笔记本", "description": "记录线索的随身本"},
