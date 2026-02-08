@@ -6,15 +6,16 @@
                           ┌─reroll─┐       ┌─reroll─┐
                           │        │       │        │
     action=start → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
-    背景介绍       属性      次级属性   职业      人物卡     游戏开始
-    (md)          (JSON)    (JSON)   (JSON)    (JSON)     (md)
+    背景介绍       属性      次级属性   职业    装备+人物卡  游戏开始
+    (md)          (JSON)    (JSON)   (JSON)    (JSON)      (md)
 
 前端交互方式：
 - extParam.action="start" → 开始游戏，返回背景介绍
-- extParam.action="select_character" → 进入角色创建（属性分配）
+- extParam.action="select_character" → 进入角色创建/换人（属性分配）
 - step + extParam.selection=confirm → 确认当前 step，进入下一步
 - step + extParam.selection=reroll（或 selection 为空）→ 重新 roll
 - step=3 发送 extParam.selection=prof_01~prof_N → 选择职业，进入 step 4
+- step=4 装备+人物卡，只有 confirm（不可 reroll）
 - extParam.action="save"/"load" → 存档/读档
 - 响应不返回 step 字段
 """
@@ -51,7 +52,7 @@ class GameStatus:
     STEP1_ATTRIBUTES = "step1_attributes"
     STEP2_SECONDARY = "step2_secondary"
     STEP3_PROFESSION = "step3_profession"
-    STEP4_CARD = "step4_card"
+    STEP4_CARD = "step4_card"       # 装备 + 人物卡
     PLAYING = "playing"
     ENDED = "ended"
     # 兼容旧数据
@@ -206,7 +207,7 @@ class COCService:
         step + extParam.selection 控制游戏流程：
 
         - action=start: 开始游戏，返回背景
-        - action=select_character: 进入角色创建，返回属性分配
+        - action=select_character: 进入角色创建/换人，返回属性分配
         - step=1: 属性分配
           - selection=null/reroll → 重新 roll 属性
           - selection=confirm → 确认属性，进入 step 2
@@ -216,8 +217,7 @@ class COCService:
         - step=3: 职业选择
           - selection=null/reroll → 重新 roll 职业
           - selection=prof_01~prof_N → 选择职业，进入 step 4
-        - step=4: 人物卡总结
-          - selection=null/reroll → 返回 step 3 重新选择
+        - step=4: 装备+人物卡（只有 confirm）
           - selection=confirm → 确认，进入 step 5
         - step=5: 游戏对话
         - action=save: 存档
@@ -374,13 +374,11 @@ class COCService:
         """
         处理 step=3 请求：
         - selection=reroll 或空 → 重新 roll 职业
-        - selection=prof_01~prof_N → 选择职业，进入 step 4（返回人物卡）
+        - selection=prof_01~prof_N → 选择职业，进入 step 4（装备+人物卡）
         """
         if not selection or selection == "reroll":
-            # 重新 roll 职业
             return await self._step3_profession(session, request)
         else:
-            # 根据 prof_XX id 查找对应职业
             return await self._step4_character_card(session, request, selection)
 
     async def _handle_step4(
@@ -392,14 +390,12 @@ class COCService:
         """
         处理 step=4 请求：
         - selection=confirm → 确认人物卡，进入 step 5（开始游戏）
-        - selection=reroll → 返回 step 3 重新选择职业
         """
         if selection == "confirm":
-            # 确认人物卡，进入 step 5 开始游戏
             return await self._step5_playing(session, request)
         else:
-            # 返回 step 3 重新选择职业（包括 reroll 和空值）
-            return await self._step3_profession(session, request)
+            # step 4 只有 confirm，其他值也当 confirm 处理
+            return await self._step5_playing(session, request)
 
     # ==================== Step 1: 常规属性分配 ====================
 
@@ -528,7 +524,7 @@ class COCService:
 
         return self._build_response(content=content)
 
-    # ==================== Step 4: 人物卡总结 ====================
+    # ==================== Step 4: 装备 + 人物卡（只有确认）====================
 
     async def _step4_character_card(
         self,
@@ -537,7 +533,8 @@ class COCService:
         profession_id: str = ""
     ) -> Dict[str, Any]:
         """
-        Step 4: 选择职业，返回人物卡总结
+        Step 4: 选择职业后，调用 LLM 生成角色背景和装备，组装人物卡。
+        返回装备 + 人物卡，只有确认按钮（不可 reroll）。
 
         profession_id 格式为 prof_01 ~ prof_N，对应 step=3 返回的职业列表索引。
         """
@@ -577,7 +574,7 @@ class COCService:
         temp["selected_profession"] = selected_profession
         temp["interest_skills"] = interest_skills
 
-        # 调用 LLM 生成角色背景故事
+        # 调用 LLM 生成角色背景故事和装备
         background_data = await self._generate_background_data(
             session, selected_profession, temp
         )
@@ -605,12 +602,11 @@ class COCService:
         self._update_session_db(session)
 
         content = {
-            "title": "调查员人物卡总结",
-            "description": f"（{gm_name}整理好所有资料）你的调查员人物卡已生成完毕！",
+            "title": "调查员人物卡",
+            "description": f"（{gm_name}整理好所有资料）你的调查员已准备就绪！",
             "investigatorCard": investigator_card,
             "selections": [
-                {"id": "confirm", "text": "确认人物卡，开始游戏"},
-                {"id": "reroll", "text": "重新选择职业"}
+                {"id": "confirm", "text": "确认，开始游戏"}
             ]
         }
 

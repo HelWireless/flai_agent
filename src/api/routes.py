@@ -641,8 +641,8 @@ async def coc_chat(
                               ┌─reroll─┐       ┌─reroll─┐
                               │        │       │        │
     action=start → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
-    背景介绍       属性分配   次级属性   职业选择   人物卡    游戏开始
-    (markdown)    (JSON)    (JSON)    (JSON)    (JSON)   (markdown)
+    背景介绍       属性分配   次级属性   职业选择  装备+人物卡  游戏开始
+    (markdown)    (JSON)    (JSON)    (JSON)    (JSON)     (markdown)
     ```
     
     ## 核心机制
@@ -675,7 +675,7 @@ async def coc_chat(
     | 1 | 属性分配 | `selection: "confirm"/"reroll"/空` | JSON（常规属性 + 选择器） |
     | 2 | 次级属性 | `selection: "confirm"/"reroll"/空` | JSON（次级属性 + 选择器） |
     | 3 | 职业选择 | `selection: "prof_01"~"prof_N"/"reroll"/空` | JSON（职业选项） |
-    | 4 | 人物卡 | `selection: "confirm"/"reroll"/空` | JSON（人物卡 + 选择器） |
+    | 4 | 装备+人物卡 | `selection: "confirm"`（只有确认） | JSON（装备+人物卡） |
     | 5 | 游戏对话 | — | markdown（游戏叙事） |
     
     ## extParam 扩展参数说明
@@ -698,10 +698,9 @@ async def coc_chat(
     | 1 | `"reroll"` 或空 | 重新 roll 属性 |
     | 2 | `"confirm"` | 确认次级属性，返回职业选项（相当于进入 step 3） |
     | 2 | `"reroll"` 或空 | 返回 step 1 重新分配常规属性 |
-    | 3 | `"prof_01"`~`"prof_N"` | 选择职业，返回人物卡（相当于进入 step 4） |
+    | 3 | `"prof_01"`~`"prof_N"` | 选择职业，返回装备+人物卡（相当于进入 step 4） |
     | 3 | `"reroll"` 或空 | 重新 roll 职业 |
     | 4 | `"confirm"` | 确认人物卡，开始游戏（相当于进入 step 5） |
-    | 4 | `"reroll"` 或空 | 返回 step 3 重新选择职业 |
     
     ## 请求示例
     
@@ -822,20 +821,7 @@ async def coc_chat(
     }
     ```
     
-    ### 10. 返回重新选择职业（step=4 + selection=reroll）
-    ```json
-    {
-        "userId": "1000001",
-        "worldId": "world_coc",
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
-        "step": "4",
-        "message": "",
-        "extParam": {"selection": "reroll"}
-    }
-    ```
-    
-    ### 11. 游戏中对话（step=5 + message）
+    ### 10. 游戏中对话（step=5 + message）
     ```json
     {
         "userId": "1000001",
@@ -847,7 +833,7 @@ async def coc_chat(
     }
     ```
     
-    ### 12. 存档（extParam 传 action + saveId）
+    ### 11. 存档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -861,7 +847,7 @@ async def coc_chat(
     ```
     > `saveId` 由前端/Java 层生成并传入，后端写入 `t_coc_save_slot` 表
     
-    ### 13. 读档（extParam 传 action + saveId）
+    ### 12. 读档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -965,12 +951,12 @@ async def coc_chat(
     }
     ```
     
-    ### step=4 人物卡总结（JSON）
+    ### step=4 装备+人物卡（JSON，只有确认按钮）
     ```json
     {
         "content": {
-            "title": "调查员人物卡总结",
-            "description": "（璃整理好所有资料）你的调查员人物卡已生成完毕！",
+            "title": "调查员人物卡",
+            "description": "（璃整理好所有资料）你的调查员已准备就绪！",
             "investigatorCard": {
                 "name": "张明远",
                 "profession": "考古学家",
@@ -978,12 +964,11 @@ async def coc_chat(
                 "secondaryAttributes": {"HP": 10, "MP": 16, "SAN": 80, "LUCK": 55, "DB": 0, "Build": 110, "MOV": 8},
                 "currentHP": 10, "currentMP": 16, "currentSAN": 80,
                 "skills": {"考古学": 60, "侦查": 60, "攀爬": 70},
-                "equipment": ["手电筒", "笔记本", "钢笔"],
+                "equipment": ["手电筒", "笔记本", "钢笔", "考古工具包", "绳索"],
                 "background": "一名经验丰富的考古学家..."
             },
             "selections": [
-                {"id": "confirm", "text": "确认人物卡，开始游戏"},
-                {"id": "reroll", "text": "重新选择职业"}
+                {"id": "confirm", "text": "确认，开始游戏"}
             ]
         },
         "complete": false
