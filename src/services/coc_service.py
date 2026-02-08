@@ -3,11 +3,11 @@
 
 游戏流程（extParam.action + step + extParam.selection 驱动）：
 
-                          ┌─reroll─┐       ┌─reroll─┐
-                          │        │       │        │
+                        ┌─reroll─┐      ┌─reroll─┐
+                        │        │      │        │
     action=start → step=1 → step=2 → step=3 → step=4 → step=5 → 持续对话
-    背景介绍       属性      次级属性   职业    装备+人物卡  游戏开始
-    (md)          (JSON)    (JSON)   (JSON)    (JSON)      (md)
+        背景介绍          属性    次级属性   职业    装备+人物卡  游戏开始
+        (md)          (JSON)    (JSON)   (JSON)    (JSON)      (md)
 
 前端交互方式：
 - extParam.action="start" → 开始游戏，返回背景介绍
@@ -601,9 +601,33 @@ class COCService:
         session.set_temp_data(temp)
         self._update_session_db(session)
 
+        # 构建装备展示数据（带 equip_XX id）
+        raw_equipment = background_data.get("equipment", [])
+        equipment_display = []
+        for i, eq in enumerate(raw_equipment):
+            if isinstance(eq, dict):
+                item = {
+                    "id": f"equip_{i + 1:02d}",
+                    "name": eq.get("name", "未知装备"),
+                    "description": eq.get("description", ""),
+                    "damage": eq.get("damage", "—"),
+                    "range": eq.get("range", "—")
+                }
+            else:
+                # 兼容旧的字符串格式
+                item = {
+                    "id": f"equip_{i + 1:02d}",
+                    "name": str(eq),
+                    "description": "",
+                    "damage": "—",
+                    "range": "—"
+                }
+            equipment_display.append(item)
+
         content = {
             "title": "调查员人物卡",
             "description": f"（{gm_name}整理好所有资料）你的调查员已准备就绪！",
+            "equipment": equipment_display,
             "investigatorCard": investigator_card,
             "selections": [
                 {"id": "confirm", "text": "确认，开始游戏"}
@@ -904,7 +928,11 @@ class COCService:
 2. 性别
 3. 年龄（25-45岁之间）
 4. 背景故事（100-150字，包含成长地点、家庭情况、个性特点）
-5. 装备列表（不超过5件，与职业相关）
+5. 装备列表（3-5件，与职业相关），每件装备包含：
+   - name: 装备名称
+   - description: 装备简介（一句话）
+   - damage: 伤害值（武器填如"1D6"，非武器填"—"）
+   - range: 射程/有效距离（武器填如"15m"，非武器填"—"）
 
 请以JSON格式返回：
 {{
@@ -912,7 +940,10 @@ class COCService:
   "gender": "男/女",
   "age": 数字,
   "background": "背景故事",
-  "equipment": ["装备1", "装备2", ...]
+  "equipment": [
+    {{"name": "装备名", "description": "简介", "damage": "1D6", "range": "10m"}},
+    {{"name": "手电筒", "description": "便携照明工具", "damage": "—", "range": "—"}}
+  ]
 }}
 只返回JSON，不要其他内容。"""
 
@@ -940,7 +971,11 @@ class COCService:
                 "gender": "男",
                 "age": 30,
                 "background": f"一名经验丰富的{profession.get('name', '调查员')}，性格沉稳，善于观察。",
-                "equipment": ["手电筒", "笔记本", "钢笔"]
+                "equipment": [
+                    {"name": "手电筒", "description": "便携照明工具", "damage": "—", "range": "—"},
+                    {"name": "笔记本", "description": "记录线索的随身本", "damage": "—", "range": "—"},
+                    {"name": "钢笔", "description": "书写工具", "damage": "—", "range": "—"}
+                ]
             }
 
     def _build_game_system_prompt(
