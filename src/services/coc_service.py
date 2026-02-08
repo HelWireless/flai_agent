@@ -1040,11 +1040,21 @@ class COCService:
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 model_pool=["qwen3_max"],
-                parse_json=True,
-                response_format="json_object"
+                parse_json=False,
+                response_format="text"
             )
 
             content = response.get("content", "")
+            custom_logger.info(f"LLM background response (first 200 chars): {str(content)[:200]}")
+
+            # content 可能已经是 dict（LLM 服务内部解析过）
+            if isinstance(content, dict):
+                return content
+
+            # 字符串解析
+            if not content or not content.strip():
+                raise ValueError("LLM returned empty content")
+
             # 提取 JSON
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
