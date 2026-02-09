@@ -11,7 +11,6 @@
 
 前端交互方式：
 - extParam.action="start" → 开始游戏，返回背景介绍
-- extParam.action="select_character" → 进入角色创建/换人（属性分配）
 - step + extParam.selection=confirm → 确认当前 step，进入下一步
 - step + extParam.selection=reroll（或 selection 为空）→ 重新 roll
 - step=3 发送 extParam.selection=prof_01~prof_N → 选择职业，进入 step 4
@@ -205,11 +204,10 @@ class COCService:
         """
         处理 COC 请求（step 驱动）
 
-        extParam.action 控制特殊操作（start / select_character / save / load）；
+        extParam.action 控制特殊操作（start / save / load）；
         step + extParam.selection 控制游戏流程：
 
         - action=start: 开始游戏，返回背景
-        - action=select_character: 进入角色创建/换人，返回属性分配
         - step=1: 属性分配
           - selection=null/reroll → 重新 roll 属性
           - selection=confirm → 确认属性，进入 step 2
@@ -240,21 +238,11 @@ class COCService:
         )
 
         try:
-            # extParam.action 驱动（start / select_character / save / load）
+            # extParam.action 驱动（start / save / load）
             if action == "start":
                 session = self._get_or_create_session(request)
                 self._init_gm_info(session, request.gm_id)
                 return await self._step0_background(session, request)
-            if action == "select_character":
-                session = self._get_or_create_session(request)
-                self._init_gm_info(session, request.gm_id)
-                # 换人：只清角色数据，保留 GM 信息 + round/turn（剧情不变）
-                temp = session.get_temp_data()
-                kept_keys = {"gm_name", "gm_traits"}
-                session.set_temp_data({k: v for k, v in temp.items() if k in kept_keys})
-                session.investigator_card = None
-                self._update_session_db(session)
-                return await self._step1_attributes(session, request)
             if action == "save":
                 return await self._handle_save_action(request)
             if action == "load":
@@ -815,6 +803,7 @@ class COCService:
             response = await self.llm.chat_completion(
                 messages=messages,
                 model_pool=["qwen3_max"],
+                temperature=0.54,
                 parse_json=False,
                 response_format="text"
             )
@@ -980,6 +969,7 @@ class COCService:
             response = await self.llm.chat_completion(
                 messages=messages,
                 model_pool=["qwen3_max"],
+                temperature=0.54,
                 parse_json=False,
                 response_format="text"
             )
@@ -1066,6 +1056,7 @@ class COCService:
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 model_pool=["qwen3_max"],
+                temperature=0.54,
                 parse_json=False,
                 response_format="text"
             )
@@ -1288,6 +1279,7 @@ class COCService:
             async for chunk in self.llm.stream_chat_completion(
                 messages=messages,
                 model_pool=["qwen3_max"],
+                temperature=0.54,
                 response_format="text"
             ):
                 if chunk.get("type") == "delta":

@@ -559,7 +559,7 @@ async def coc_chat(
     
     ## 核心机制
     
-    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`select_character` 角色创建/换人、`save` 存档、`load` 读档
+    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`save` 存档、`load` 读档
     2. **step + extParam.selection 控制游戏流程**：selection 传 `confirm`/`reroll`/职业ID
     3. **职业 ID 格式为 `prof_01`~`prof_N`**：对应 step=3 返回的职业列表索引
     4. **step=4 角色确认**：可发 message 修改姓名/性别/年龄，confirm 进入 step 5
@@ -571,7 +571,7 @@ async def coc_chat(
     | 字段 | 类型 | 必填 | 说明 |
     |------|------|------|------|
     | userId | str | 是 | 用户ID |
-    | worldId | str | 是 | 世界 config_id（COC 固定为 "world_coc"） |
+    | worldId | str | 是 | 世界 config_id（COC 固定为 "trpg_01"） |
     | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
     | step | str | 是 | 游戏阶段（见下方说明） |
@@ -585,7 +585,6 @@ async def coc_chat(
     | step | 含义 | extParam | 响应格式 |
     |------|------|----------|----------|
     | — | 开始游戏 | `action: "start"` | markdown（背景介绍） |
-    | — | 角色创建 | `action: "select_character"` | JSON（常规属性 + 选择器） |
     | 1 | 属性分配 | `selection: "confirm"/"reroll"/空` | JSON（常规属性 + 选择器） |
     | 2 | 次级属性 | `selection: "confirm"/"reroll"/空` | JSON（次级属性 + 选择器） |
     | 3 | 职业选择 | `selection: "prof_01"~"prof_N"/"reroll"/空` | JSON（职业选项） |
@@ -597,7 +596,7 @@ async def coc_chat(
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
-    | action | str | 操作类型：`"start"` 开始游戏、`"select_character"` 角色创建/换人、`"save"` 存档、`"load"` 读档 |
+    | action | str | 操作类型：`"start"` 开始游戏、`"save"` 存档、`"load"` 读档 |
     | selection | str | 用户选择：`"confirm"` 确认、`"reroll"` 重roll、或职业ID（`prof_01`~`prof_N`） |
     | saveId | str | 存档ID（存档时由前端生成传入，读档时传入要恢复的存档ID） |
     
@@ -625,7 +624,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "0",
@@ -634,24 +633,11 @@ async def coc_chat(
     }
     ```
     
-    ### 2. 进入角色创建（action=select_character → 返回常规属性）
+    ### 2. 确认属性（step=1 + selection=confirm → 返回次级属性）
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
-        "sessionId": "coc_abc123",
-        "gmId": "gm_02",
-        "step": "1",
-        "message": "",
-        "extParam": {"action": "select_character"}
-    }
-    ```
-    
-    ### 3. 确认属性（step=1 + selection=confirm → 返回次级属性）
-    ```json
-    {
-        "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "1",
@@ -664,7 +650,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "1",
@@ -677,7 +663,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "2",
@@ -690,7 +676,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "2",
@@ -703,7 +689,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "3",
@@ -716,7 +702,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "3",
@@ -729,7 +715,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "4",
@@ -742,7 +728,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "4",
@@ -754,7 +740,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "5",
@@ -767,7 +753,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "6",
@@ -779,7 +765,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "coc_abc123",
         "gmId": "gm_02",
         "step": "6",
@@ -793,7 +779,7 @@ async def coc_chat(
     ```json
     {
         "userId": "1000001",
-        "worldId": "world_coc",
+        "worldId": "trpg_01",
         "sessionId": "",
         "gmId": "gm_02",
         "step": "0",
