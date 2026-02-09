@@ -1171,20 +1171,30 @@ class COCService:
         """
         流式对话（SSE 模式）
 
-        - 选择阶段（step 1-4）：content 是 JSON，直接发送完整结果
-        - markdown 阶段（step 0, 5）：模拟流式发送
+        - step=6 游戏对话：真正的 LLM 流式输出
+        - 其他 step：先完整处理，再发送结果
         """
         custom_logger.info(
             f"Stream COC request: user={request.user_id}, "
             f"session={request.session_id}, gm_id={request.gm_id}, step={request.step}"
         )
 
+        ext_param = request.ext_param or {}
+        action = ext_param.get("action", "")
+        step = request.step
+
         try:
-            # 调用同步处理
+            # step=6 游戏对话 → 真正的 LLM 流式
+            if step == "6" and not action:
+                async for chunk in self._stream_playing(request):
+                    yield chunk
+                return
+
+            # 其他 step → 同步处理后发送
             response = await self.process_request(request)
             content = response.get("content", "")
 
-            # 字符串内容（markdown）模拟流式发送
+            # markdown 内容分块发送
             if isinstance(content, str):
                 chunk_size = 50
                 for i in range(0, len(content), chunk_size):
@@ -1208,3 +1218,102 @@ class COCService:
                 "complete": True,
                 "message": str(e)
             }
+
+    async def _stream_playing(
+        self,
+        request: IWChatRequest
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Step 6 游戏对话的真正流式处理
+        """
+        try:
+            session = self._get_or_create_session(request)
+            self._init_gm_info(session, request.gm_id)
+            temp = session.get_temp_data()
+            gm_name = temp.get("gm_name", "GM")
+            investigator = session.investigator_card or {}
+
+            # 首次进入游戏
+            if session.game_status != GameStatus.PLAYING:
+                if not investigator:
+                    yield {"type": "error", "complete": True, "message": "请先完成角色创建（step=1 到 step=5）"}
+                    return
+
+                session.game_status = GameStatus.PLAYING
+                session.turn_number = 1
+                session.round_number = 1
+                self._update_session_db(session)
+
+                opening = f"""（{gm_name}的眼中闪过一丝期待）
+
+**游戏正式开始！**
+
+调查员 **{investigator.get('name', '调查员')}**（{investigator.get('profession', '职业')}）准备踏入未知的世界。
+
+❤ 生命 {investigator.get('currentHP', 0)}   💎 魔法 {investigator.get('currentMP', 0)}   🧠 理智 {investigator.get('currentSAN', 0)}
+
+请输入你的行动或对话："""
+
+                # 分块发送开场
+                chunk_size = 50
+                for i in range(0, len(opening), chunk_size):
+                    yield {"type": "delta", "content": opening[i:i + chunk_size]}
+
+                yield {"type": "done", "complete": True, "result": {"content": opening, "complete": False}}
+                return
+
+            # 已在游戏中
+            message = request.message.strip()
+            if not message:
+                yield {"type": "delta", "content": "请输入你的行动或对话。"}
+                yield {"type": "done", "complete": True, "result": {"content": "请输入你的行动或对话。", "complete": False}}
+                return
+
+            # 增加轮数
+            session.turn_number += 1
+
+            # 构建系统 prompt 和消息
+            system_prompt = self._build_game_system_prompt(session, investigator, temp)
+            history = self._get_dialogue_history(session.id) if session.id else []
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(history[-20:])
+            messages.append({"role": "user", "content": message})
+
+            # 发送轮次头
+            header = f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
+            yield {"type": "delta", "content": header}
+
+            # 真正的 LLM 流式调用
+            full_content = ""
+            async for chunk in self.llm.stream_chat_completion(
+                messages=messages,
+                model_pool=["qwen3_max"],
+                response_format="text"
+            ):
+                if chunk.get("type") == "delta":
+                    full_content += chunk["content"]
+                    yield {"type": "delta", "content": chunk["content"]}
+                elif chunk.get("type") == "error":
+                    yield {"type": "error", "complete": True, "message": chunk.get("message", "LLM 调用失败")}
+                    return
+
+            # 发送状态栏
+            status_line = f"\n\n❤ 生命 {investigator.get('currentHP', '?')}   "
+            status_line += f"💎 魔法 {investigator.get('currentMP', '?')}   "
+            status_line += f"🧠 理智 {investigator.get('currentSAN', '?')}"
+            yield {"type": "delta", "content": status_line}
+
+            self._update_session_db(session)
+
+            # 完整内容
+            complete_content = header + full_content + status_line
+            yield {
+                "type": "done",
+                "complete": True,
+                "result": {"content": complete_content, "complete": False}
+            }
+
+        except Exception as e:
+            custom_logger.error(f"Error in _stream_playing: {e}", exc_info=True)
+            self.db.rollback()
+            yield {"type": "error", "complete": True, "message": str(e)}
