@@ -295,15 +295,19 @@ async def freak_world_chat(
     - `stream=true`（默认）：SSE 流式响应
     - `stream=false`：同步 JSON 响应
     
+    ## 游戏流程图
+    
+    ```
+    action=start → step=1 → step=2 → 持续对话
+    背景+性别选择   角色列表   游戏对话
+    (JSON)         (JSON)    (md, 真流式)
+    ```
+    
     ## 核心机制
     
-    1. **Java 层创建会话**：Java 层先调用独立接口创建 sessionId
-    2. **用户选择 GM（前置）**：用户在调用本接口前已选好 GM，通过 `gmId` 传入
-    3. **用户选择角色**：step=0 时用户选择游戏中要扮演的角色
-    4. **换人**：换的是游戏角色，不是 GM
-    5. **返回格式**：选择阶段返回 JSON，游戏阶段返回 markdown
-    
-    > **说明**：Python 端收到 sessionId 后，如本地无记录则自动创建新会话
+    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`save` 存档、`load` 读档
+    2. **step + extParam.selection 控制游戏流程**：selection 传性别（male/female）或角色ID（char_01~N）
+    3. **step=2 为游戏阶段**：真流式 LLM 对话
     
     ## 请求参数
     
@@ -313,35 +317,37 @@ async def freak_world_chat(
     | worldId | str | 是 | 世界 config_id（如 "world_01"） |
     | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_01"） |
-    | step | str | 是 | 游戏阶段，初始传 "0" |
-    | message | str | 是 | 用户消息，可为空串 |
-    | saveId | str | 否 | 存档ID，读档时必填 |
-    | extParam | object | 否 | 扩展参数（见下方说明） |
+    | step | str | 是 | 游戏阶段（见下方说明） |
+    | message | str | 是 | step=2 传游戏输入，其余可空串 |
+    | extParam | object | 是 | 扩展参数（action/selection，见下方说明） |
     | stream | bool | 否 | true=SSE（默认），false=同步JSON |
+    
+    ## step 说明
+    
+    | step | 含义 | extParam | 响应格式 |
+    |------|------|----------|----------|
+    | — | 开始游戏 | `action: "start"` | JSON（背景+性别选择） |
+    | 1 | 角色列表/选择 | `selection: "male"/"female"` 或 `"char_01"~"char_N"` | JSON（角色列表）或 markdown（进入游戏） |
+    | 2 | 游戏对话 | — | markdown（真流式） |
     
     ## extParam 扩展参数说明
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
-    | action | str | 操作类型：`"save"` 存档、`"load"` 读档 |
+    | action | str | 操作类型：`"start"` 开始游戏、`"save"` 存档、`"load"` 读档 |
+    | selection | str | 用户选择：`"male"`/`"female"` 性别、或角色ID（`"char_01"`~`"char_N"`） |
     | save_data | object | 读档时传入的存档数据（由 Java 层提供） |
     
-    ## step 游戏阶段说明
+    ## extParam 使用说明
     
-    | step | 含义 | 响应格式 | 说明 |
-    |------|------|----------|------|
-    | 0 | char_select | **JSON** | 角色选择阶段（结构化数据） |
-    | 1 | playing | **markdown** | 游戏进行中（纯文本叙事） |
-    | 2 | ended | **markdown** | 游戏正常结束 |
-    | 3 | death | **markdown** | 角色死亡 |
+    | step | selection 值 | 后端行为 |
+    |------|-------------|---------|
+    | 1 | `"male"` 或 `"female"` | 调用 LLM 生成对应性别的 3-5 个角色，返回角色列表 |
+    | 1 | `"char_01"`~`"char_N"` | 选定角色，调 LLM 返回第一轮游戏对话（进入 step 2） |
     
     ## 请求示例
     
-    > **ID 格式说明**：gmId 和 worldId 直接传完整的 config_id
-    > - GM: `"gm_01"`、`"gm_02"` 等
-    > - 世界: `"world_01"`、`"world_02"` 等
-    
-    ### 1. 开始新游戏
+    ### 1. 开始新游戏（action=start → 返回背景+性别选择）
     ```json
     {
         "userId": "1000001",
@@ -349,23 +355,12 @@ async def freak_world_chat(
         "sessionId": "fw_abc123",
         "gmId": "gm_01",
         "step": "0",
-        "message": ""
+        "message": "",
+        "extParam": {"action": "start"}
     }
     ```
     
-    ### 2. 选择角色后继续
-    ```json
-    {
-        "userId": "1000001",
-        "worldId": "world_01",
-        "sessionId": "fw_abc123",
-        "gmId": "gm_01",
-        "step": "0",
-        "message": "我选择扮演那个神秘的旅者"
-    }
-    ```
-    
-    ### 3. 游戏进行中对话
+    ### 2. 选择性别（step=1 + selection=female → 返回角色列表）
     ```json
     {
         "userId": "1000001",
@@ -373,11 +368,12 @@ async def freak_world_chat(
         "sessionId": "fw_abc123",
         "gmId": "gm_01",
         "step": "1",
-        "message": "我选择进入那扇神秘的门"
+        "message": "",
+        "extParam": {"selection": "female"}
     }
     ```
     
-    ### 4. 存档
+    ### 3. 选择角色（step=1 + selection=char_01 → 进入游戏）
     ```json
     {
         "userId": "1000001",
@@ -385,113 +381,122 @@ async def freak_world_chat(
         "sessionId": "fw_abc123",
         "gmId": "gm_01",
         "step": "1",
+        "message": "",
+        "extParam": {"selection": "char_01"}
+    }
+    ```
+    
+    ### 4. 游戏中对话（step=2 + message）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "2",
+        "message": "我走向那扇神秘的门"
+    }
+    ```
+    
+    ### 5. 存档（extParam.action=save）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "2",
         "message": "",
         "extParam": {"action": "save"}
     }
     ```
     
-    ### 5. 读档
+    ### 6. 读档（extParam.action=load + save_data）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_01",
-        "sessionId": "fw_abc123",
+        "sessionId": "",
         "gmId": "gm_01",
         "step": "0",
         "message": "",
-        "saveId": "save_abc123",
-        "extParam": {"action": "load"}
-    }
-    ```
-    
-    ### 6. 同步请求（不使用SSE）
-    ```json
-    {
-        "userId": "1000001",
-        "worldId": "world_01",
-        "sessionId": "fw_abc123",
-        "gmId": "gm_01",
-        "step": "1",
-        "message": "探索房间",
-        "stream": false
+        "extParam": {"action": "load", "save_data": {"gm_id": "gm_01", "world_id": "world_01", "game_status": "playing"}}
     }
     ```
     
     ## 响应格式
     
-    ### 角色选择阶段响应（step=0，JSON 结构化数据）
+    响应只有 2 个字段：`content` 和 `complete`
+    
+    - `content`：选择阶段(action=start, step=1)为 JSON 对象，游戏阶段(step=2)为 markdown 字符串
+    - `complete`：游戏是否结束
+    
+    ### action=start 背景+性别选择（JSON）
     ```json
     {
-        "sessionId": "fw_abc123",
-        "gmId": "gm_01",
-        "step": "0",
         "content": {
-            "title": "选择你的角色",
-            "description": "在这个神秘的世界中，你可以扮演以下角色之一：",
+            "description": "（焰，热情奔放...）",
+            "worldInfo": {
+                "title": "深渊暗湖·永夜酒馆",
+                "theme": "炼狱镜界",
+                "background": "深渊暗湖边的永夜酒馆，弥漫着神秘而危险的气息"
+            },
             "selections": [
-                {"id": "warrior", "text": "勇敢的战士", "desc": "擅长近战，生命值高"},
-                {"id": "mage", "text": "神秘的法师", "desc": "擅长魔法，智力高"},
-                {"id": "rogue", "text": "敏捷的盗贼", "desc": "擅长潜行，敏捷高"}
+                {"id": "male", "text": "男性"},
+                {"id": "female", "text": "女性"}
             ]
         },
-        "complete": false,
-        "saveId": null,
-        "extData": null
+        "complete": false
     }
     ```
     
-    ### 游戏进行中响应（step=1，markdown 纯文本）
+    ### step=1 角色列表（JSON）
     ```json
     {
-        "sessionId": "fw_abc123",
-        "gmId": "gm_01",
-        "step": "1",
-        "content": "## 神秘的门后\\n\\n你推开那扇古老的木门，一股潮湿的气息扑面而来...\\n\\n*你听到远处传来微弱的脚步声*",
-        "complete": false,
-        "saveId": null,
-        "extData": null
+        "content": {
+            "description": "（焰向你介绍了几位原住民）",
+            "characters": [
+                {"id": "char_01", "name": "洛尘", "gender": "男", "race": "暗影猎手", "appearance": "银发赤瞳的青年", "personality": "沉默寡言", "status": "独自在角落擦拭弯刀"},
+                {"id": "char_02", "name": "苏衍", "gender": "男", "race": "酒馆调酒师", "appearance": "笑容温润的青年", "personality": "热情健谈", "status": "正在调制一杯冒着蓝光的饮品"},
+                {"id": "char_03", "name": "夜枫", "gender": "男", "race": "佣兵团长", "appearance": "伤疤横过左眼的壮汉", "personality": "豪爽直率", "status": "和同伴大声畅饮"}
+            ],
+            "selections": [
+                {"id": "char_01", "text": "洛尘"},
+                {"id": "char_02", "text": "苏衍"},
+                {"id": "char_03", "text": "夜枫"}
+            ]
+        },
+        "complete": false
     }
     ```
     
-    ### 存档响应（action: "save"）
+    ### step=1 选定角色后（markdown，进入游戏）
     ```json
     {
-        "sessionId": "fw_abc123",
-        "gmId": "gm_01",
-        "step": "1",
-        "content": "## 存档成功\\n\\n你的冒险进度已保存...",
-        "complete": false,
-        "saveId": "save_abc123",
-        "extData": {
-            "save_data": {
-                "save_id": "save_abc123",
-                "session_id": "fw_abc123",
-                "gm_id": "gm_01",
-                "world_id": "world_01"
-            }
-        }
+        "content": "洛尘抬起头，赤色的瞳孔在昏暗的灯光下闪了闪...",
+        "complete": false
+    }
+    ```
+    
+    ### step=2 游戏对话（markdown）
+    ```json
+    {
+        "content": "洛尘的手指在弯刀的刀柄上轻轻摩挲...",
+        "complete": false
     }
     ```
     
     ### SSE 响应（stream=true）
     
-    #### delta 事件（流式内容）
+    #### delta 事件（流式内容，仅 step=2）
     ```
-    data: {"type": "delta", "content": "## 神秘的门后\\n\\n你推开"}
-    data: {"type": "delta", "content": "那扇古老的木门..."}
+    data: {"type": "delta", "content": "洛尘抬起头，"}
+    data: {"type": "delta", "content": "赤色的瞳孔在昏暗的灯光下闪了闪..."}
     ```
     
     #### done 事件（最终结果，流结束）
     ```
-    data: {"type": "done", "complete": true, "result": {
-        "sessionId": "fw_abc123",
-        "gmId": "gm_01",
-        "step": "1",
-        "content": "## 神秘的门后\\n\\n你推开那扇古老的木门...",
-        "complete": false,
-        "saveId": null,
-        "extData": null
-    }}
+    data: {"type": "done", "complete": true, "result": {"content": "...", "complete": false}}
     ```
     
     #### error 事件（错误，流结束）
@@ -499,100 +504,7 @@ async def freak_world_chat(
     data: {"type": "error", "complete": true, "message": "错误信息"}
     ```
     
-    > **注意**: SSE 事件中的 `complete: true` 表示流已结束，前端收到后应关闭连接。
-    
-    ---
-    
-    ## 前端接收 SSE 示例
-    
-    ### iOS (Swift)
-    ```swift
-    func streamChat(requestBody: [String: Any]) {
-        guard let url = URL(string: "https://api.example.com/pillow/freak-world/chat"),
-              let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else { return }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        let session = URLSession(configuration: .default)
-        let task = session.dataTask(with: request) { data, response, error in
-            guard let data = data, let text = String(data: data, encoding: .utf8) else { return }
-            
-            for line in text.components(separatedBy: "\\n\\n") {
-                guard line.hasPrefix("data: "),
-                      let jsonData = line.dropFirst(6).data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { continue }
-                
-                if let type = json["type"] as? String {
-                    switch type {
-                    case "delta":
-                        if let content = json["content"] as? String {
-                            // 追加 markdown 内容
-                            DispatchQueue.main.async { self.appendContent(content) }
-                        }
-                    case "done":
-                        if let result = json["result"] as? [String: Any] {
-                            DispatchQueue.main.async { self.renderResult(result) }
-                        }
-                    case "error":
-                        if let message = json["message"] as? String {
-                            print("错误: \\(message)")
-                        }
-                    default: break
-                    }
-                }
-                
-                // 检查结束标识
-                if json["complete"] as? Bool == true {
-                    print("SSE 流已结束")
-                    return
-                }
-            }
-        }
-        task.resume()
-    }
-    ```
-    
-    ### Flutter (Dart)
-    ```dart
-    import 'dart:convert';
-    import 'package:http/http.dart' as http;
-    
-    Future<void> streamChat(Map<String, dynamic> requestBody) async {
-      final response = await http.post(
-        Uri.parse('https://api.example.com/pillow/freak-world/chat'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(requestBody),
-      );
-      
-      final lines = response.body.split('\\n\\n');
-      for (final line in lines) {
-        if (!line.startsWith('data: ')) continue;
-        final data = jsonDecode(line.substring(6));
-        
-        switch (data['type']) {
-          case 'delta':
-            appendContent(data['content']);  // 追加 markdown 内容
-            break;
-          case 'done':
-            renderResult(data['result']);    // 渲染最终结果
-            break;
-          case 'error':
-            print('错误: ${data["message"]}');
-            break;
-        }
-        
-        if (data['complete'] == true) {
-          print('SSE 流已结束');
-          return;
-        }
-      }
-    }
-    ```
-    
-    > **重要提示**：SSE 事件中的 `complete: true` 是流结束标识，前端收到后**必须关闭连接**。
+    > **注意**: SSE 事件中的 `complete: true` 表示**流已结束**，前端收到后应关闭连接。响应体中的 `complete` 表示**游戏是否结束**。
     """
     custom_logger.info(
         f"Freak World request: user_id={request.user_id}, "
