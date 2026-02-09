@@ -13,6 +13,7 @@
 - step=2 + extParam.selection=confirm → 返回角色列表（JSON，同 COC 选职业）
 - step=2 + extParam.selection=char_01~char_N → 选定角色，进入游戏
 - step=3 → 游戏对话（真流式）
+- extParam.action="change_char" → 换人（发送换人密钥，LLM 返回角色列表 markdown）
 - extParam.action="save" → 存档
 - extParam.action="load" → 读档
 - 响应不返回 step 字段（同 COC 模式）
@@ -183,6 +184,8 @@ class FreakWorldService:
             if action == "start":
                 session = self._get_or_create_session(request)
                 return await self._step0_intro(session, request)
+            if action == "change_char":
+                return await self._handle_change_char(request)
             if action == "save":
                 return await self._handle_save_action(request)
             if action == "load":
@@ -546,6 +549,51 @@ class FreakWorldService:
         except Exception as e:
             custom_logger.error(f"LLM call failed: {e}")
             ai_content = "抱歉，系统暂时无法响应，请稍后再试。"
+
+        return self._build_response(content=ai_content)
+
+    # ==================== 换人 ====================
+
+    async def _handle_change_char(self, request: IWChatRequest) -> Dict[str, Any]:
+        """
+        action=change_char: 发送换人密钥给 LLM，返回角色列表（markdown）。
+        已在游戏中，所以返回 markdown 而非 JSON。
+        """
+        session = self._get_session_db(request.session_id)
+        if not session:
+            return self._error_response("会话不存在，无法换人")
+
+        if session.game_status != GameStatus.PLAYING:
+            return self._error_response("请先进入游戏后再换人")
+
+        # 构建对话历史 + 换人密钥
+        system_prompt = build_system_prompt(
+            gm_id=session.gm_id,
+            world_id=str(session.freak_world_id),
+            is_loading=False,
+            base_path=self.base_path
+        )
+
+        history = self._get_dialogue_history(session.session_id) if session.session_id else []
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history[-20:])
+        # 发送换人密钥，LLM 会展示角色列表
+        messages.append({"role": "user", "content": self.SWITCH_KEY})
+
+        try:
+            response = await self.llm.chat_completion(
+                messages=messages,
+                model_pool=["qwen3_max"],
+                parse_json=False,
+                response_format="text",
+                temperature=0.9,
+                top_p=0.85,
+                max_tokens=4096
+            )
+            ai_content = self._clean_llm_content(response.get("content", ""))
+        except Exception as e:
+            custom_logger.error(f"LLM change_char call failed: {e}")
+            ai_content = "换人请求失败，请稍后再试。"
 
         return self._build_response(content=ai_content)
 

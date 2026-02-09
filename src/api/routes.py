@@ -305,10 +305,11 @@ async def freak_world_chat(
     
     ## 核心机制
     
-    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`save` 存档、`load` 读档
+    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`change_char` 换人、`save` 存档、`load` 读档
     2. **step=1 世界叙事**：选择性别后 LLM 流式输出大段世界描述
     3. **step=2 角色列表**：confirm 获取角色列表（JSON，同 COC 选职业）；char_XX 选定角色进入游戏
     4. **step=3 为游戏阶段**：真流式 LLM 对话
+    5. **action=change_char**：游戏中换人，LLM 返回角色列表（markdown）
     
     ## 请求参数
     
@@ -336,7 +337,7 @@ async def freak_world_chat(
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
-    | action | str | 操作类型：`"start"` 开始游戏、`"save"` 存档、`"load"` 读档 |
+    | action | str | 操作类型：`"start"` 开始游戏、`"change_char"` 换人、`"save"` 存档、`"load"` 读档 |
     | selection | str | 用户选择：`"male"`/`"female"` 性别、`"confirm"` 确认、或角色ID（`"char_01"`~`"char_N"`） |
     | save_data | object | 读档时传入的存档数据（由 Java 层提供） |
     
@@ -414,7 +415,20 @@ async def freak_world_chat(
     }
     ```
     
-    ### 6. 存档（extParam.action=save）
+    ### 6. 换人（action=change_char → LLM 返回角色列表 markdown）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "3",
+        "message": "",
+        "extParam": {"action": "change_char"}
+    }
+    ```
+    
+    ### 7. 存档（extParam.action=save）
     ```json
     {
         "userId": "1000001",
@@ -427,7 +441,7 @@ async def freak_world_chat(
     }
     ```
     
-    ### 7. 读档（extParam.action=load + save_data）
+    ### 8. 读档（extParam.action=load + save_data）
     ```json
     {
         "userId": "1000001",
