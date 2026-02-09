@@ -298,16 +298,17 @@ async def freak_world_chat(
     ## 游戏流程图
     
     ```
-    action=start → step=1 → step=2 → 持续对话
-    背景+性别选择   角色列表   游戏对话
-    (JSON)         (JSON)    (md, 真流式)
+    action=start → step=1 → step=2 → step=3 → 持续对话
+    背景+性别选择   世界叙事   角色列表   游戏对话
+    (JSON)        (md,流式)  (JSON)   (md,流式)
     ```
     
     ## 核心机制
     
     1. **extParam.action 控制特殊操作**：`start` 开始游戏、`save` 存档、`load` 读档
-    2. **step + extParam.selection 控制游戏流程**：selection 传性别（male/female）或角色ID（char_01~N）
-    3. **step=2 为游戏阶段**：真流式 LLM 对话
+    2. **step=1 世界叙事**：选择性别后 LLM 流式输出大段世界描述
+    3. **step=2 角色列表**：confirm 获取角色列表（JSON，同 COC 选职业）；char_XX 选定角色进入游戏
+    4. **step=3 为游戏阶段**：真流式 LLM 对话
     
     ## 请求参数
     
@@ -318,7 +319,7 @@ async def freak_world_chat(
     | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
     | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_01"） |
     | step | str | 是 | 游戏阶段（见下方说明） |
-    | message | str | 是 | step=2 传游戏输入，其余可空串 |
+    | message | str | 是 | step=3 传游戏输入，其余可空串 |
     | extParam | object | 是 | 扩展参数（action/selection，见下方说明） |
     | stream | bool | 否 | true=SSE（默认），false=同步JSON |
     
@@ -327,23 +328,25 @@ async def freak_world_chat(
     | step | 含义 | extParam | 响应格式 |
     |------|------|----------|----------|
     | — | 开始游戏 | `action: "start"` | JSON（背景+性别选择） |
-    | 1 | 角色列表/选择 | `selection: "male"/"female"` 或 `"char_01"~"char_N"` | JSON（角色列表）或 markdown（进入游戏） |
-    | 2 | 游戏对话 | — | markdown（真流式） |
+    | 1 | 世界叙事 | `selection: "male"/"female"` | markdown（流式） |
+    | 2 | 角色列表 | `selection: "confirm"` → 角色列表；`"char_01"~"char_N"` → 进入游戏 | JSON 或 markdown |
+    | 3 | 游戏对话 | — | markdown（真流式） |
     
     ## extParam 扩展参数说明
     
     | 字段 | 类型 | 说明 |
     |------|------|------|
     | action | str | 操作类型：`"start"` 开始游戏、`"save"` 存档、`"load"` 读档 |
-    | selection | str | 用户选择：`"male"`/`"female"` 性别、或角色ID（`"char_01"`~`"char_N"`） |
+    | selection | str | 用户选择：`"male"`/`"female"` 性别、`"confirm"` 确认、或角色ID（`"char_01"`~`"char_N"`） |
     | save_data | object | 读档时传入的存档数据（由 Java 层提供） |
     
     ## extParam 使用说明
     
     | step | selection 值 | 后端行为 |
     |------|-------------|---------|
-    | 1 | `"male"` 或 `"female"` | 调用 LLM 生成对应性别的 3-5 个角色，返回角色列表 |
-    | 1 | `"char_01"`~`"char_N"` | 选定角色，调 LLM 返回第一轮游戏对话（进入 step 2） |
+    | 1 | `"male"` 或 `"female"` | LLM 流式输出世界叙事（大段 markdown） |
+    | 2 | `"confirm"` | 调用 LLM 生成 3-5 个角色，返回角色列表（JSON） |
+    | 2 | `"char_01"`~`"char_N"` | 选定角色，调 LLM 返回第一轮游戏对话（进入 step 3） |
     
     ## 请求示例
     
@@ -360,7 +363,7 @@ async def freak_world_chat(
     }
     ```
     
-    ### 2. 选择性别（step=1 + selection=female → 返回角色列表）
+    ### 2. 选择性别（step=1 + selection=female → 世界叙事流式返回）
     ```json
     {
         "userId": "1000001",
@@ -373,45 +376,58 @@ async def freak_world_chat(
     }
     ```
     
-    ### 3. 选择角色（step=1 + selection=char_01 → 进入游戏）
+    ### 3. 确认叙事，获取角色列表（step=2 + selection=confirm）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_01",
         "sessionId": "fw_abc123",
         "gmId": "gm_01",
-        "step": "1",
+        "step": "2",
+        "message": "",
+        "extParam": {"selection": "confirm"}
+    }
+    ```
+    
+    ### 4. 选择角色（step=2 + selection=char_01 → 进入游戏）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "2",
         "message": "",
         "extParam": {"selection": "char_01"}
     }
     ```
     
-    ### 4. 游戏中对话（step=2 + message）
+    ### 5. 游戏中对话（step=3 + message）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_01",
         "sessionId": "fw_abc123",
         "gmId": "gm_01",
-        "step": "2",
+        "step": "3",
         "message": "我走向那扇神秘的门"
     }
     ```
     
-    ### 5. 存档（extParam.action=save）
+    ### 6. 存档（extParam.action=save）
     ```json
     {
         "userId": "1000001",
         "worldId": "world_01",
         "sessionId": "fw_abc123",
         "gmId": "gm_01",
-        "step": "2",
+        "step": "3",
         "message": "",
         "extParam": {"action": "save"}
     }
     ```
     
-    ### 6. 读档（extParam.action=load + save_data）
+    ### 7. 读档（extParam.action=load + save_data）
     ```json
     {
         "userId": "1000001",
@@ -428,7 +444,7 @@ async def freak_world_chat(
     
     响应只有 2 个字段：`content` 和 `complete`
     
-    - `content`：选择阶段(action=start, step=1)为 JSON 对象，游戏阶段(step=2)为 markdown 字符串
+    - `content`：选择阶段(action=start, step=2 confirm)为 JSON 对象，叙事/游戏阶段(step=1, step=3)为 markdown 字符串
     - `complete`：游戏是否结束
     
     ### action=start 背景+性别选择（JSON）
@@ -450,7 +466,15 @@ async def freak_world_chat(
     }
     ```
     
-    ### step=1 角色列表（JSON）
+    ### step=1 世界叙事（markdown，流式）
+    ```json
+    {
+        "content": "你踏入永夜酒馆，空气中弥漫着异域香料和陈年麦酒的气息...",
+        "complete": false
+    }
+    ```
+    
+    ### step=2 角色列表（JSON，selection=confirm）
     ```json
     {
         "content": {
@@ -470,7 +494,7 @@ async def freak_world_chat(
     }
     ```
     
-    ### step=1 选定角色后（markdown，进入游戏）
+    ### step=2 选定角色后（markdown，进入游戏）
     ```json
     {
         "content": "洛尘抬起头，赤色的瞳孔在昏暗的灯光下闪了闪...",
@@ -478,7 +502,7 @@ async def freak_world_chat(
     }
     ```
     
-    ### step=2 游戏对话（markdown）
+    ### step=3 游戏对话（markdown）
     ```json
     {
         "content": "洛尘的手指在弯刀的刀柄上轻轻摩挲...",
@@ -488,7 +512,7 @@ async def freak_world_chat(
     
     ### SSE 响应（stream=true）
     
-    #### delta 事件（流式内容，仅 step=2）
+    #### delta 事件（流式内容，step=1 世界叙事 / step=3 游戏对话）
     ```
     data: {"type": "delta", "content": "洛尘抬起头，"}
     data: {"type": "delta", "content": "赤色的瞳孔在昏暗的灯光下闪了闪..."}
