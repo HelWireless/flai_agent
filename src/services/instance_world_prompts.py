@@ -392,7 +392,8 @@ def build_system_prompt(
     world_id: str,
     is_loading: bool = False,
     world_setting: str = "",
-    base_path: str = ""
+    base_path: str = "",
+    include_json_instruction: bool = False
 ) -> str:
     """
     构建系统提示词
@@ -403,6 +404,7 @@ def build_system_prompt(
         is_loading: 是否为加载存档模式
         world_setting: 预加载的世界设定（可选）
         base_path: 项目根目录路径
+        include_json_instruction: 是否包含 JSON 格式指令（默认 False，仅在需要 JSON 响应时开启）
     
     Returns:
         组装好的系统提示词
@@ -433,8 +435,9 @@ def build_system_prompt(
         loaded_setting = load_world_setting(world_id, base_path)
         parts.append(f"### 副本世界信息 ###\n{loaded_setting}")
     
-    # 6. JSON 格式指令（服务层适配）
-    parts.append(get_json_format_instruction())
+    # 6. JSON 格式指令（仅在明确需要时才加入，避免 markdown 步骤被迫返回 JSON）
+    if include_json_instruction:
+        parts.append(get_json_format_instruction())
     
     return "\n\n---\n\n".join(parts)
 

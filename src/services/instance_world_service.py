@@ -80,6 +80,20 @@ class FreakWorldService:
         gm_ids = get_gm_ids()
         return random.choice(gm_ids) if gm_ids else "gm_01"
 
+    @staticmethod
+    def _parse_world_id(world_id_raw: str) -> int:
+        """将请求中的 world_id（如 'world_10' 或 '10'）解析为 DB 存储的整数"""
+        cleaned = world_id_raw.replace("world_", "") if world_id_raw.startswith("world_") else world_id_raw
+        try:
+            return int(cleaned)
+        except (ValueError, TypeError):
+            return 1
+
+    @staticmethod
+    def _format_world_id(freak_world_id) -> str:
+        """将 DB 中的 freak_world_id (int) 转换为配置兼容的 world_id 字符串（如 'world_01'）"""
+        return f"world_{int(freak_world_id):02d}"
+
     # ==================== 数据库操作 ====================
 
     def _create_session_db(
@@ -142,7 +156,7 @@ class FreakWorldService:
         gm_id = request.gm_id if request.gm_id and request.gm_id != "0" else self._get_random_gm_id()
         return self._create_session_db(
             account_id=int(request.user_id),
-            freak_world_id=int(request.world_id) if request.world_id.isdigit() else 1,
+            freak_world_id=self._parse_world_id(request.world_id),
             gm_id=gm_id,
             session_id=request.session_id if request.session_id else None
         )
@@ -209,17 +223,90 @@ class FreakWorldService:
             self.db.rollback()
             return self._error_response(f"处理请求时发生错误：{str(e)}")
 
+    # ==================== 上下文注入辅助 ====================
+
+    def _build_gm_context_messages(
+        self, session: FreakWorldGameState, gender_text: str
+    ) -> List[Dict[str, str]]:
+        """
+        构建 GM 引导阶段的对话上下文，用于注入 step1+ 的 messages。
+        让 LLM 知道 GM 引导（2.1-2.7）已经完成，应从世界叙事(1.1)开始。
+        """
+        gm_config = get_gm_config(session.gm_id)
+        gm_name = gm_config.get("name", "GM")
+
+        world_config = get_world_config(self._format_world_id(session.freak_world_id))
+        world_name = world_config.get("name", "未知世界")
+        world_theme = world_config.get("theme", "")
+        world_desc = world_config.get("description", "")
+
+        # GM 完成 2.1-2.5 的引导内容（精简但完整覆盖所有步骤）
+        gm_intro = (
+            f"（{gm_name}出现在虚拟水境衡山路的数字灯牌下）"
+            f"旅行者，我是{gm_name}，你的电子精灵向导。"
+            f"你现在所在的地方是新沪市的虚拟水境衡山路——复古欧式街道，数字灯牌，仿真水景投影，建筑表面是数字仿皮层。"
+            f"在这条街景的某处角落，有一道微小的超域量子宇宙通道。"
+            f"穿过它，你将抵达「{world_name}」——一个{world_theme}主题的世界。{world_desc}"
+            f"在你进入之前，告诉我——你期待在那个世界遇见的原住民，是男性还是女性？"
+        )
+
+        # GM 完成 2.6-2.7 确认并引导进入
+        gm_farewell = (
+            f"（{gm_name}点了点头）{gender_text}原住民，记住了。"
+            f'最后提醒你——进入后绝对不能向任何人提起你来自"新沪市"或"超域量子宇宙"，否则会被强制遣返。'
+            f"准备好的话我就送你过去了，不过那扇门我进不了，你得独自前往。"
+        )
+
+        gm_exit = (
+            f"（{gm_name}引导你走向街角的水景投影，一道幽蓝裂隙在倒影中缓缓裂开。"
+            f"她轻轻推了你一把，你的视野被吞没——）"
+        )
+
+        return [
+            {"role": "assistant", "content": gm_intro},
+            {"role": "user", "content": f"我期待见到的原住民是{gender_text}。"},
+            {"role": "assistant", "content": gm_farewell},
+            {"role": "user", "content": "我准备好了。"},
+            {"role": "assistant", "content": gm_exit},
+        ]
+
+    def _build_playing_context(self, session: FreakWorldGameState) -> List[Dict[str, str]]:
+        """
+        构建游戏阶段的前序上下文（GM 引导 + 角色列表 + 选定角色），
+        当 DB 中无对话历史时注入，确保 LLM 知道当前在扮演哪个角色。
+        """
+        gender_text = "男性" if session.gender_preference == "male" else "女性"
+        characters = session.characters or []
+        current_char = session.current_character_id or ""
+
+        # GM 引导上下文
+        context = self._build_gm_context_messages(session, gender_text)
+
+        # 角色列表上下文
+        if characters:
+            char_list_text = "\n".join([
+                f"- {c.get('name')}（{c.get('race', '')}）：{c.get('appearance', '')}，{c.get('personality', '')}，{c.get('status', '')}"
+                for c in characters
+            ])
+            context.append({"role": "user", "content": "我进入了这个世界，我能看到哪些人？"})
+            context.append({"role": "assistant", "content": f"你推开那扇门，在昏暗的光线中看到了几个身影：\n\n{char_list_text}\n\n你想和谁交谈？"})
+
+        # 选定角色
+        if current_char:
+            context.append({"role": "user", "content": f"我选择和{current_char}交谈。"})
+
+        return context
+
     # ==================== Step 0: 背景介绍 + 性别选择 ====================
 
     async def _step0_intro(
         self, session: FreakWorldGameState, request: IWChatRequest
     ) -> Dict[str, Any]:
-        """action=start: 返回 GM 介绍 + 世界背景 + 性别选择器（JSON）"""
+        """action=start: 调用 LLM 生成 GM 引导介绍 + 世界背景 + 性别选择器（JSON）"""
         gm_config = get_gm_config(session.gm_id)
         gm_name = gm_config.get("name", "GM")
-        gm_traits = gm_config.get("traits", "")
 
-        world_config = get_world_config(str(session.freak_world_id))
+        world_config = get_world_config(self._format_world_id(session.freak_world_id))
         world_name = world_config.get("name", "未知世界")
         world_theme = world_config.get("theme", "")
         world_description = world_config.get("description", "")
@@ -230,8 +317,35 @@ class FreakWorldService:
         session.characters = None
         self._update_session_db(session)
 
+        # 调用 LLM 让 GM 执行引导步骤 2.1-2.5（自我介绍 → 性别确认）
+        system_prompt = build_system_prompt(
+            gm_id=session.gm_id,
+            world_id=self._format_world_id(session.freak_world_id),
+            is_loading=False,
+            base_path=self.base_path
+        )
+
+        try:
+            response = await self.llm.chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "开始"}
+                ],
+                model_pool=["qwen3_max"],
+                temperature=0.9,
+                top_p=0.85,
+                max_tokens=4096,
+                parse_json=False,
+                response_format="text"
+            )
+            gm_description = self._clean_llm_content(response.get("content", ""))
+        except Exception as e:
+            custom_logger.error(f"LLM GM intro call failed: {e}")
+            # fallback: 使用配置拼接
+            gm_description = f"（{gm_name}，{gm_config.get('traits', '')}）"
+
         content = {
-            "description": f"（{gm_name}，{gm_traits}）",
+            "description": gm_description,
             "worldInfo": {
                 "title": world_name,
                 "theme": world_theme,
@@ -251,6 +365,7 @@ class FreakWorldService:
     ) -> Dict[str, Any]:
         """
         step=1 + selection=male/female → 调 LLM 生成世界叙事（同步模式返回完整文本）
+        注入 GM 引导对话作为 prior context，让 LLM 从世界叙事(1.1)开始，而非重做 GM 介绍。
         """
         if selection not in ("male", "female"):
             return self._error_response("请在 extParam.selection 中传入性别选择（male/female）")
@@ -260,19 +375,20 @@ class FreakWorldService:
         session.game_status = GameStatus.NARRATIVE
         self._update_session_db(session)
 
-        # 构建 system prompt，调用 LLM 生成世界叙事
+        # 构建 system prompt（不含 json 格式指令，期望返回纯 markdown）
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
-            world_id=str(session.freak_world_id),
+            world_id=self._format_world_id(session.freak_world_id),
             is_loading=False,
             base_path=self.base_path
         )
 
         gender_text = "男性" if selection == "male" else "女性"
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"我期待见到的原住民是{gender_text}。"}
-        ]
+
+        # 注入 GM 引导对话上下文，让 LLM 知道 GM 阶段已完成
+        gm_context = self._build_gm_context_messages(session, gender_text)
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(gm_context)
 
         try:
             response = await self.llm.chat_completion(
@@ -318,7 +434,7 @@ class FreakWorldService:
         gm_config = get_gm_config(session.gm_id)
         gm_name = gm_config.get("name", "GM")
 
-        world_setting = load_world_setting(str(session.freak_world_id), self.base_path)
+        world_setting = load_world_setting(self._format_world_id(session.freak_world_id), self.base_path)
         gender_text = "男性" if session.gender_preference == "male" else "女性"
 
         session.game_status = GameStatus.CHARACTER_SELECT
@@ -470,7 +586,7 @@ class FreakWorldService:
         # 构建对话上下文，调用 LLM
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
-            world_id=str(session.freak_world_id),
+            world_id=self._format_world_id(session.freak_world_id),
             is_loading=False,
             base_path=self.base_path
         )
@@ -478,18 +594,20 @@ class FreakWorldService:
         char_name = selected_char.get("name", "角色")
         gender_text = "男性" if session.gender_preference == "male" else "女性"
 
-        # 注入角色上下文
+        # 注入完整前序上下文（GM 引导 + 角色列表 + 选择）
         char_list_text = "\n".join([
             f"- {c.get('name')}（{c.get('race', '')}）：{c.get('appearance', '')}，{c.get('personality', '')}，{c.get('status', '')}"
             for c in characters
         ])
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"我期待见到的原住民是{gender_text}。"},
-            {"role": "assistant", "content": f"以下是你将遇到的原住民：\n\n{char_list_text}\n\n你想和谁交谈？"},
+        gm_context = self._build_gm_context_messages(session, gender_text)
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(gm_context)
+        messages.extend([
+            {"role": "user", "content": "我进入了这个世界，我能看到哪些人？"},
+            {"role": "assistant", "content": f"你推开那扇门，在昏暗的光线中看到了几个身影：\n\n{char_list_text}\n\n你想和谁交谈？"},
             {"role": "user", "content": f"我选择和{char_name}交谈。"}
-        ]
+        ])
 
         try:
             response = await self.llm.chat_completion(
@@ -525,13 +643,19 @@ class FreakWorldService:
 
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
-            world_id=str(session.freak_world_id),
+            world_id=self._format_world_id(session.freak_world_id),
             is_loading=False,
             base_path=self.base_path
         )
 
         history = self._get_dialogue_history(session.session_id) if session.session_id else []
         messages = [{"role": "system", "content": system_prompt}]
+
+        # 当 DB 无对话历史时，注入前序上下文（GM 引导 + 角色选择），避免 LLM 回退到 GM 阶段
+        if not history and session.current_character_id:
+            playing_context = self._build_playing_context(session)
+            messages.extend(playing_context)
+
         messages.extend(history[-20:])
         messages.append({"role": "user", "content": message})
 
@@ -569,7 +693,7 @@ class FreakWorldService:
         # 构建对话历史 + 换人密钥
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
-            world_id=str(session.freak_world_id),
+            world_id=self._format_world_id(session.freak_world_id),
             is_loading=False,
             base_path=self.base_path
         )
@@ -606,7 +730,7 @@ class FreakWorldService:
 
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
-            world_id=str(session.freak_world_id),
+            world_id=self._format_world_id(session.freak_world_id),
             is_loading=False,
             base_path=self.base_path
         )
@@ -644,7 +768,7 @@ class FreakWorldService:
 
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
-            world_id=str(session.freak_world_id),
+            world_id=self._format_world_id(session.freak_world_id),
             is_loading=True,
             base_path=self.base_path
         )
@@ -739,7 +863,7 @@ class FreakWorldService:
     async def _stream_narrative(
         self, request: IWChatRequest, gender: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Step 1 世界叙事的真流式处理"""
+        """Step 1 世界叙事的真流式处理（注入 GM 引导上下文）"""
         try:
             session = self._get_or_create_session(request)
 
@@ -749,16 +873,17 @@ class FreakWorldService:
 
             system_prompt = build_system_prompt(
                 gm_id=session.gm_id,
-                world_id=str(session.freak_world_id),
+                world_id=self._format_world_id(session.freak_world_id),
                 is_loading=False,
                 base_path=self.base_path
             )
 
             gender_text = "男性" if gender == "male" else "女性"
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"我期待见到的原住民是{gender_text}。"}
-            ]
+
+            # 注入 GM 引导对话上下文
+            gm_context = self._build_gm_context_messages(session, gender_text)
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(gm_context)
 
             full_content = ""
             async for chunk in self.llm.stream_chat_completion(
@@ -805,13 +930,19 @@ class FreakWorldService:
 
             system_prompt = build_system_prompt(
                 gm_id=session.gm_id,
-                world_id=str(session.freak_world_id),
+                world_id=self._format_world_id(session.freak_world_id),
                 is_loading=False,
                 base_path=self.base_path
             )
 
             history = self._get_dialogue_history(session.session_id) if session.session_id else []
             messages = [{"role": "system", "content": system_prompt}]
+
+            # 当 DB 无对话历史时，注入前序上下文
+            if not history and session.current_character_id:
+                playing_context = self._build_playing_context(session)
+                messages.extend(playing_context)
+
             messages.extend(history[-20:])
             messages.append({"role": "user", "content": message})
 
