@@ -1133,7 +1133,7 @@ class COCService:
 {json.dumps(investigator.get('skills', {}), ensure_ascii=False, indent=2)}
 
 【装备】
-{', '.join(investigator.get('equipment', []))}
+{self._format_equipment_for_prompt(investigator.get('equipment', []))}
 
 【游戏规则】
 1. 每轮生成300-500字
@@ -1145,6 +1145,22 @@ class COCService:
 当前轮数：{session.turn_number}
 当前回合：{session.round_number}
 """
+
+    @staticmethod
+    def _format_equipment_for_prompt(equipment: list) -> str:
+        """将装备列表格式化为 prompt 文本，兼容 dict 和 str 格式"""
+        items = []
+        for eq in equipment:
+            if isinstance(eq, dict):
+                name = eq.get("name", "未知")
+                damage = eq.get("damage", "")
+                if damage and damage != "—":
+                    items.append(f"{name}（伤害：{damage}）")
+                else:
+                    items.append(name)
+            else:
+                items.append(str(eq))
+        return "、".join(items) if items else "无"
 
     # ==================== SSE 流式 ====================
 
