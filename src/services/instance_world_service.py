@@ -782,11 +782,13 @@ class FreakWorldService:
         if not session:
             return self._error_response("会话不存在，无法存档")
 
-        # 获取 saveId（前端/Java 层传入）
+        # 获取 saveId（前端/Java 层传入，可能是 int 或 str，统一转 str 匹配 VARCHAR 列）
         save_id = request.save_id
         if not save_id:
             ext_param = request.ext_param or {}
             save_id = ext_param.get("saveId") or ext_param.get("save_id")
+        if save_id is not None:
+            save_id = str(save_id)
         if not save_id:
             return self._error_response("缺少存档ID（saveId），存档ID由前端传入")
 
@@ -840,6 +842,8 @@ class FreakWorldService:
         """
         ext_param = request.ext_param or {}
         save_id = ext_param.get("saveId") or ext_param.get("save_id") or request.save_id
+        if save_id is not None:
+            save_id = str(save_id)
         if not save_id:
             return self._error_response("缺少存档ID（saveId）")
 
