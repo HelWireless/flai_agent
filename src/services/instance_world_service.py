@@ -30,6 +30,7 @@ from sqlalchemy import and_
 
 from ..schemas import IWChatRequest
 from ..models.instance_world import FreakWorldGameState, FreakWorldDialogue
+from ..models.coc_save_slot import COCSaveSlot
 from ..custom_logger import custom_logger
 from .llm_service import LLMService
 from .instance_world_prompts import (
@@ -723,19 +724,88 @@ class FreakWorldService:
 
     # ==================== 存档/读档 ====================
 
+    def _get_save_slot(self, save_id: str) -> Optional[COCSaveSlot]:
+        """根据 save_id 查询存档（复用 t_coc_save_slot 表）"""
+        return self.db.query(COCSaveSlot).filter(
+            and_(
+                COCSaveSlot.save_id == save_id,
+                COCSaveSlot.del_ == 0
+            )
+        ).first()
+
+    def _create_save_slot(
+        self, save_id: str, session: FreakWorldGameState, save_content: str
+    ) -> COCSaveSlot:
+        """将 IW 存档写入 t_coc_save_slot 表
+
+        字段复用策略：
+        - save_id / session_id / account_id / gm_id / game_status: 通用字段
+        - investigator_card: 存 IW 游戏状态（characters, current_character_id, gender_preference, world_id）
+        - temp_data: 存 LLM 压缩的存档文本（iw_prompt_saving 格式）
+        - round_number / turn_number: IW 不用，默认 0
+        """
+        iw_game_state = {
+            "type": "freak_world",
+            "world_id": self._format_world_id(session.freak_world_id),
+            "gender_preference": session.gender_preference,
+            "current_character_id": session.current_character_id,
+            "characters": session.characters,
+        }
+        save_slot = COCSaveSlot(
+            save_id=save_id,
+            session_id=session.session_id,
+            account_id=session.account_id,
+            gm_id=session.gm_id,
+            game_status=session.game_status,
+            investigator_card=iw_game_state,
+            round_number=0,
+            turn_number=0,
+            temp_data={"save_content": save_content},
+            del_=0
+        )
+        self.db.add(save_slot)
+        self.db.commit()
+        self.db.refresh(save_slot)
+        custom_logger.info(f"Created IW save slot: {save_slot.save_id} for session {session.session_id}")
+        return save_slot
+
     async def _handle_save_action(self, request: IWChatRequest) -> Dict[str, Any]:
+        """
+        处理存档请求（extParam.action = "save"）
+
+        1. 获取 saveId（前端传入）
+        2. 调用 LLM 按 iw_prompt_saving 格式压缩对话
+        3. 将压缩文本 + 游戏状态写入 t_coc_save_slot
+        4. 返回存档确认
+        """
         session = self._get_session_db(request.session_id)
         if not session:
             return self._error_response("会话不存在，无法存档")
 
+        # 获取 saveId（前端/Java 层传入）
+        save_id = request.save_id
+        if not save_id:
+            ext_param = request.ext_param or {}
+            save_id = ext_param.get("saveId") or ext_param.get("save_id")
+        if not save_id:
+            return self._error_response("缺少存档ID（saveId），存档ID由前端传入")
+
+        # 调用 LLM，用存档密钥触发 iw_prompt_saving 格式的压缩总结
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
             world_id=self._format_world_id(session.freak_world_id),
             is_loading=False,
             base_path=self.base_path
         )
+
         history = self._get_dialogue_history(session.session_id) if session.session_id else []
         messages = [{"role": "system", "content": system_prompt}]
+
+        # 如果 DB 无对话历史，注入前序上下文
+        if not history and session.current_character_id:
+            playing_context = self._build_playing_context(session)
+            messages.extend(playing_context)
+
         messages.extend(history[-20:])
         messages.append({"role": "user", "content": self.SAVE_KEY})
 
@@ -746,36 +816,69 @@ class FreakWorldService:
                 parse_json=False,
                 response_format="text"
             )
-            save_content = response.get("content", "存档已保存。")
+            save_content = response.get("content", "存档生成失败")
         except Exception as e:
             custom_logger.error(f"Save LLM call failed: {e}")
-            save_content = "存档已保存。"
+            save_content = "存档生成失败"
 
-        return self._build_response(content=save_content)
+        # 写入存档表
+        self._create_save_slot(save_id, session, save_content)
+
+        gm_config = get_gm_config(session.gm_id)
+        gm_name = gm_config.get("name", "GM")
+
+        content = f"（{gm_name}为你记录下了这段旅程）\n\n存档已保存。"
+        return self._build_response(content=content)
 
     async def _handle_load_action(self, request: IWChatRequest) -> Dict[str, Any]:
-        ext_param = request.ext_param or {}
-        save_data = ext_param.get("save_data")
-        if not save_data:
-            return self._error_response("缺少存档数据（extParam.save_data）")
+        """
+        处理读档请求（extParam.action = "load"）
 
-        gm_id = save_data.get("gm_id", "0")
-        session = self._get_or_create_session(request)
-        session.game_status = save_data.get("game_status", GameStatus.PLAYING)
-        session.current_character_id = save_data.get("current_character_id")
-        session.gm_id = gm_id
+        1. 根据 saveId 查 t_coc_save_slot
+        2. 创建新 session，恢复游戏状态
+        3. 用存档中的 LLM 压缩文本 + iw_prompt_loading 调用 LLM 继续对话
+        """
+        ext_param = request.ext_param or {}
+        save_id = ext_param.get("saveId") or ext_param.get("save_id") or request.save_id
+        if not save_id:
+            return self._error_response("缺少存档ID（saveId）")
+
+        # 查询存档
+        save_slot = self._get_save_slot(save_id)
+        if not save_slot:
+            return self._error_response(f"未找到存档: {save_id}")
+
+        # 从存档恢复游戏状态
+        iw_state = save_slot.investigator_card or {}
+        save_text_data = save_slot.temp_data or {}
+        save_content = save_text_data.get("save_content", "")
+
+        # 创建新 session
+        world_id_str = iw_state.get("world_id", self._format_world_id(1))
+        session = self._create_session_db(
+            account_id=save_slot.account_id,
+            freak_world_id=self._parse_world_id(world_id_str),
+            gm_id=save_slot.gm_id,
+            session_id=request.session_id if request.session_id else None
+        )
+
+        # 恢复状态
+        session.game_status = save_slot.game_status or GameStatus.PLAYING
+        session.gender_preference = iw_state.get("gender_preference")
+        session.current_character_id = iw_state.get("current_character_id")
+        session.characters = iw_state.get("characters")
         self._update_session_db(session)
 
+        # 用 loading prompt + 存档文本调用 LLM 继续
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
             world_id=self._format_world_id(session.freak_world_id),
             is_loading=True,
             base_path=self.base_path
         )
-        save_content_str = json.dumps(save_data, ensure_ascii=False, indent=2)
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"【副本存档内容】\n{save_content_str}"}
+            {"role": "user", "content": f"【副本存档内容】\n{save_content}"}
         ]
 
         try:
