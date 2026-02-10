@@ -921,9 +921,11 @@ class COCService:
         3. 构建 system prompt + 存档进度
         4. 调用 LLM 生成"继续冒险"对话
         """
-        # 统一从 extParam 获取 saveId（可能是 int 或 str，统一转 str 匹配 VARCHAR 列）
-        ext_param = request.ext_param or {}
-        save_id = ext_param.get("saveId") or ext_param.get("save_id") or request.save_id
+        # 优先从最外层获取 saveId（可能是 int 或 str，统一转 str 匹配 VARCHAR 列）
+        save_id = request.save_id
+        if not save_id:
+            ext_param = request.ext_param or {}
+            save_id = ext_param.get("saveId") or ext_param.get("save_id")
         if save_id is not None:
             save_id = str(save_id)
 
