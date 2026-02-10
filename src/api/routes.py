@@ -339,7 +339,7 @@ async def freak_world_chat(
     |------|------|------|
     | action | str | 操作类型：`"start"` 开始游戏、`"change_char"` 换人、`"save"` 存档、`"load"` 读档 |
     | selection | str | 用户选择：`"male"`/`"female"` 性别、`"confirm"` 确认、或角色ID（`"char_01"`~`"char_N"`） |
-    | save_data | object | 读档时传入的存档数据（由 Java 层提供） |
+    | saveId | str | 存档ID（存档时由前端生成传入，读档时传入要恢复的存档ID） |
     
     ## extParam 使用说明
     
@@ -428,7 +428,7 @@ async def freak_world_chat(
     }
     ```
     
-    ### 7. 存档（extParam.action=save）
+    ### 7. 存档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -437,11 +437,12 @@ async def freak_world_chat(
         "gmId": "gm_01",
         "step": "3",
         "message": "",
-        "extParam": {"action": "save"}
+        "extParam": {"action": "save", "saveId": "save_abc123"}
     }
     ```
+    > `saveId` 由前端/Java 层生成并传入，后端写入 `t_coc_save_slot` 表
     
-    ### 8. 读档（extParam.action=load + save_data）
+    ### 8. 读档（extParam 传 action + saveId）
     ```json
     {
         "userId": "1000001",
@@ -450,9 +451,10 @@ async def freak_world_chat(
         "gmId": "gm_01",
         "step": "0",
         "message": "",
-        "extParam": {"action": "load", "save_data": {"gm_id": "gm_01", "world_id": "world_01", "game_status": "playing"}}
+        "extParam": {"action": "load", "saveId": "save_abc123"}
     }
     ```
+    > 后端根据 `saveId` 查 `t_coc_save_slot` 表恢复游戏状态，调用 LLM 生成继续对话
     
     ## 响应格式
     
