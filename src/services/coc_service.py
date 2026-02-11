@@ -967,8 +967,9 @@ class COCService:
         # 构建 system prompt + 对话历史，调用 LLM 生成继续对话
         system_prompt = self._build_game_system_prompt(session, investigator, temp_data)
 
-        # 从原 session 获取对话历史
-        history = self._get_dialogue_history(save_slot.session_id)
+        # 从原 session 获取对话历史（需要查询原 session 的数据库主键 ID）
+        original_session = self._get_session_db(save_slot.session_id)
+        history = self._get_dialogue_history(original_session.id) if original_session else []
 
         resume_msg = (
             f"玩家从存档恢复游戏。当前是第{session.turn_number}轮/第{session.round_number}回合。"
