@@ -27,6 +27,9 @@ class FreakWorldGameState(Base):
     random_seed = Column(BigInteger, nullable=True, comment='随机种子')
     characters = Column(JSON, nullable=True, comment='已生成的角色列表JSON')
     
+    # 对话历史总结（滚动更新，用于长期记忆）
+    dialogue_summary = Column(Text, nullable=True, comment='对话历史总结')
+    
     create_time = Column(DateTime, nullable=False, default=func.now(), comment='创建时间')
     update_time = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now(), comment='更新时间')
     del_ = Column('del', SmallInteger, nullable=False, default=0, comment='是否删除')

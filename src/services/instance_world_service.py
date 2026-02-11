@@ -22,6 +22,7 @@ import json
 import uuid
 import random
 import os
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any, AsyncGenerator
 
@@ -61,6 +62,10 @@ class FreakWorldService:
     SAVE_KEY = "73829104碧鹿孽心0109要去坐标BBT进行退出并存档"
     # 换人密钥
     SWITCH_KEY = "73829104核子松鼠0114在哈尔滨错过0117皇上的婚礼所以需要更换交谈角色"
+    
+    # 对话总结配置
+    SUMMARY_INTERVAL = 15  # 每15轮生成一次总结
+    HISTORY_WINDOW = 28    # 历史对话窗口大小（14轮 = 28条消息）
 
     def __init__(self, llm_service: LLMService, db: Session, config: Dict):
         self.llm = llm_service
@@ -144,6 +149,141 @@ class FreakWorldService:
         except Exception as e:
             custom_logger.warning(f"Failed to get dialogue history: {e}")
             return []
+
+    # ==================== 对话总结 ====================
+
+    def _should_generate_summary(self, turn_number: int) -> bool:
+        """判断是否应该生成总结（每15轮触发一次）"""
+        return turn_number > 0 and turn_number % self.SUMMARY_INTERVAL == 0
+
+    def _trigger_summary_if_needed(self, session: FreakWorldGameState, history: List[Dict]):
+        """在响应后异步触发总结生成"""
+        # 使用 characters 列表长度作为轮数计算（副本世界没有 turn_number 字段）
+        dialogue_count = len(history) // 2  # 每轮有2条消息
+        if self._should_generate_summary(dialogue_count):
+            custom_logger.info(f"Triggering summary generation at dialogue round {dialogue_count}")
+            asyncio.create_task(self._generate_summary_async(
+                session.session_id,
+                session.dialogue_summary,
+                history
+            ))
+
+    async def _generate_summary_async(
+        self,
+        session_id: str,
+        old_summary: Optional[str],
+        history: List[Dict]
+    ):
+        """异步生成对话总结"""
+        try:
+            # 获取需要总结的对话（历史窗口之外的部分）
+            if len(history) > self.HISTORY_WINDOW:
+                dialogues_to_summarize = history[:-self.HISTORY_WINDOW]
+            else:
+                dialogues_to_summarize = history
+            
+            if not dialogues_to_summarize and not old_summary:
+                return  # 没有需要总结的内容
+            
+            # 格式化对话内容
+            dialogue_text = self._format_dialogues_for_summary(dialogues_to_summarize)
+            
+            # 构建总结 prompt
+            prompt = self._build_summary_prompt(old_summary, dialogue_text)
+            
+            # 调用 LLM 生成总结
+            response = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model_pool=["qwen3_max"],
+                temperature=0.3,
+                parse_json=False,
+                response_format="text"
+            )
+            
+            new_summary = response.get("content", "")
+            
+            # 更新数据库
+            session = self._get_session_db(session_id)
+            if session:
+                session.dialogue_summary = new_summary
+                self.db.commit()
+                custom_logger.info(f"Summary updated for session {session_id}, length: {len(new_summary)}")
+            
+        except Exception as e:
+            custom_logger.error(f"Failed to generate summary: {e}", exc_info=True)
+
+    def _format_dialogues_for_summary(self, dialogues: List[Dict]) -> str:
+        """将对话列表格式化为文本"""
+        lines = []
+        for msg in dialogues:
+            role = "玩家" if msg["role"] == "user" else "引导者"
+            content = msg.get("content", "")[:200]  # 限制单条长度
+            if content:
+                lines.append(f"{role}: {content}")
+        return "\n".join(lines[-30:])  # 最多取30条
+
+    def _build_summary_prompt(self, old_summary: Optional[str], dialogue_text: str) -> str:
+        """构建总结生成的 prompt"""
+        base_prompt = """你是一个游戏剧情总结助手。请根据以下内容生成简洁的剧情总结（500字以内）。
+
+总结需要包含：
+1. 剧情进展：发生了哪些关键事件
+2. 重要NPC对话：与哪些NPC进行了重要交流
+3. 未解之谜/线索：目前有哪些待解决的谜团或线索
+
+要求：
+- 使用第三人称描述
+- 突出关键信息，省略琐碎细节
+- 保持时间线清晰
+"""
+        
+        if old_summary:
+            return f"""{base_prompt}
+
+【之前的剧情总结】
+{old_summary}
+
+【新增的对话内容】
+{dialogue_text}
+
+请基于之前的总结和新增内容，生成一份更新后的完整总结（合并去重，避免冗余）："""
+        else:
+            return f"""{base_prompt}
+
+【对话内容】
+{dialogue_text}
+
+请生成剧情总结："""
+
+    def _build_messages_with_summary(
+        self,
+        system_prompt: str,
+        summary: Optional[str],
+        history: List[Dict],
+        user_message: str,
+        extra_context: List[Dict] = None
+    ) -> List[Dict]:
+        """构建包含总结的消息列表"""
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # 插入剧情总结（如果有）
+        if summary:
+            messages.append({
+                "role": "assistant",
+                "content": f"【剧情回顾】\n{summary}"
+            })
+        
+        # 添加额外上下文（如角色选择等）
+        if extra_context:
+            messages.extend(extra_context)
+        
+        # 添加历史对话（最近14轮）
+        messages.extend(history[-self.HISTORY_WINDOW:])
+        
+        # 添加当前用户消息
+        messages.append({"role": "user", "content": user_message})
+        
+        return messages
 
     # ==================== 会话管理 ====================
 
@@ -650,15 +790,20 @@ class FreakWorldService:
         )
 
         history = self._get_dialogue_history(session.session_id) if session.session_id else []
-        messages = [{"role": "system", "content": system_prompt}]
-
+        
         # 当 DB 无对话历史时，注入前序上下文（GM 引导 + 角色选择），避免 LLM 回退到 GM 阶段
+        extra_context = None
         if not history and session.current_character_id:
-            playing_context = self._build_playing_context(session)
-            messages.extend(playing_context)
+            extra_context = self._build_playing_context(session)
 
-        messages.extend(history[-20:])
-        messages.append({"role": "user", "content": message})
+        # 构建消息（包含剧情总结）
+        messages = self._build_messages_with_summary(
+            system_prompt=system_prompt,
+            summary=session.dialogue_summary,
+            history=history,
+            user_message=message,
+            extra_context=extra_context
+        )
 
         try:
             response = await self.llm.chat_completion(
@@ -674,6 +819,9 @@ class FreakWorldService:
         except Exception as e:
             custom_logger.error(f"LLM call failed: {e}")
             ai_content = "抱歉，系统暂时无法响应，请稍后再试。"
+
+        # 异步触发总结生成（每15轮）
+        self._trigger_summary_if_needed(session, history)
 
         return self._build_response(content=ai_content)
 
@@ -700,10 +848,14 @@ class FreakWorldService:
         )
 
         history = self._get_dialogue_history(session.session_id) if session.session_id else []
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(history[-20:])
-        # 发送换人密钥，LLM 会展示角色列表
-        messages.append({"role": "user", "content": self.SWITCH_KEY})
+        
+        # 构建消息（包含剧情总结）
+        messages = self._build_messages_with_summary(
+            system_prompt=system_prompt,
+            summary=session.dialogue_summary,
+            history=history,
+            user_message=self.SWITCH_KEY  # 换人密钥作为用户消息
+        )
 
         try:
             response = await self.llm.chat_completion(
@@ -801,15 +953,20 @@ class FreakWorldService:
         )
 
         history = self._get_dialogue_history(session.session_id) if session.session_id else []
-        messages = [{"role": "system", "content": system_prompt}]
-
+        
         # 如果 DB 无对话历史，注入前序上下文
+        extra_context = None
         if not history and session.current_character_id:
-            playing_context = self._build_playing_context(session)
-            messages.extend(playing_context)
+            extra_context = self._build_playing_context(session)
 
-        messages.extend(history[-20:])
-        messages.append({"role": "user", "content": self.SAVE_KEY})
+        # 构建消息（包含剧情总结）
+        messages = self._build_messages_with_summary(
+            system_prompt=system_prompt,
+            summary=session.dialogue_summary,
+            history=history,
+            user_message=self.SAVE_KEY,  # 存档密钥作为用户消息
+            extra_context=extra_context
+        )
 
         try:
             response = await self.llm.chat_completion(
@@ -1052,15 +1209,20 @@ class FreakWorldService:
             )
 
             history = self._get_dialogue_history(session.session_id) if session.session_id else []
-            messages = [{"role": "system", "content": system_prompt}]
-
+            
             # 当 DB 无对话历史时，注入前序上下文
+            extra_context = None
             if not history and session.current_character_id:
-                playing_context = self._build_playing_context(session)
-                messages.extend(playing_context)
+                extra_context = self._build_playing_context(session)
 
-            messages.extend(history[-20:])
-            messages.append({"role": "user", "content": message})
+            # 构建消息（包含剧情总结）
+            messages = self._build_messages_with_summary(
+                system_prompt=system_prompt,
+                summary=session.dialogue_summary,
+                history=history,
+                user_message=message,
+                extra_context=extra_context
+            )
 
             full_content = ""
             async for chunk in self.llm.stream_chat_completion(
@@ -1076,6 +1238,9 @@ class FreakWorldService:
                 elif chunk.get("type") == "error":
                     yield {"type": "error", "complete": True, "message": chunk.get("message", "LLM 调用失败")}
                     return
+
+            # 异步触发总结生成（每15轮）
+            self._trigger_summary_if_needed(session, history)
 
             cleaned = self._clean_llm_content(full_content)
             yield {"type": "done", "complete": True, "result": {"content": cleaned, "complete": False}}

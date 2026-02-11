@@ -1,7 +1,7 @@
 """
 克苏鲁跑团(COC)游戏状态数据模型
 """
-from sqlalchemy import Column, Integer, String, DateTime, JSON, SmallInteger
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, SmallInteger
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from typing import Dict, Any, Optional
@@ -40,6 +40,9 @@ class COCGameState(Base):
     
     # 临时数据 (用于步骤间传递)
     temp_data = Column(JSON, nullable=True, comment='临时数据JSON')
+    
+    # 对话历史总结（滚动更新，用于长期记忆）
+    dialogue_summary = Column(Text, nullable=True, comment='对话历史总结')
     
     create_time = Column(DateTime, nullable=False, default=func.now(), comment='创建时间')
     update_time = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now(), comment='更新时间')
