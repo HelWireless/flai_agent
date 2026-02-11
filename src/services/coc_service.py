@@ -254,6 +254,11 @@ class COCService:
             if action == "load":
                 return await self._handle_load_action(request)
 
+            # 自动读档：saveId 有值且没有明确 action 时，自动执行读档
+            if request.save_id and not action:
+                custom_logger.info(f"Auto load: saveId={request.save_id} without action, triggering load")
+                return await self._handle_load_action(request)
+
             # 获取或创建会话
             session = self._get_or_create_session(request)
 
@@ -1187,13 +1192,14 @@ class COCService:
         step = request.step
 
         try:
-            # step=6 游戏对话 → 真正的 LLM 流式
-            if step == "6" and not action:
+            # step=6 游戏对话 → 真正的 LLM 流式（无 saveId 时）
+            # 有 saveId 时走 process_request 触发自动读档
+            if step == "6" and not action and not request.save_id:
                 async for chunk in self._stream_playing(request):
                     yield chunk
                 return
 
-            # 其他 step → 同步处理后发送
+            # 其他 step / 有 saveId → 同步处理后发送
             response = await self.process_request(request)
             content = response.get("content", "")
 
