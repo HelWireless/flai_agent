@@ -407,6 +407,29 @@ class COCService:
         
         return result.strip()
 
+    def _clean_turn_header(self, content: str) -> str:
+        """清理 LLM 输出中的轮数标题
+        
+        移除 LLM 生成的轮数标题（如【XX轮 / YY回合】），
+        因为后端会统一添加正确的轮数标题
+        """
+        import re
+        
+        # 匹配轮数标题模式：【XX轮 / YY回合】（支持加粗格式）
+        # 包括：【01轮 / 01回合】、**【01轮 / 01回合】**、【1轮 / 1回合】等
+        turn_pattern = r'\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}\s*\n*'
+        
+        # 移除所有轮数标题
+        result = re.sub(turn_pattern, '', content)
+        
+        # 清理开头的空行
+        result = result.lstrip('\n\r')
+        
+        # 清理多余的空行
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        
+        return result
+
     def _build_messages_with_summary(
         self,
         system_prompt: str,
@@ -1144,12 +1167,15 @@ class COCService:
             custom_logger.error(f"LLM call failed: {e}")
             ai_content = f"（{gm_name}皱眉）抱歉，系统暂时无法响应，请稍后再试。"
 
+        # 清理 LLM 输出中的轮数标题（后端统一添加）
+        ai_content = self._clean_turn_header(ai_content)
+
         self._update_session_db(session)
         
         # 异步触发总结生成（每5轮）
         self._trigger_summary_if_needed(session, history)
 
-        # 构建响应内容（状态行由 LLM 在回复末尾输出，不再由后端追加）
+        # 构建响应内容（轮数标题由后端添加，状态行由 LLM 输出）
         content = f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
         content += ai_content
 
@@ -1664,12 +1690,17 @@ class COCService:
                 user_message=message
             )
 
-            # 发送轮次头
+            # 发送轮次头（后端统一控制）
             header = f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
             yield {"type": "delta", "content": header}
 
             # 真正的 LLM 流式调用
+            import re
             full_content = ""
+            buffer = ""  # 缓冲区用于检测开头的轮数标题
+            header_checked = False
+            turn_pattern = re.compile(r'^\s*\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}\s*\n*')
+            
             async for chunk in self.llm.stream_chat_completion(
                 messages=messages,
                 model_pool=["qwen3_max"],
@@ -1677,13 +1708,32 @@ class COCService:
                 response_format="text"
             ):
                 if chunk.get("type") == "delta":
-                    full_content += chunk["content"]
-                    yield {"type": "delta", "content": chunk["content"]}
+                    chunk_content = chunk["content"]
+                    full_content += chunk_content
+                    
+                    if not header_checked:
+                        # 缓冲开头内容，检测轮数标题
+                        buffer += chunk_content
+                        if len(buffer) >= 25 or '\n' in buffer[15:] if len(buffer) > 15 else False:
+                            # 缓冲足够或遇到换行，检查并清理轮数标题
+                            cleaned = turn_pattern.sub('', buffer)
+                            if cleaned:
+                                yield {"type": "delta", "content": cleaned}
+                            header_checked = True
+                    else:
+                        yield {"type": "delta", "content": chunk_content}
                 elif chunk.get("type") == "error":
                     yield {"type": "error", "complete": True, "message": chunk.get("message", "LLM 调用失败")}
                     return
+            
+            # 如果缓冲区还有未发送的内容
+            if not header_checked and buffer:
+                cleaned = turn_pattern.sub('', buffer)
+                if cleaned:
+                    yield {"type": "delta", "content": cleaned}
 
-            # 状态行由 LLM 在回复末尾输出，不再由后端追加
+            # 清理完整内容中的轮数标题（用于保存历史）
+            full_content = self._clean_turn_header(full_content)
 
             self._update_session_db(session)
             
