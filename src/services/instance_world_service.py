@@ -135,6 +135,7 @@ class FreakWorldService:
         self.db.refresh(session)
 
     def _get_dialogue_history(self, session_id) -> List[Dict[str, str]]:
+        """获取对话历史，自动清理 assistant 消息中的状态行"""
         try:
             dialogues = self.db.query(FreakWorldDialogue).filter(
                 and_(
@@ -144,7 +145,11 @@ class FreakWorldService:
             ).order_by(FreakWorldDialogue.create_time.asc()).all()
             messages = []
             for d in dialogues:
-                messages.extend(d.to_messages())
+                for msg in d.to_messages():
+                    # 清理 assistant 消息中的状态行
+                    if msg.get("role") == "assistant":
+                        msg["content"] = self._clean_assistant_message(msg.get("content", ""))
+                    messages.append(msg)
             return messages
         except Exception as e:
             custom_logger.warning(f"Failed to get dialogue history: {e}")
@@ -313,14 +318,8 @@ class FreakWorldService:
         if extra_context:
             messages.extend(extra_context)
         
-        # 添加历史对话（最近5轮），清理 assistant 消息中的重复状态
-        recent_history = history[-self.HISTORY_WINDOW:]
-        for msg in recent_history:
-            if msg.get("role") == "assistant":
-                cleaned_content = self._clean_assistant_message(msg.get("content", ""))
-                messages.append({"role": "assistant", "content": cleaned_content})
-            else:
-                messages.append(msg)
+        # 添加历史对话（最近5轮，已在 _get_dialogue_history 中清理过状态行）
+        messages.extend(history[-self.HISTORY_WINDOW:])
         
         # 添加当前用户消息
         messages.append({"role": "user", "content": user_message})
