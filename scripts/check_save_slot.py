@@ -40,7 +40,7 @@ def main():
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
-                    SELECT id, save_id, session_id, account_id, gm_id, game_status, create_time, del
+                    SELECT id, save_id, session_id, user_id, gm_id, game_status, create_time, del
                     FROM t_coc_save_slot
                     ORDER BY create_time DESC
                     LIMIT 20
@@ -54,9 +54,9 @@ def main():
             print(f"  共找到 {len(rows)} 条记录\n")
             
             for i, row in enumerate(rows):
-                record_id, save_id, session_id, account_id, gm_id, game_status, create_time, del_flag = row
+                record_id, save_id, session_id, user_id, gm_id, game_status, create_time, del_flag = row
                 print(f"  [{i+1}] id={record_id}, save_id='{save_id}' (类型: {type(save_id).__name__})")
-                print(f"       session_id={session_id}, account_id={account_id}")
+                print(f"       session_id={session_id}, user_id={user_id}")
                 print(f"       gm_id={gm_id}, game_status={game_status}")
                 print(f"       create_time={create_time}, del={del_flag}")
                 print()
@@ -67,7 +67,7 @@ def main():
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
-                    SELECT id, save_id, session_id, account_id, gm_id, game_status, create_time, del
+                    SELECT id, save_id, session_id, user_id, gm_id, game_status, create_time, del
                     FROM t_coc_save_slot
                     WHERE save_id = :save_id
                 """),
@@ -83,7 +83,7 @@ def main():
             with engine.connect() as conn:
                 result = conn.execute(
                     text("""
-                        SELECT id, save_id, session_id, account_id
+                        SELECT id, save_id, session_id, user_id
                         FROM t_coc_save_slot
                         WHERE save_id LIKE :pattern
                     """),
@@ -101,14 +101,14 @@ def main():
             for row in rows:
                 print(f"  {row}")
         
-        # 4. 查询 account_id=1000003 的存档
-        print(f"\n【查询 account_id=1000003 的存档】")
+        # 4. 查询 user_id=1000003 的存档
+        print(f"\n【查询 user_id=1000003 的存档】")
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
-                    SELECT id, save_id, session_id, account_id, gm_id, game_status, create_time, del
+                    SELECT id, save_id, session_id, user_id, gm_id, game_status, create_time, del
                     FROM t_coc_save_slot
-                    WHERE account_id = 1000003
+                    WHERE user_id = 1000003
                     ORDER BY create_time DESC
                 """)
             )

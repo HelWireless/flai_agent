@@ -97,7 +97,7 @@ def test_db_query(save_id: str):
             print(f"    id: {row[0]}")
             print(f"    save_id: '{row[1]}'")
             print(f"    session_id: '{row[2]}'")
-            print(f"    account_id: {row[3]}")
+            print(f"    user_id: {row[3]}")
             print(f"    gm_id: '{row[4]}'")
             print(f"    game_status: '{row[5]}'")
             print(f"    investigator_card: {str(row[6])[:100]}...")
@@ -169,6 +169,37 @@ def test_sqlalchemy_orm_query(save_id: str):
     finally:
         db.close()
 
+def test_save_slot_attributes():
+    """测试存档记录的属性访问"""
+    print("\n【测试存档记录属性访问】")
+    
+    from sqlalchemy import and_
+    from src.models.coc_save_slot import COCSaveSlot
+    
+    engine = get_engine()
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    
+    try:
+        save_slot = db.query(COCSaveSlot).filter(
+            and_(
+                COCSaveSlot.save_id == "13",
+                COCSaveSlot.del_ == 0
+            )
+        ).first()
+        
+        if save_slot:
+            print(f"  save_slot 类型: {type(save_slot)}")
+            print(f"  save_slot.user_id: {save_slot.user_id} (type: {type(save_slot.user_id).__name__})")
+            print(f"  save_slot.session_id: {save_slot.session_id} (type: {type(save_slot.session_id).__name__})")
+            print(f"  save_slot.gm_id: {save_slot.gm_id}")
+            print(f"  save_slot.investigator_card 类型: {type(save_slot.investigator_card)}")
+            print(f"  save_slot.temp_data 类型: {type(save_slot.temp_data)}")
+        else:
+            print("  未找到存档!")
+    finally:
+        db.close()
+
 def main():
     print("=" * 80)
     print("测试读档流程")
@@ -183,6 +214,9 @@ def main():
         
         # 3. 测试 ORM 查询
         test_sqlalchemy_orm_query(save_id)
+        
+        # 4. 测试存档属性访问
+        test_save_slot_attributes()
 
 if __name__ == "__main__":
     main()

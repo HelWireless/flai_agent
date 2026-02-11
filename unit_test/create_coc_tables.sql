@@ -7,7 +7,7 @@
 -- =====================================================
 CREATE TABLE `t_coc_game_state` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `account_id` INT UNSIGNED NOT NULL COMMENT '用户id',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '用户id',
   `session_id` CHAR(16) NOT NULL COMMENT '会话id',
   
   -- GM相关
@@ -35,7 +35,7 @@ CREATE TABLE `t_coc_game_state` (
   
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_session_id` (`session_id`),
-  KEY `idx_account_id` (`account_id`),
+  KEY `idx_user_id` (`user_id`),
   KEY `idx_game_status` (`game_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='克苏鲁跑团游戏状态表';
 

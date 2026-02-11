@@ -15,7 +15,7 @@ class COCGameState(Base):
     __tablename__ = 't_coc_game_state'
     
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键')
-    account_id = Column(Integer, nullable=False, index=True, comment='用户id')
+    user_id = Column(Integer, nullable=False, index=True, comment='用户id')
     session_id = Column(String(16), nullable=False, unique=True, comment='会话id')
     
     # GM相关
@@ -52,7 +52,7 @@ class COCGameState(Base):
         """转换为字典"""
         return {
             "id": self.id,
-            "account_id": self.account_id,
+            "user_id": self.user_id,
             "session_id": self.session_id,
             "gm_id": self.gm_id,
             "gm_gender": self.gm_gender,

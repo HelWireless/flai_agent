@@ -16,7 +16,7 @@ class FreakWorldGameState(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键')
     freak_world_id = Column(Integer, nullable=False, index=True, comment='异世界id')
-    account_id = Column(Integer, nullable=False, index=True, comment='用户id')
+    user_id = Column(Integer, nullable=False, index=True, comment='用户id')
     session_id = Column(String(16), nullable=False, unique=True, comment='会话id')
     
     # 游戏状态字段
@@ -32,14 +32,14 @@ class FreakWorldGameState(Base):
     del_ = Column('del', SmallInteger, nullable=False, default=0, comment='是否删除')
     
     def __repr__(self):
-        return f"<FreakWorldGameState(session_id={self.session_id}, account_id={self.account_id})>"
+        return f"<FreakWorldGameState(session_id={self.session_id}, user_id={self.user_id})>"
     
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
             "id": self.id,
             "freak_world_id": self.freak_world_id,
-            "account_id": self.account_id,
+            "user_id": self.user_id,
             "session_id": self.session_id,
             "gm_id": self.gm_id,
             "game_status": self.game_status,

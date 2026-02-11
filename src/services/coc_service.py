@@ -84,14 +84,14 @@ class COCService:
 
     def _create_session_db(
         self,
-        account_id: int,
+        user_id: int,
         session_id: Optional[str] = None,
         gm_id: Optional[str] = None
     ) -> COCGameState:
         """创建新游戏状态"""
         session = COCGameState(
             session_id=session_id or self._generate_session_id(),
-            account_id=account_id,
+            user_id=user_id,
             gm_id=gm_id,
             game_status=GameStatus.STEP0_INTRO,
             del_=0
@@ -147,13 +147,13 @@ class COCService:
             # session_id 由 Java 层创建但本地无记录，创建新会话
             custom_logger.info(f"Session {request.session_id} not found, creating new")
             session = self._create_session_db(
-                account_id=int(request.user_id),
+                user_id=int(request.user_id),
                 session_id=request.session_id,
                 gm_id=request.gm_id if request.gm_id != "0" else None
             )
         else:
             session = self._create_session_db(
-                account_id=int(request.user_id),
+                user_id=int(request.user_id),
                 gm_id=request.gm_id if request.gm_id != "0" else None
             )
 
@@ -857,7 +857,7 @@ class COCService:
         save_slot = COCSaveSlot(
             save_id=save_id,
             session_id=session.session_id,
-            account_id=session.account_id,
+            user_id=session.user_id,
             gm_id=session.gm_id,
             game_status=session.game_status,
             investigator_card=session.investigator_card,
@@ -947,13 +947,13 @@ class COCService:
             session = self._get_session_db(request.session_id)
             if not session:
                 session = self._create_session_db(
-                    account_id=save_slot.account_id,
+                    user_id=save_slot.user_id,
                     session_id=request.session_id,
                     gm_id=save_slot.gm_id
                 )
         else:
             session = self._create_session_db(
-                account_id=save_slot.account_id,
+                user_id=save_slot.user_id,
                 gm_id=save_slot.gm_id
             )
 

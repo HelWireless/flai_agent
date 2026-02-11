@@ -79,7 +79,7 @@ def test_coc_game_state_model():
     print("\n1. 创建游戏状态实例:")
     state = COCGameState(
         session_id="test_123",
-        account_id=1000,
+        user_id=1000,
         gm_id="yan",
         gm_gender="female",
         game_status="gm_select"

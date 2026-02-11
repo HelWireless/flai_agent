@@ -99,14 +99,14 @@ class FreakWorldService:
 
     def _create_session_db(
         self,
-        account_id: int,
+        user_id: int,
         freak_world_id: int,
         gm_id: Optional[str] = None,
         session_id: Optional[str] = None
     ) -> FreakWorldGameState:
         session = FreakWorldGameState(
             session_id=session_id or self._generate_session_id(),
-            account_id=account_id,
+            user_id=user_id,
             freak_world_id=freak_world_id,
             gm_id=gm_id or self._get_random_gm_id(),
             game_status=GameStatus.INTRO,
@@ -156,7 +156,7 @@ class FreakWorldService:
 
         gm_id = request.gm_id if request.gm_id and request.gm_id != "0" else self._get_random_gm_id()
         return self._create_session_db(
-            account_id=int(request.user_id),
+            user_id=int(request.user_id),
             freak_world_id=self._parse_world_id(request.world_id),
             gm_id=gm_id,
             session_id=request.session_id if request.session_id else None
@@ -739,7 +739,7 @@ class FreakWorldService:
         """将 IW 存档写入 t_coc_save_slot 表
 
         字段复用策略：
-        - save_id / session_id / account_id / gm_id / game_status: 通用字段
+        - save_id / session_id / user_id / gm_id / game_status: 通用字段
         - investigator_card: 存 IW 游戏状态（characters, current_character_id, gender_preference, world_id）
         - temp_data: 存 LLM 压缩的存档文本（iw_prompt_saving 格式）
         - round_number / turn_number: IW 不用，默认 0
@@ -754,7 +754,7 @@ class FreakWorldService:
         save_slot = COCSaveSlot(
             save_id=save_id,
             session_id=session.session_id,
-            account_id=session.account_id,
+            user_id=session.user_id,
             gm_id=session.gm_id,
             game_status=session.game_status,
             investigator_card=iw_game_state,
@@ -860,7 +860,7 @@ class FreakWorldService:
         # 创建新 session
         world_id_str = iw_state.get("world_id", self._format_world_id(1))
         session = self._create_session_db(
-            account_id=save_slot.account_id,
+            user_id=save_slot.user_id,
             freak_world_id=self._parse_world_id(world_id_str),
             gm_id=save_slot.gm_id,
             session_id=request.session_id if request.session_id else None

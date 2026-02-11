@@ -8,7 +8,7 @@
 CREATE TABLE `t_freak_world_game_state` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
   `freak_world_id` int(11) unsigned NOT NULL COMMENT '异世界id',
-  `account_id` int(32) unsigned NOT NULL COMMENT '用户id',
+  `user_id` int(32) unsigned NOT NULL COMMENT '用户id',
   `session_id` char(16) NOT NULL COMMENT '会话id',
   
   -- 游戏状态字段
@@ -25,7 +25,7 @@ CREATE TABLE `t_freak_world_game_state` (
   
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_session_id` (`session_id`),
-  KEY `idx_account_id` (`account_id`),
+  KEY `idx_user_id` (`user_id`),
   KEY `idx_freak_world_id` (`freak_world_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异世界游戏状态表';
 

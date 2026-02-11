@@ -18,7 +18,7 @@ class COCSaveSlot(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键')
     save_id = Column(String(32), nullable=False, unique=True, comment='存档ID')
     session_id = Column(String(16), nullable=False, index=True, comment='关联会话ID')
-    account_id = Column(Integer, nullable=False, index=True, comment='用户ID')
+    user_id = Column(Integer, nullable=False, index=True, comment='用户ID')
     gm_id = Column(String(16), nullable=True, comment='GM ID')
     game_status = Column(String(32), nullable=False, comment='存档时的游戏状态')
     investigator_card = Column(JSON, nullable=True, comment='人物卡快照')
@@ -37,7 +37,7 @@ class COCSaveSlot(Base):
             "id": self.id,
             "save_id": self.save_id,
             "session_id": self.session_id,
-            "account_id": self.account_id,
+            "user_id": self.user_id,
             "gm_id": self.gm_id,
             "game_status": self.game_status,
             "investigator_card": self.investigator_card or {},
