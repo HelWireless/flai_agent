@@ -19,6 +19,9 @@ CREATE TABLE `t_freak_world_game_state` (
   `random_seed` bigint DEFAULT NULL COMMENT '随机种子',
   `characters` json DEFAULT NULL COMMENT '已生成的角色列表JSON',
   
+  -- 对话历史总结
+  `dialogue_summary` TEXT DEFAULT NULL COMMENT '对话历史总结(滚动更新)',
+  
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `del` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',

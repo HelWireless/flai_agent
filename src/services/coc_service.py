@@ -88,8 +88,8 @@ class COCService:
     LOAD_KEY = "73829104碧鹿孽心0109要去坐标BBT进行读档"
     
     # 对话总结配置
-    SUMMARY_INTERVAL = 11  # 每11轮生成一次总结
-    HISTORY_WINDOW = 20    # 历史对话窗口大小（10轮 = 20条消息）
+    SUMMARY_INTERVAL = 5   # 每5轮生成一次总结
+    HISTORY_WINDOW = 10    # 历史对话窗口大小（5轮 = 10条消息）
     
     # 缓存加载的规则内容
     _rules_cache: Dict[str, str] = {}
@@ -1267,7 +1267,7 @@ class COCService:
         )
 
         messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(history[-28:])  # 最近 14 轮
+        messages.extend(history[-10:])  # 最近 5 轮
         messages.append({"role": "user", "content": resume_msg})
 
         try:

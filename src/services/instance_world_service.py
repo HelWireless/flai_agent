@@ -64,8 +64,8 @@ class FreakWorldService:
     SWITCH_KEY = "73829104核子松鼠0114在哈尔滨错过0117皇上的婚礼所以需要更换交谈角色"
     
     # 对话总结配置
-    SUMMARY_INTERVAL = 15  # 每15轮生成一次总结
-    HISTORY_WINDOW = 28    # 历史对话窗口大小（14轮 = 28条消息）
+    SUMMARY_INTERVAL = 5   # 每5轮生成一次总结
+    HISTORY_WINDOW = 10    # 历史对话窗口大小（5轮 = 10条消息）
 
     def __init__(self, llm_service: LLMService, db: Session, config: Dict):
         self.llm = llm_service

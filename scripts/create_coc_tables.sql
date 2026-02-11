@@ -29,6 +29,9 @@ CREATE TABLE `t_coc_game_state` (
   -- 临时数据
   `temp_data` JSON DEFAULT NULL COMMENT '临时数据JSON(步骤间传递)',
   
+  -- 对话历史总结
+  `dialogue_summary` TEXT DEFAULT NULL COMMENT '对话历史总结(滚动更新)',
+  
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `del` BIT(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
