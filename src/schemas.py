@@ -134,21 +134,27 @@ class IWChatRequest(BaseModel):
         populate_by_name=True
     )
     
-    @field_validator('user_id')
+    @field_validator('user_id', mode='before')
     def convert_user_id(cls, v) -> str:
+        """确保 user_id 是字符串类型（前端可能传入数字）"""
         return str(v) if v is not None else ""
     
-    @field_validator('world_id')
+    @field_validator('world_id', mode='before')
     def convert_world_id(cls, v) -> str:
         return str(v) if v is not None else ""
     
-    @field_validator('session_id')
+    @field_validator('session_id', mode='before')
     def convert_session_id(cls, v) -> str:
         return str(v) if v is not None else ""
     
-    @field_validator('gm_id')
+    @field_validator('gm_id', mode='before')
     def convert_gm_id(cls, v) -> str:
         return str(v) if v is not None else "0"
+    
+    @field_validator('save_id', mode='before')
+    def convert_save_id(cls, v) -> Optional[str]:
+        """确保 save_id 是字符串类型（前端可能传入数字）"""
+        return str(v) if v is not None else None
 
 
 class IWChatResponse(BaseModel):
