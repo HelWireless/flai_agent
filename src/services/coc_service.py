@@ -942,12 +942,20 @@ class COCService:
         if not save_slot:
             return self._error_response(f"未找到存档: {save_id}")
 
-        # 创建新会话
-        session = self._create_session_db(
-            account_id=save_slot.account_id,
-            session_id=request.session_id if request.session_id else None,
-            gm_id=save_slot.gm_id
-        )
+        # 获取或创建会话（如果 session_id 已存在则复用，否则创建新的）
+        if request.session_id:
+            session = self._get_session_db(request.session_id)
+            if not session:
+                session = self._create_session_db(
+                    account_id=save_slot.account_id,
+                    session_id=request.session_id,
+                    gm_id=save_slot.gm_id
+                )
+        else:
+            session = self._create_session_db(
+                account_id=save_slot.account_id,
+                gm_id=save_slot.gm_id
+            )
 
         # 恢复游戏状态
         session.investigator_card = save_slot.investigator_card
