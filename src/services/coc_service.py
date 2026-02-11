@@ -244,7 +244,9 @@ class COCService:
     def _get_dialogue_history(self, session_id: str) -> List[Dict[str, str]]:
         """获取对话历史（从 t_freak_world_dialogue 读取，session_id 为会话字符串）
         
-        返回的 assistant 消息会自动清理掉状态行（❤ 生命 💎 魔法 🧠 理智）
+        返回的 assistant 消息会自动清理：
+        - 状态行（❤ 生命 💎 魔法 🧠 理智）只保留最后一个
+        - 轮数标题（【XX轮 / YY回合】）只保留最后一个
         """
         try:
             dialogues = self.db.query(FreakWorldDialogue).filter(
@@ -257,9 +259,14 @@ class COCService:
             messages = []
             for d in dialogues:
                 for msg in d.to_messages():
-                    # 清理 assistant 消息中的状态行
+                    # 清理 assistant 消息
                     if msg.get("role") == "assistant":
-                        msg["content"] = self._clean_assistant_message(msg.get("content", ""))
+                        content = msg.get("content", "")
+                        # 清理状态行（保留最后一个）
+                        content = self._clean_assistant_message(content)
+                        # 清理轮数标题（保留最后一个）
+                        content = self._clean_turn_header(content, keep_last=True)
+                        msg["content"] = content
                     messages.append(msg)
             return messages
         except Exception as e:
@@ -407,20 +414,37 @@ class COCService:
         
         return result.strip()
 
-    def _clean_turn_header(self, content: str) -> str:
-        """清理 LLM 输出中的轮数标题
+    def _clean_turn_header(self, content: str, keep_last: bool = False) -> str:
+        """清理轮数标题
         
-        移除 LLM 生成的轮数标题（如【XX轮 / YY回合】），
-        因为后端会统一添加正确的轮数标题
+        Args:
+            content: 要清理的内容
+            keep_last: 如果为 True，保留最后一个轮数标题；如果为 False，移除所有
+        
+        用途：
+        - keep_last=False：用于清理 LLM 输出（后端会添加正确的标题）
+        - keep_last=True：用于清理历史对话（保留最后一个标注）
         """
         import re
         
         # 匹配轮数标题模式：【XX轮 / YY回合】（支持加粗格式）
-        # 包括：【01轮 / 01回合】、**【01轮 / 01回合】**、【1轮 / 1回合】等
         turn_pattern = r'\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}\s*\n*'
         
-        # 移除所有轮数标题
-        result = re.sub(turn_pattern, '', content)
+        if keep_last:
+            # 找到所有匹配
+            matches = list(re.finditer(turn_pattern, content))
+            if len(matches) > 1:
+                # 保留最后一个，移除其他
+                result = content
+                for match in reversed(matches[:-1]):
+                    start = match.start()
+                    end = match.end()
+                    result = result[:start] + result[end:]
+            else:
+                result = content
+        else:
+            # 移除所有轮数标题
+            result = re.sub(turn_pattern, '', content)
         
         # 清理开头的空行
         result = result.lstrip('\n\r')
@@ -1527,6 +1551,7 @@ class COCService:
 
 【回合与轮数】
 - 每轮对话/行动用"【XX轮 / YY回合】"标注
+- 每次输出有且仅有一个"【XX轮 / YY回合】"标注
 - 故事推进明确过了一天，进入下一个回合
 - 回合和轮数互相独立计算
 - 每轮生成300-500字（禁止展示字数）
@@ -1546,7 +1571,6 @@ class COCService:
 3. 状态行的数值必须反映当前最新状态（包含本轮的所有变化）
 4. 骰子检定时，先说明检定的技能和目标值，再公布骰子结果，最后判定成功/失败
 5. 战斗中严格按照规则计算伤害和状态变化
-6. 禁止重复输出轮数标题（如"【05轮 / 01回合】"只能出现一次）
 
 当前轮数：{session.turn_number}
 当前回合：{session.round_number}
