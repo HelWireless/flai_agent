@@ -1695,12 +1695,7 @@ class COCService:
             yield {"type": "delta", "content": header}
 
             # 真正的 LLM 流式调用
-            import re
             full_content = ""
-            buffer = ""  # 缓冲区用于检测开头的轮数标题
-            header_checked = False
-            turn_pattern = re.compile(r'^\s*\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}\s*\n*')
-            
             async for chunk in self.llm.stream_chat_completion(
                 messages=messages,
                 model_pool=["qwen3_max"],
@@ -1708,29 +1703,11 @@ class COCService:
                 response_format="text"
             ):
                 if chunk.get("type") == "delta":
-                    chunk_content = chunk["content"]
-                    full_content += chunk_content
-                    
-                    if not header_checked:
-                        # 缓冲开头内容，检测轮数标题
-                        buffer += chunk_content
-                        if len(buffer) >= 25 or '\n' in buffer[15:] if len(buffer) > 15 else False:
-                            # 缓冲足够或遇到换行，检查并清理轮数标题
-                            cleaned = turn_pattern.sub('', buffer)
-                            if cleaned:
-                                yield {"type": "delta", "content": cleaned}
-                            header_checked = True
-                    else:
-                        yield {"type": "delta", "content": chunk_content}
+                    full_content += chunk["content"]
+                    yield {"type": "delta", "content": chunk["content"]}
                 elif chunk.get("type") == "error":
                     yield {"type": "error", "complete": True, "message": chunk.get("message", "LLM 调用失败")}
                     return
-            
-            # 如果缓冲区还有未发送的内容
-            if not header_checked and buffer:
-                cleaned = turn_pattern.sub('', buffer)
-                if cleaned:
-                    yield {"type": "delta", "content": cleaned}
 
             # 清理完整内容中的轮数标题（用于保存历史）
             full_content = self._clean_turn_header(full_content)
