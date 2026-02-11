@@ -255,6 +255,42 @@ class FreakWorldService:
 
 请生成剧情总结："""
 
+    def _clean_assistant_message(self, content: str) -> str:
+        """清理助手消息中重复的状态信息
+        
+        移除重复的状态行（如 ❤ 生命 XX   💎 魔法 XX   🧠 理智 XX）
+        只保留最后一个状态行
+        """
+        import re
+        
+        # 匹配状态行模式：❤ 生命 XX   💎 魔法 XX   🧠 理智 XX
+        status_pattern = r'❤\s*生命\s*\d+\s*💎\s*魔法\s*\d+\s*🧠\s*理智\s*\d+'
+        
+        # 找到所有状态行
+        matches = list(re.finditer(status_pattern, content))
+        
+        if len(matches) <= 1:
+            return content  # 0或1个状态行，不需要清理
+        
+        # 保留最后一个状态行，移除其他的
+        result = content
+        for match in reversed(matches[:-1]):
+            start = match.start()
+            end = match.end()
+            
+            # 扩展到包含前后的换行符
+            while start > 0 and result[start-1] in '\n\r':
+                start -= 1
+            while end < len(result) and result[end] in '\n\r':
+                end += 1
+            
+            result = result[:start] + result[end:]
+        
+        # 清理多余的空行
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        
+        return result.strip()
+
     def _build_messages_with_summary(
         self,
         system_prompt: str,
@@ -277,8 +313,14 @@ class FreakWorldService:
         if extra_context:
             messages.extend(extra_context)
         
-        # 添加历史对话（最近14轮）
-        messages.extend(history[-self.HISTORY_WINDOW:])
+        # 添加历史对话（最近5轮），清理 assistant 消息中的重复状态
+        recent_history = history[-self.HISTORY_WINDOW:]
+        for msg in recent_history:
+            if msg.get("role") == "assistant":
+                cleaned_content = self._clean_assistant_message(msg.get("content", ""))
+                messages.append({"role": "assistant", "content": cleaned_content})
+            else:
+                messages.append(msg)
         
         # 添加当前用户消息
         messages.append({"role": "user", "content": user_message})
