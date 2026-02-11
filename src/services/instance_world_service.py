@@ -857,14 +857,23 @@ class FreakWorldService:
         save_text_data = save_slot.temp_data or {}
         save_content = save_text_data.get("save_content", "")
 
-        # 创建新 session
+        # 获取或创建会话（如果 session_id 已存在则复用，否则创建新的）
         world_id_str = iw_state.get("world_id", self._format_world_id(1))
-        session = self._create_session_db(
-            user_id=save_slot.user_id,
-            freak_world_id=self._parse_world_id(world_id_str),
-            gm_id=save_slot.gm_id,
-            session_id=request.session_id if request.session_id else None
-        )
+        if request.session_id:
+            session = self._get_session_db(request.session_id)
+            if not session:
+                session = self._create_session_db(
+                    user_id=save_slot.user_id,
+                    freak_world_id=self._parse_world_id(world_id_str),
+                    gm_id=save_slot.gm_id,
+                    session_id=request.session_id
+                )
+        else:
+            session = self._create_session_db(
+                user_id=save_slot.user_id,
+                freak_world_id=self._parse_world_id(world_id_str),
+                gm_id=save_slot.gm_id
+            )
 
         # 恢复状态
         session.game_status = save_slot.game_status or GameStatus.PLAYING
