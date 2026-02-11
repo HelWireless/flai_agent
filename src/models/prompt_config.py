@@ -19,6 +19,7 @@ class PromptConfig(Base):
     TYPE_GM = 'gm'
     TYPE_CHARACTER = 'character'
     TYPE_WORLD = 'world'
+    TYPE_COC_RULE = 'coc_rule'  # COC 规则类型
     
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment='自增ID')
     config_id = Column(String(64), nullable=False, unique=True, index=True, comment='配置ID')
@@ -199,3 +200,46 @@ class PromptConfig(Base):
             status=1,
             sort_order=sort_order
         )
+    
+    @classmethod
+    def create_coc_rule(
+        cls,
+        rule_key: str,
+        name: str,
+        content: str,
+        description: Optional[str] = None,
+        sort_order: int = 0
+    ) -> 'PromptConfig':
+        """创建 COC 规则配置实例
+        
+        Args:
+            rule_key: 规则键名，如 gm_rules, system_rules 等
+            name: 规则名称，如 "GM全局规则-Op"
+            content: 规则内容（prompt 字段存储）
+            description: 规则描述
+            sort_order: 排序权重
+        """
+        config = {
+            "description": description
+        } if description else {}
+        
+        return cls(
+            config_id=f"trpg_01_{rule_key}",  # 使用 trpg_01_ 前缀
+            type=cls.TYPE_COC_RULE,
+            name=name,
+            gender=None,
+            traits=rule_key,  # 存储规则键名便于查询
+            prompt=content,
+            config=config,
+            status=1,
+            sort_order=sort_order
+        )
+    
+    def to_coc_rule_dict(self) -> dict:
+        """转换为 COC 规则格式"""
+        return {
+            "key": self.traits,  # 规则键名
+            "name": self.name,
+            "content": self.prompt,
+            "description": (self.config or {}).get("description")
+        }

@@ -23,8 +23,11 @@
 import json
 import uuid
 import random
+import asyncio
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any, AsyncGenerator
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -35,12 +38,28 @@ from ..custom_logger import custom_logger
 from ..models.coc_game_state import COCGameState
 from ..models.coc_save_slot import COCSaveSlot
 from ..models.instance_world import FreakWorldDialogue
+from ..models.prompt_config import PromptConfig
 from .llm_service import LLMService
 from .instance_world_prompts import get_gm_config
 from .coc_generator import (
     COCGenerator, PrimaryAttributes, SecondaryAttributes, Profession,
     PRIMARY_ATTRIBUTES, PROFESSIONS
 )
+
+# 规则文件目录 (备用，优先从数据库加载)
+COC_RULES_DIR = Path(__file__).parent.parent.parent / "data" / "tmp_prompt" / "克苏鲁"
+
+# COC 规则键名到文件名的映射 (仅作为数据库无数据时的 fallback)
+COC_RULES_FILES = {
+    "gm_rules": "00-GM全局规则-Op.txt",
+    "gm_rules_load": "00-GM全局规则 - Load.txt",
+    "gm_list": "00-GM列表.txt",
+    "investigator_create": "01-调查员创建.txt",
+    "investigator_profession": "01-调查员职业与技能.txt",
+    "system_rules": "02 - 系统规则.txt",
+    "process_rules": "03-进程规则.txt",
+    "save_template": "04-总结存档模板.txt",
+}
 
 
 # =====================================================
@@ -67,12 +86,116 @@ class COCService:
     # 存档触发密钥
     SAVE_KEY = "73829104碧鹿孽心0109要去坐标BBT进行存档"
     LOAD_KEY = "73829104碧鹿孽心0109要去坐标BBT进行读档"
+    
+    # 对话总结配置
+    SUMMARY_INTERVAL = 11  # 每11轮生成一次总结
+    HISTORY_WINDOW = 20    # 历史对话窗口大小（10轮 = 20条消息）
+    
+    # 缓存加载的规则内容
+    _rules_cache: Dict[str, str] = {}
 
     def __init__(self, llm_service: LLMService, db: Session, config: Dict):
         self.llm = llm_service
         self.db = db
         self.config = config
         self.generator = COCGenerator()
+        # 预加载规则文件
+        self._load_rules_files()
+
+    # ==================== 规则加载 (从数据库加载并缓存) ====================
+    
+    # 类级别缓存标记，确保只加载一次
+    _rules_loaded: bool = False
+    
+    def _load_rules_files(self):
+        """从数据库预加载规则到缓存（多客户端共享内存）
+        
+        优先从数据库 t_prompt_config 表加载 COC 规则，
+        如果数据库无数据则从本地文件加载（fallback）
+        """
+        if COCService._rules_loaded and COCService._rules_cache:
+            return  # 已加载，直接返回
+        
+        custom_logger.info("Loading COC rules from database...")
+        
+        try:
+            # 从数据库加载 COC 规则
+            rules = self.db.query(PromptConfig).filter(
+                PromptConfig.type == PromptConfig.TYPE_COC_RULE,
+                PromptConfig.status == 1
+            ).all()
+            
+            if rules:
+                # 从数据库加载成功
+                for rule in rules:
+                    # config_id 格式: trpg_01_{rule_key}
+                    rule_key = rule.traits  # traits 字段存储了 rule_key
+                    if rule_key and rule.prompt:
+                        COCService._rules_cache[rule_key] = rule.prompt
+                        custom_logger.info(f"Loaded COC rule from DB: {rule_key} ({len(rule.prompt)} chars)")
+                
+                COCService._rules_loaded = True
+                custom_logger.info(f"Loaded {len(rules)} COC rules from database")
+                return
+            else:
+                custom_logger.warning("No COC rules found in database, falling back to local files")
+        except Exception as e:
+            custom_logger.error(f"Failed to load COC rules from database: {e}, falling back to local files")
+        
+        # Fallback: 从本地文件加载
+        self._load_rules_from_files()
+    
+    def _load_rules_from_files(self):
+        """从本地文件加载规则（fallback）"""
+        custom_logger.info("Loading COC rules from local files...")
+        
+        for key, filename in COC_RULES_FILES.items():
+            filepath = COC_RULES_DIR / filename
+            try:
+                if filepath.exists():
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        COCService._rules_cache[key] = f.read()
+                    custom_logger.info(f"Loaded COC rule from file: {filename}")
+                else:
+                    custom_logger.warning(f"COC rules file not found: {filepath}")
+                    COCService._rules_cache[key] = ""
+            except Exception as e:
+                custom_logger.error(f"Failed to load COC rules file {filename}: {e}")
+                COCService._rules_cache[key] = ""
+        
+        COCService._rules_loaded = True
+    
+    def _get_rules_content(self, key: str) -> str:
+        """获取规则内容（从缓存读取）"""
+        return COCService._rules_cache.get(key, "")
+    
+    @classmethod
+    def reload_rules_cache(cls, db_session):
+        """强制重新加载规则缓存（用于规则更新后刷新缓存）
+        
+        Args:
+            db_session: 数据库会话
+        """
+        cls._rules_cache.clear()
+        cls._rules_loaded = False
+        
+        try:
+            rules = db_session.query(PromptConfig).filter(
+                PromptConfig.type == PromptConfig.TYPE_COC_RULE,
+                PromptConfig.status == 1
+            ).all()
+            
+            for rule in rules:
+                rule_key = rule.traits
+                if rule_key and rule.prompt:
+                    cls._rules_cache[rule_key] = rule.prompt
+            
+            cls._rules_loaded = True
+            custom_logger.info(f"Reloaded {len(rules)} COC rules into cache")
+            return True
+        except Exception as e:
+            custom_logger.error(f"Failed to reload COC rules cache: {e}")
+            return False
 
     # ==================== 工具方法 ====================
 
@@ -118,8 +241,8 @@ class COCService:
         self.db.commit()
         self.db.refresh(session)
 
-    def _get_dialogue_history(self, session_id: int) -> List[Dict[str, str]]:
-        """获取对话历史（从 t_freak_world_dialogue 读取）"""
+    def _get_dialogue_history(self, session_id: str) -> List[Dict[str, str]]:
+        """获取对话历史（从 t_freak_world_dialogue 读取，session_id 为会话字符串）"""
         try:
             dialogues = self.db.query(FreakWorldDialogue).filter(
                 and_(
@@ -135,6 +258,134 @@ class COCService:
         except Exception as e:
             custom_logger.warning(f"Failed to get dialogue history: {e}")
             return []
+
+    # ==================== 对话总结 ====================
+
+    def _should_generate_summary(self, turn_number: int) -> bool:
+        """判断是否应该生成总结（每15轮触发一次）"""
+        return turn_number > 0 and turn_number % self.SUMMARY_INTERVAL == 0
+
+    def _trigger_summary_if_needed(self, session: COCGameState, history: List[Dict]):
+        """在响应后异步触发总结生成"""
+        if self._should_generate_summary(session.turn_number):
+            custom_logger.info(f"Triggering summary generation at turn {session.turn_number}")
+            asyncio.create_task(self._generate_summary_async(
+                session.session_id,
+                session.dialogue_summary,
+                history
+            ))
+
+    async def _generate_summary_async(
+        self,
+        session_id: str,
+        old_summary: Optional[str],
+        history: List[Dict]
+    ):
+        """异步生成对话总结"""
+        try:
+            # 获取需要总结的对话（历史窗口之外的部分）
+            if len(history) > self.HISTORY_WINDOW:
+                dialogues_to_summarize = history[:-self.HISTORY_WINDOW]
+            else:
+                dialogues_to_summarize = history
+            
+            if not dialogues_to_summarize and not old_summary:
+                return  # 没有需要总结的内容
+            
+            # 格式化对话内容
+            dialogue_text = self._format_dialogues_for_summary(dialogues_to_summarize)
+            
+            # 构建总结 prompt
+            prompt = self._build_summary_prompt(old_summary, dialogue_text)
+            
+            # 调用 LLM 生成总结
+            response = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model_pool=["qwen3_max"],
+                temperature=0.3,
+                parse_json=False,
+                response_format="text"
+            )
+            
+            new_summary = response.get("content", "")
+            
+            # 更新数据库
+            session = self._get_session_db(session_id)
+            if session:
+                session.dialogue_summary = new_summary
+                self.db.commit()
+                custom_logger.info(f"Summary updated for session {session_id}, length: {len(new_summary)}")
+            
+        except Exception as e:
+            custom_logger.error(f"Failed to generate summary: {e}", exc_info=True)
+
+    def _format_dialogues_for_summary(self, dialogues: List[Dict]) -> str:
+        """将对话列表格式化为文本"""
+        lines = []
+        for msg in dialogues:
+            role = "玩家" if msg["role"] == "user" else "GM"
+            content = msg.get("content", "")[:200]  # 限制单条长度
+            if content:
+                lines.append(f"{role}: {content}")
+        return "\n".join(lines[-30:])  # 最多取30条
+
+    def _build_summary_prompt(self, old_summary: Optional[str], dialogue_text: str) -> str:
+        """构建总结生成的 prompt"""
+        base_prompt = """你是一个游戏剧情总结助手。请根据以下内容生成简洁的剧情总结（500字以内）。
+
+总结需要包含：
+1. 剧情进展：发生了哪些关键事件
+2. 重要NPC对话：与哪些NPC进行了重要交流
+3. 未解之谜/线索：目前有哪些待解决的谜团或线索
+
+要求：
+- 使用第三人称描述
+- 突出关键信息，省略琐碎细节
+- 保持时间线清晰
+"""
+        
+        if old_summary:
+            return f"""{base_prompt}
+
+【之前的剧情总结】
+{old_summary}
+
+【新增的对话内容】
+{dialogue_text}
+
+请基于之前的总结和新增内容，生成一份更新后的完整总结（合并去重，避免冗余）："""
+        else:
+            return f"""{base_prompt}
+
+【对话内容】
+{dialogue_text}
+
+请生成剧情总结："""
+
+    def _build_messages_with_summary(
+        self,
+        system_prompt: str,
+        summary: Optional[str],
+        history: List[Dict],
+        user_message: str
+    ) -> List[Dict]:
+        """构建包含总结的消息列表"""
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # 插入剧情总结（如果有）
+        if summary:
+            messages.append({
+                "role": "assistant",
+                "content": f"【剧情回顾】\n{summary}"
+            })
+        
+        # 添加历史对话（最近14轮）
+        messages.extend(history[-self.HISTORY_WINDOW:])
+        
+        # 添加当前用户消息
+        messages.append({"role": "user", "content": user_message})
+        
+        return messages
 
     # ==================== 会话管理 ====================
 
@@ -599,26 +850,48 @@ class COCService:
             return self._error_response("请先完成职业选择（step=3）")
 
         # 处理 message 修改（姓名/性别/年龄）
+        # 支持多次修改：只要用户发 message 且已在 step4，就处理修改
         message = request.message.strip() if request.message else ""
         if message and session.game_status == GameStatus.STEP4_CHARACTER:
-            # 简单解析修改请求
-            if "名" in message or "叫" in message:
-                # 提取最后出现的非空名字部分
-                for keyword in ["改名为", "改名", "名字改为", "名字改成", "名字是", "名叫", "叫"]:
-                    if keyword in message:
-                        new_name = message.split(keyword)[-1].strip().rstrip("。，！")
-                        if new_name:
-                            background_data["name"] = new_name
-                            break
+            import re
+            
+            # 解析性别
+            has_gender = False
             if "男" in message:
                 background_data["gender"] = "男"
+                has_gender = True
             elif "女" in message:
                 background_data["gender"] = "女"
-            # 年龄修改
-            import re
-            age_match = re.search(r'(\d{2})\s*岁', message)
+                has_gender = True
+            
+            # 解析年龄
+            has_age = False
+            age_match = re.search(r'(\d{1,2})\s*岁', message)
             if age_match:
                 background_data["age"] = int(age_match.group(1))
+                has_age = True
+            
+            # 解析名字：支持多种格式
+            new_name = None
+            # 1. 优先匹配关键词格式
+            for keyword in ["改名为", "改名", "名字改为", "名字改成", "名字是", "名叫", "叫做", "叫"]:
+                if keyword in message:
+                    new_name = message.split(keyword)[-1].strip().rstrip("。，！?？")
+                    # 去掉可能的性别/年龄后缀
+                    new_name = re.sub(r'[,，]?\s*(男|女)?\s*\d*\s*岁?$', '', new_name).strip()
+                    break
+            
+            # 2. 如果没有关键词，且 message 不只是性别/年龄，则整个当作名字
+            if not new_name and not (has_gender and not has_age and len(message) <= 2):
+                # 去掉性别和年龄部分，剩下的当名字
+                potential_name = re.sub(r'\s*(男|女)\s*', '', message)
+                potential_name = re.sub(r'\s*\d{1,2}\s*岁\s*', '', potential_name).strip()
+                potential_name = potential_name.rstrip("。，！?？")
+                if potential_name and len(potential_name) >= 1:
+                    new_name = potential_name
+            
+            if new_name:
+                background_data["name"] = new_name
 
             temp["background_data"] = background_data
 
@@ -802,13 +1075,16 @@ class COCService:
         # 构建系统 prompt
         system_prompt = self._build_game_system_prompt(session, investigator, temp)
 
-        # 获取对话历史
-        history = self._get_dialogue_history(session.id) if session.id else []
+        # 获取对话历史（使用 session_id 字符串关联）
+        history = self._get_dialogue_history(session.session_id) if session.session_id else []
 
-        # 构建消息
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(history[-20:])  # 最近 20 条
-        messages.append({"role": "user", "content": message})
+        # 构建消息（包含剧情总结）
+        messages = self._build_messages_with_summary(
+            system_prompt=system_prompt,
+            summary=session.dialogue_summary,
+            history=history,
+            user_message=message
+        )
 
         try:
             response = await self.llm.chat_completion(
@@ -824,6 +1100,9 @@ class COCService:
             ai_content = f"（{gm_name}皱眉）抱歉，系统暂时无法响应，请稍后再试。"
 
         self._update_session_db(session)
+        
+        # 异步触发总结生成（每15轮）
+        self._trigger_summary_if_needed(session, history)
 
         # 构建状态显示
         status_line = f"❤ 生命 {investigator.get('currentHP', '?')}   "
@@ -975,9 +1254,9 @@ class COCService:
         # 构建 system prompt + 对话历史，调用 LLM 生成继续对话
         system_prompt = self._build_game_system_prompt(session, investigator, temp_data)
 
-        # 从原 session 获取对话历史（需要查询原 session 的数据库主键 ID）
+        # 从原 session 获取对话历史（使用 session_id 字符串关联）
         original_session = self._get_session_db(save_slot.session_id)
-        history = self._get_dialogue_history(original_session.id) if original_session else []
+        history = self._get_dialogue_history(original_session.session_id) if original_session else []
 
         resume_msg = (
             f"玩家从存档恢复游戏。当前是第{session.turn_number}轮/第{session.round_number}回合。"
@@ -988,7 +1267,7 @@ class COCService:
         )
 
         messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(history[-20:])
+        messages.extend(history[-28:])  # 最近 14 轮
         messages.append({"role": "user", "content": resume_msg})
 
         try:
@@ -1033,11 +1312,16 @@ class COCService:
         primary = temp.get("primary_attributes", {})
         gm_name = temp.get("gm_name", "GM")
         gm_traits = temp.get("gm_traits", "神秘深邃")
+        
+        # 加载调查员创建规则
+        investigator_create_rules = self._get_rules_content("investigator_create")
 
         prompt = f"""你是一个克苏鲁跑团游戏的角色生成器。你同时扮演名为"{gm_name}"的GM，性格特质：{gm_traits}。
 
-请为以下调查员生成背景故事、装备和两段GM旁白。
+=== 调查员创建规则 ===
+{investigator_create_rules}
 
+=== 当前调查员信息 ===
 职业：{profession.get('name', '调查员')}
 职业技能：{', '.join(profession.get('skills', []))}
 
@@ -1051,15 +1335,16 @@ class COCService:
 - 外貌(APP): {primary.get('APP')}
 - 教育(EDU): {primary.get('EDU')}
 
-请生成：
-1. 姓名（中文名）
+=== 生成要求 ===
+请根据以上规则和属性，为调查员生成：
+1. 姓名（中文名，2-3个字）
 2. 性别
 3. 年龄（25-45岁之间）
-4. 背景故事（100-150字，包含成长地点、家庭情况、个性特点）
+4. 背景故事（100-150字，包含成长地点、家庭情况、个性特点，需与职业和属性相符）
 5. 装备列表（3-5件，与职业相关），每件装备包含：
    - name: 装备名称
    - description: 装备简介（一句话）
-   - damage: 伤害值（武器填如"1D6"，非武器填"—"）
+   - damage: 伤害值（武器填如"1D4"，非武器填"—"）
 6. 角色确认旁白（GM用括号描写动作神态+一句台词，引导玩家确认或修改角色，50字以内）
 7. 装备确认旁白（GM用括号描写动作神态+一句台词，将角色卡交给玩家，暗示冒险即将开始，50字以内）
 
@@ -1070,7 +1355,7 @@ class COCService:
   "age": 数字,
   "background": "背景故事",
   "equipment": [
-    {{"name": "装备名", "description": "简介", "damage": "1D6"}},
+    {{"name": "装备名", "description": "简介", "damage": "1D4"}},
     {{"name": "手电筒", "description": "便携照明工具", "damage": "—"}}
   ],
   "character_narration": "（{gm_name}微微前倾）「这是他的故事——但你可以改写开头。」",
@@ -1128,23 +1413,44 @@ class COCService:
         investigator: Dict,
         temp: Dict
     ) -> str:
-        """构建游戏阶段的系统 prompt"""
+        """构建游戏阶段的系统 prompt（包含完整规则）"""
 
         gm_name = temp.get("gm_name", "GM")
         gm_traits = temp.get("gm_traits", "")
-
+        
+        # 获取规则内容
+        system_rules = self._get_rules_content("system_rules")
+        
+        # 构建属性信息
+        primary_attrs = investigator.get('primaryAttributes', {})
+        secondary_attrs = investigator.get('secondaryAttributes', {})
+        
         return f"""你是克苏鲁跑团游戏的Game Master，扮演名为"{gm_name}"的电子精灵。
 你的性格特质：{gm_traits}
+
+【GM职责与风格】
+1. GM的形象与性格需要符合你的人设。当玩家的行为违背调查员设定时，用符合人设的口吻进行提醒，但会继续推进游戏。
+2. 语言风格通俗，通过"()"内第三人称的描述，体现GM的形象、神态、动作、行为等，需与当前剧情局势呼应。
+3. GM职责：提供线索提示、补充场景细节和氛围、基于玩家选择给予情绪价值反馈后推进剧情。
+4. GM不得干预玩家决策，只有玩家可以感知GM并与GM互动。
 
 【调查员信息】
 姓名：{investigator.get('name')}
 职业：{investigator.get('profession')}
 背景：{investigator.get('background')}
 
+【常规属性】
+力量(STR): {primary_attrs.get('STR', '?')} | 体质(CON): {primary_attrs.get('CON', '?')} | 敏捷(DEX): {primary_attrs.get('DEX', '?')} | 体型(SIZ): {primary_attrs.get('SIZ', '?')}
+智力(INT): {primary_attrs.get('INT', '?')} | 意志(POW): {primary_attrs.get('POW', '?')} | 外貌(APP): {primary_attrs.get('APP', '?')} | 教育(EDU): {primary_attrs.get('EDU', '?')}
+
 【当前状态】
-- 生命值(HP): {investigator.get('currentHP')}/{investigator.get('secondaryAttributes', {}).get('HP')}
-- 魔法值(MP): {investigator.get('currentMP')}/{investigator.get('secondaryAttributes', {}).get('MP')}
-- 理智值(SAN): {investigator.get('currentSAN')}/{investigator.get('secondaryAttributes', {}).get('SAN')}
+- 生命值(HP): {investigator.get('currentHP')}/{secondary_attrs.get('HP', '?')}
+- 魔法值(MP): {investigator.get('currentMP')}/{secondary_attrs.get('MP', '?')}
+- 理智值(SAN): {investigator.get('currentSAN')}/{secondary_attrs.get('SAN', '?')}
+- 幸运值(LUCK): {secondary_attrs.get('LUCK', '?')}
+- 伤害加值(DB): {secondary_attrs.get('DB', '?')}
+- 体格(Build): {secondary_attrs.get('Build', '?')}
+- 移动速度(MOV): {secondary_attrs.get('MOV', '?')}
 
 【技能】
 {json.dumps(investigator.get('skills', {}), ensure_ascii=False, indent=2)}
@@ -1152,15 +1458,33 @@ class COCService:
 【装备】
 {self._format_equipment_for_prompt(investigator.get('equipment', []))}
 
-【游戏规则】
-1. 每轮生成300-500字
-2. 需要进行技能检定时，你来掷骰(1-100)，结果≤技能值为成功
-3. 遭遇恐怖事物时进行理智检定，失败扣除理智值
-4. 用"()"描写GM的动作神态，体现你的人设
-5. 每轮结束给出2-3个行动选项供玩家选择，选项前加字母编号（A. B. C.），方便玩家输入选择
+===================【游戏系统规则】===================
+
+{system_rules}
+
+===================【游戏进程规则】===================
+
+【回合与轮数】
+- 每轮对话/行动用"【XX轮 / YY回合】"标注
+- 故事推进明确过了一天，进入下一个回合
+- 回合和轮数互相独立计算
+- 每轮生成300-500字（禁止展示字数）
+- 每轮结束给出2-3个行动选项（A. B. C.），玩家也可自行输入
+
+【核心目标】
+- 剧情需设明确阶段性目标和核心目标
+- 核心目标难度需确保可在100轮内完成
+- 若调查员疯狂/死亡，或100轮内未完成核心目标，判定游戏失败
+
+【重要提醒】
+1. 你需要在每轮对话结束时，明确告知玩家当前的数值状态（HP/MP/SAN等）
+2. 当数值发生变化时，必须说明变化原因和具体数值
+3. 骰子检定时，先说明检定的技能和目标值，再公布骰子结果，最后判定成功/失败
+4. 战斗中严格按照规则计算伤害和状态变化
 
 当前轮数：{session.turn_number}
 当前回合：{session.round_number}
+距离100轮死线还剩：{100 - session.turn_number}轮
 """
 
     @staticmethod
@@ -1290,12 +1614,15 @@ class COCService:
             # 增加轮数
             session.turn_number += 1
 
-            # 构建系统 prompt 和消息
+            # 构建系统 prompt 和消息（包含剧情总结）
             system_prompt = self._build_game_system_prompt(session, investigator, temp)
-            history = self._get_dialogue_history(session.id) if session.id else []
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(history[-20:])
-            messages.append({"role": "user", "content": message})
+            history = self._get_dialogue_history(session.session_id) if session.session_id else []
+            messages = self._build_messages_with_summary(
+                system_prompt=system_prompt,
+                summary=session.dialogue_summary,
+                history=history,
+                user_message=message
+            )
 
             # 发送轮次头
             header = f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
@@ -1323,6 +1650,9 @@ class COCService:
             yield {"type": "delta", "content": status_line}
 
             self._update_session_db(session)
+            
+            # 异步触发总结生成（每15轮）
+            self._trigger_summary_if_needed(session, history)
 
             # 完整内容
             complete_content = header + full_content + status_line
