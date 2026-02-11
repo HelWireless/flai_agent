@@ -1146,17 +1146,12 @@ class COCService:
 
         self._update_session_db(session)
         
-        # 异步触发总结生成（每15轮）
+        # 异步触发总结生成（每5轮）
         self._trigger_summary_if_needed(session, history)
 
-        # 构建状态显示
-        status_line = f"❤ 生命 {investigator.get('currentHP', '?')}   "
-        status_line += f"💎 魔法 {investigator.get('currentMP', '?')}   "
-        status_line += f"🧠 理智 {investigator.get('currentSAN', '?')}"
-
+        # 构建响应内容（状态行由 LLM 在回复末尾输出，不再由后端追加）
         content = f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
         content += ai_content
-        content += f"\n\n{status_line}"
 
         return self._build_response(content=content)
 
@@ -1332,15 +1327,10 @@ class COCService:
                 f"\n\n请继续你的冒险。"
             )
 
-        # 构建状态行
-        status_line = f"❤ 生命 {investigator.get('currentHP', '?')}   "
-        status_line += f"💎 魔法 {investigator.get('currentMP', '?')}   "
-        status_line += f"🧠 理智 {investigator.get('currentSAN', '?')}"
-
+        # 构建响应内容（状态行由 LLM 输出）
         content = f"**【读档成功】**\n\n"
         content += f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
         content += ai_content
-        content += f"\n\n{status_line}"
 
         return self._build_response(content=content)
 
@@ -1522,10 +1512,12 @@ class COCService:
 - 若调查员疯狂/死亡，或100轮内未完成核心目标，判定游戏失败
 
 【重要提醒】
-1. 你需要在每轮对话结束时，明确告知玩家当前的数值状态（HP/MP/SAN等）
-2. 当数值发生变化时，必须说明变化原因和具体数值
-3. 骰子检定时，先说明检定的技能和目标值，再公布骰子结果，最后判定成功/失败
-4. 战斗中严格按照规则计算伤害和状态变化
+1. 每轮结束时，必须在最后一行输出当前状态，格式固定为：❤ 生命 X   💎 魔法 X   🧠 理智 X
+2. 当数值发生变化时，必须在叙述中说明变化原因和具体数值（如"SAN损失2点"）
+3. 状态行的数值必须反映当前最新状态（包含本轮的所有变化）
+4. 骰子检定时，先说明检定的技能和目标值，再公布骰子结果，最后判定成功/失败
+5. 战斗中严格按照规则计算伤害和状态变化
+6. 禁止重复输出轮数标题（如"【05轮 / 01回合】"只能出现一次）
 
 当前轮数：{session.turn_number}
 当前回合：{session.round_number}
@@ -1688,19 +1680,15 @@ class COCService:
                     yield {"type": "error", "complete": True, "message": chunk.get("message", "LLM 调用失败")}
                     return
 
-            # 发送状态栏
-            status_line = f"\n\n❤ 生命 {investigator.get('currentHP', '?')}   "
-            status_line += f"💎 魔法 {investigator.get('currentMP', '?')}   "
-            status_line += f"🧠 理智 {investigator.get('currentSAN', '?')}"
-            yield {"type": "delta", "content": status_line}
+            # 状态行由 LLM 在回复末尾输出，不再由后端追加
 
             self._update_session_db(session)
             
-            # 异步触发总结生成（每15轮）
+            # 异步触发总结生成（每5轮）
             self._trigger_summary_if_needed(session, history)
 
             # 完整内容
-            complete_content = header + full_content + status_line
+            complete_content = header + full_content
             yield {
                 "type": "done",
                 "complete": True,
