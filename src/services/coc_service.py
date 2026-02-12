@@ -508,36 +508,19 @@ class COCService:
                 custom_logger.error(f"Failed to parse status line values: {e}")
 
     def _clean_turn_header(self, content: str, keep_last: bool = False) -> str:
-        """清理轮数标题
-        
-        Args:
-            content: 要清理的内容
-            keep_last: 如果为 True，保留最后一个轮数标题；如果为 False，移除所有
-        
-        用途：
-        - keep_last=False：用于清理 LLM 输出（后端会添加正确的标题）
-        - keep_last=True：用于清理历史对话（保留最后一个标注）
-        """
-        # 优化正则：匹配可能存在的重复、嵌套或连续的轮次标注
-        # 更加鲁棒的正则，匹配各种可能的轮数/回合标记，支持空格和加粗
+        """清理轮数标题"""
+        # 优化正则：匹配各种可能的轮数/回合标记，支持空格和加粗
         turn_pattern = r'\*{0,2}【\s*\d{1,2}\s*轮\s*/\s*\d{1,2}\s*回合\s*】\*{0,2}\s*\n*'
         
-        if keep_last:
-            # 找到所有匹配
-            matches = list(re.finditer(turn_pattern, content))
-            if len(matches) > 1:
-                # 保留最后一个，移除其他
-                result = content
-                # 从后往前删除，避免索引变化
-                for match in reversed(matches[:-1]):
-                    start = match.start()
-                    end = match.end()
-                    result = result[:start] + result[end:]
-                content = result
-            result = content
+        # 用户要求只保留 LLM 生成的标题，所以我们不再强制移除所有标题
+        # 但为了防止 LLM 重复生成多个标题，我们只保留第一个
+        matches = list(re.finditer(turn_pattern, content))
+        if len(matches) > 1:
+            # 如果有多个，只保留第一个，替换掉后面的
+            first_match = matches[0]
+            result = content[:first_match.end()] + re.sub(turn_pattern, '', content[first_match.end():])
         else:
-            # 移除所有轮数标题
-            result = re.sub(turn_pattern, '', content)
+            result = content
         
         # 清理开头的空行
         result = result.lstrip('\n\r')
@@ -565,17 +548,22 @@ class COCService:
                 })
                 seen_options.add(opt_id_upper)
         
-        # 从正文中删除选项行
-        cleaned_content = re.sub(option_pattern, '', content).strip()
+        # 注意：不再从正文中删除选项行，因为用户希望状态行在选项之后
+        # 我们只需要确保状态行在最后即可
+        cleaned_content = content.strip()
         
-        # 2. 格式化状态行 (生命/魔法/理智)
-        # 确保状态行前有换行
+        # 2. 提取并移动状态行 (生命/魔法/理智) 到最后
         status_pattern = r'(❤\s*生命.*?💎\s*魔法.*?🧠\s*理智.*)'
-        if re.search(status_pattern, cleaned_content):
-            # 强制在状态行前添加两个换行符，并清理状态行周围的空格
-            cleaned_content = re.sub(r'\n*' + status_pattern + r'\n*', r'\n\n\1', cleaned_content)
+        status_match = re.search(status_pattern, cleaned_content)
         
-        # 3. 清理可能因为删除选项而产生的连续多余空行
+        if status_match:
+            status_line = status_match.group(1)
+            # 先移除原有的状态行（可能在中间或选项前）
+            cleaned_content = re.sub(r'\n*' + status_pattern + r'\n*', '\n\n', cleaned_content).strip()
+            # 将状态行拼接到最后（这样它就在选项文本之后了）
+            cleaned_content = f"{cleaned_content}\n\n{status_line}"
+        
+        # 3. 清理多余空行
         cleaned_content = re.sub(r'\n{3,}', '\n\n', cleaned_content)
         
         return cleaned_content.strip(), selections
@@ -1083,15 +1071,13 @@ class COCService:
             has_age = False
             
             # 解析性别
-            if "男" in message:
-                background_data["gender"] = "男"
-                has_gender = True
-            elif "女" in message:
-                background_data["gender"] = "女"
+            gender_match = re.search(r'(?:性别[：:\s]*)?(男|女)', message)
+            if gender_match:
+                background_data["gender"] = gender_match.group(1)
                 has_gender = True
             
             # 解析年龄
-            age_match = re.search(r'(\d{1,2})\s*岁', message)
+            age_match = re.search(r'(?:年龄[：:\s]*)?(\d{1,3})\s*岁?', message)
             if age_match:
                 background_data["age"] = int(age_match.group(1))
                 has_age = True
@@ -1099,25 +1085,40 @@ class COCService:
             # 处理名字：支持多种格式
             new_name = None
             # 1. 优先匹配关键词格式
-            rename_keywords = ["改名为", "名字改为", "名字改成", "改为", "改成", "改名叫", "改名", "名字是", "名叫", "叫做", "叫"]
+            rename_keywords = [
+                "姓名改为", "姓名改成", "姓名是", "姓名叫", "姓名",
+                "名字改为", "名字改成", "改为", "改成", "改名叫", "改名", "名字是", "名叫", "叫做", "叫"
+            ]
             for keyword in rename_keywords:
                 if keyword in message:
                     # 提取关键词之后的内容
                     parts = message.split(keyword)
                     if len(parts) > 1:
-                        potential_name = parts[-1].strip().rstrip("。，！?？")
-                        # 去掉可能的性别/年龄后缀（如：叫王大爷，男，30岁）
-                        potential_name = re.sub(r'[,，]?\s*(男|女)?\s*\d*\s*岁?$', '', potential_name).strip()
+                        potential_name = parts[-1].strip()
+                        # 同样应用鲁棒的清理逻辑
+                        potential_name = re.sub(r'性别[：:\s]*(男|女)', '', potential_name)
+                        potential_name = re.sub(r'年龄[：:\s]*\d{1,3}\s*岁?', '', potential_name)
+                        potential_name = re.sub(r'\s*(男|女)\s*', '', potential_name)
+                        potential_name = re.sub(r'\s*\d{1,3}\s*岁\s*', '', potential_name)
+                        potential_name = potential_name.strip("。，！?？ \n\t")
+                        
                         if potential_name:
                             new_name = potential_name
                             break
             
             # 2. 如果没有关键词，且 message 不只是性别/年龄，则整个当作名字
-            if not new_name and not (has_gender and not has_age and len(message) <= 2):
+            if not new_name and not (has_gender and not has_age and (message == "男" or message == "女" or "性别" in message and len(message) <= 4)):
                 # 去掉性别和年龄部分，剩下的当名字
-                potential_name = re.sub(r'\s*(男|女)\s*', '', message)
-                potential_name = re.sub(r'\s*\d{1,2}\s*岁\s*', '', potential_name).strip()
-                potential_name = potential_name.rstrip("。，！?？")
+                # 先去掉显式的“性别xxx”和“年龄xxx”
+                potential_name = re.sub(r'性别[：:\s]*(男|女)', '', message)
+                potential_name = re.sub(r'年龄[：:\s]*\d{1,3}\s*岁?', '', potential_name)
+                # 再去掉单纯的“男|女”和“xx岁”
+                potential_name = re.sub(r'\s*(男|女)\s*', '', potential_name)
+                potential_name = re.sub(r'\s*\d{1,3}\s*岁\s*', '', potential_name).strip()
+                # 去掉可能的标点符号和“姓名”前缀
+                potential_name = re.sub(r'^[姓名\s：:]+', '', potential_name)
+                potential_name = potential_name.strip("。，！?？ \n\t")
+                
                 if potential_name and len(potential_name) >= 1:
                     new_name = potential_name
             
@@ -1337,20 +1338,24 @@ class COCService:
         # 清理 LLM 输出中的轮数标题（后端统一添加）
         ai_content = self._clean_turn_header(ai_content)
 
+        # 提取选项并格式化状态行（处理重复选项和状态行换行/位置）
+        ai_content, selections = self._extract_selections_and_format_status(ai_content)
+
         # 解析并同步数值状态
         self._sync_investigator_status(session, ai_content)
-
-        # 提取选项并格式化状态行（处理重复选项和状态行换行）
-        ai_content, selections = self._extract_selections_and_format_status(ai_content)
 
         self._update_session_db(session)
         
         # 异步触发总结生成（每5轮）
         self._trigger_summary_if_needed(session, history)
 
-        # 构建响应内容（轮数标题由后端添加，状态行由 LLM 输出）
-        content = f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
-        content += ai_content
+        # 特殊指令处理：查看背包
+        is_inventory_check = any(kw in message for kw in ["查看背包", "打开背包", "查看物品", "我的物品", "检查背包"])
+        if is_inventory_check:
+            selections = []
+
+        # 构建响应内容（根据用户要求，不再由后端添加标题，保留 AI 生成的标题）
+        content = ai_content
 
         return self._build_response(content=content, selections=selections)
 
@@ -1526,9 +1531,8 @@ class COCService:
                 f"\n\n请继续你的冒险。"
             )
 
-        # 构建响应内容（状态行由 LLM 输出）
+        # 构建响应内容（根据用户要求，不再由后端添加标题）
         content = f"**【读档成功】**\n\n"
-        content += f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
         content += ai_content
 
         return self._build_response(content=content)
@@ -1878,10 +1882,6 @@ class COCService:
                 user_message=message
             )
 
-            # 发送轮次头（后端统一控制）
-            header = f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
-            yield {"type": "delta", "content": header}
-
             # 真正的 LLM 流式调用
             full_content = ""
             async for chunk in self.llm.stream_chat_completion(
@@ -1900,21 +1900,24 @@ class COCService:
             # 清理完整内容中的轮数标题（用于保存历史）
             full_content = self._clean_turn_header(full_content)
 
+            # 提取选项并格式化状态行（处理重复选项和状态行换行/位置）
+            formatted_content, selections = self._extract_selections_and_format_status(full_content)
+
+            # 特殊指令处理：查看背包
+            is_inventory_check = any(kw in message for kw in ["查看背包", "打开背包", "查看物品", "我的物品", "检查背包"])
+            if is_inventory_check:
+                selections = []
+
             # 解析并同步数值状态
             self._sync_investigator_status(session, full_content)
-
-            # 提取选项并格式化状态行（处理重复选项和状态行换行）
-            # 注意：流式输出已经实时发送给前端了，这里的 ai_content 仅用于最后的 result 返回
-            # 但为了同步 selections，我们需要调用这个方法
-            formatted_content, selections = self._extract_selections_and_format_status(full_content)
 
             self._update_session_db(session)
             
             # 异步触发总结生成（每5轮）
             self._trigger_summary_if_needed(session, history)
 
-            # 完整内容
-            complete_content = header + formatted_content
+            # 完整内容：不再由后端添加标题
+            complete_content = formatted_content
             yield {
                 "type": "done",
                 "complete": True,
