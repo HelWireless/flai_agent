@@ -1353,7 +1353,7 @@ class COCService:
             f"调查员{investigator.get('name', '调查员')}（{investigator.get('profession', '职业')}）"
             f"当前状态：HP={investigator.get('currentHP')}, "
             f"MP={investigator.get('currentMP')}, SAN={investigator.get('currentSAN')}。"
-            f"请简短描述当前场景氛围，然后提示玩家继续行动。"
+            f"请简短描述当前场景氛围和之前的经历梗概，然后提示玩家继续行动。"
         )
 
         messages = [{"role": "system", "content": system_prompt}]
