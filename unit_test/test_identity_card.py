@@ -127,7 +127,7 @@ def test_schema_virtual_id():
         message_count=1
     )
     print(f"   virtual_id 默认值: {request_default.virtual_id}")
-    assert request_default.virtual_id == 0, "virtual_id 默认值应为 0"
+    assert request_default.virtual_id == "0", "virtual_id 默认值应为 \"0\""
     
     # 测试显式设置
     print("\n2. 测试显式设置:")
@@ -135,10 +135,10 @@ def test_schema_virtual_id():
         user_id="123",
         message="你好",
         message_count=1,
-        virtual_id=2
+        virtual_id="2"
     )
     print(f"   virtual_id 设置值: {request_with_id.virtual_id}")
-    assert request_with_id.virtual_id == 2, "virtual_id 应为 2"
+    assert request_with_id.virtual_id == "2", "virtual_id 应为 \"2\""
     
     # 测试别名 (virtualId)
     print("\n3. 测试别名 (virtualId):")
@@ -146,10 +146,10 @@ def test_schema_virtual_id():
         userId="123",  # 使用别名
         message="你好",
         message_count=1,
-        virtualId=3  # 使用别名
+        virtualId="3"  # 使用别名
     )
     print(f"   通过 virtualId 设置: {request_alias.virtual_id}")
-    assert request_alias.virtual_id == 3, "通过别名设置应生效"
+    assert request_alias.virtual_id == "3", "通过别名设置应生效"
     
     print("\n✓ ChatRequest Schema 测试通过")
 

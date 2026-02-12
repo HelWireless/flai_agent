@@ -2,7 +2,7 @@
 克苏鲁跑团(COC)游戏状态数据模型
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, SmallInteger
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 from typing import Dict, Any, Optional
 

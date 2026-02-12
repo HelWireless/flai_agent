@@ -3,7 +3,7 @@
 一个 session 可以有多个存档
 """
 from sqlalchemy import Column, Integer, String, DateTime, JSON, SmallInteger
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 from typing import Dict, Any
 

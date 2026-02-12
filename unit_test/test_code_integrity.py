@@ -16,7 +16,7 @@ def test_syntax():
     # 获取所有Python文件
     py_files = []
     for root, dirs, files in os.walk('.'):
-        if '__pycache__' in root:
+        if '__pycache__' in root or '.venv' in root:
             continue
         for file in files:
             if file.endswith('.py'):
@@ -46,10 +46,10 @@ def test_syntax():
     
     if errors:
         print(f"\n⚠️  发现 {len(errors)} 个语法错误")
-        return False
     else:
         print("\n✅ 所有文件语法正确")
-        return True
+    
+    assert not errors, f"发现 {len(errors)} 个语法错误"
 
 def test_imports():
     """测试关键模块导入"""
@@ -88,10 +88,10 @@ def test_imports():
     
     if failed_imports:
         print(f"\n⚠️  发现 {len(failed_imports)} 个导入错误")
-        return False
     else:
         print("\n✅ 所有关键模块导入成功")
-        return True
+    
+    assert not failed_imports, f"发现 {len(failed_imports)} 个导入错误"
 
 def test_config():
     """测试配置加载"""
@@ -113,10 +113,9 @@ def test_config():
         print(f"  ✅ 加载了 {len(emotions)} 个情绪状态")
         print(f"  ✅ 加载了响应和常量配置")
         
-        return True
     except Exception as e:
         print(f"  ❌ 配置加载错误: {e}")
-        return False
+        assert False, f"配置加载错误: {e}"
 
 def main():
     """主测试函数"""
@@ -125,9 +124,26 @@ def main():
     results = []
     
     # 运行各项测试
-    results.append(("语法检查", test_syntax()))
-    results.append(("模块导入", test_imports()))
-    results.append(("配置加载", test_config()))
+    try:
+        test_syntax()
+        results.append(("语法检查", True))
+    except Exception as e:
+        print(f"  ❌ 语法检查失败: {e}")
+        results.append(("语法检查", False))
+        
+    try:
+        test_imports()
+        results.append(("模块导入", True))
+    except Exception as e:
+        print(f"  ❌ 模块导入失败: {e}")
+        results.append(("模块导入", False))
+        
+    try:
+        test_config()
+        results.append(("配置加载", True))
+    except Exception as e:
+        print(f"  ❌ 配置加载失败: {e}")
+        results.append(("配置加载", False))
     
     # 输出总结
     print(f"\n📊 测试结果汇总:")

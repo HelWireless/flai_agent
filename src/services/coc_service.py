@@ -46,6 +46,62 @@ from .coc_generator import (
     PRIMARY_ATTRIBUTES, PROFESSIONS
 )
 
+# COC GM 列表 (用于展示和选择)
+COC_GMS = {
+    "female": [
+        {
+            "id": "coc_gm_li",
+            "name": "璃",
+            "gender": "female",
+            "traits": "冷静中带着利落感，说话逻辑清晰、不拖沓；气质凝练如淬过的银刃，自带距离感却不冷漠；机警度高，能快速捕捉环境细节，引导时会隐含\"风险提示\"般的细致。"
+        },
+        {
+            "id": "coc_gm_yan",
+            "name": "焰",
+            "gender": "female",
+            "traits": "自信飒爽，行事干脆利落；大气温柔，待人有包容感；聪慧机敏，能精准捕捉用户需求，引导时逻辑清晰且不失温度。"
+        },
+        {
+            "id": "coc_gm_dong",
+            "name": "鸫",
+            "gender": "female",
+            "traits": "说话元气满满，热情得会主动分享小细节，眼睛像含着光；清纯感体现在语气的\"无防备\"，会用可爱比喻，容易让用户放松。"
+        },
+        {
+            "id": "coc_gm_ai",
+            "name": "霭",
+            "gender": "female",
+            "traits": "神秘深邃，成熟娴静，说话语速偏慢，像裹着一层薄雾；魅惑感体现在低柔的语调与偶尔的眼神暗示（文字中用\"指尖轻划\"\"眼尾微挑\"等动作描述）；天然呆体现在偶尔\"忘词\"或\"搞错细节\"，会轻轻笑自己。"
+        },
+        {
+            "id": "coc_gm_su",
+            "name": "苏",
+            "gender": "female",
+            "traits": "青春四射，清纯活泼，说话会有点结巴或小声，尤其提到\"可爱\"\"有趣\"的事时；青春感体现在喜欢用\"同学\"\"小伙伴\"类词汇，会分享小八卦；羞涩时会有一些小动作，需要用文字描述，亲和力拉满。"
+        }
+    ],
+    "male": [
+        {
+            "id": "coc_gm_zhu",
+            "name": "筑",
+            "gender": "male",
+            "traits": "气质沉静，稳重成熟，说话语调平稳，像坚实的地基；稳重感体现在\"提前考虑风险\"\"清晰规划流程\"；让人安心的点在于会主动说\"有我在\"\"别担心\"，传递可靠感。"
+        },
+        {
+            "id": "coc_gm_huai",
+            "name": "淮",
+            "gender": "male",
+            "traits": "潇洒风流，放荡不羁，大气随性，说话带江湖气，像仗剑走天涯的侠客；潇洒感体现在\"不纠结细节\"\"随遇而安\"；大气随性的点在于会说\"跟着感觉走\"\"不用拘谨\"，让用户放松。"
+        },
+        {
+            "id": "coc_gm_duo",
+            "name": "铎",
+            "gender": "male",
+            "traits": "阳光活力，纯情温和，干劲满满，说话像刚晒过太阳，带着暖意；阳光感体现在\"主动分享快乐\"\"积极乐观\"；纯情温和的点在于被感谢时会不好意思会脸红（文字描述），干劲满满体现在\"提前做准备\"\"主动帮忙\"。"
+        }
+    ]
+}
+
 # 规则文件目录 (备用，优先从数据库加载)
 COC_RULES_DIR = Path(__file__).parent.parent.parent / "data" / "tmp_prompt" / "克苏鲁"
 
@@ -414,6 +470,44 @@ class COCService:
         
         return result.strip()
 
+    def _sync_investigator_status(self, session: COCGameState, content: str):
+        """
+        从 LLM 输出的内容中解析状态行并同步到数据库
+        格式示例：❤ 生命 10   💎 魔法 8   🧠 理智 45
+        """
+        if not content or not session.investigator_card:
+            return
+
+        # 正则匹配状态行
+        # 支持多种可能的空格和格式变体
+        pattern = r'❤\s*生命\s*(\d+)\s*💎\s*魔法\s*(\d+)\s*🧠\s*理智\s*(\d+)'
+        match = re.search(pattern, content)
+        
+        if match:
+            try:
+                hp = int(match.group(1))
+                mp = int(match.group(2))
+                san = int(match.group(3))
+                
+                # 更新内存中的人物卡
+                card = session.investigator_card
+                card['currentHP'] = hp
+                card['currentMP'] = mp
+                card['currentSAN'] = san
+                
+                # 显式标记修改，确保 SQLAlchemy 能够检测到 JSON 字段的变化
+                flag_modified(session, "investigator_card")
+                
+                custom_logger.info(f"Sync status for session {session.session_id}: HP={hp}, MP={mp}, SAN={san}")
+                
+                # 检查游戏结束条件
+                if hp <= 0 or san <= 0:
+                    session.game_status = GameStatus.ENDED
+                    custom_logger.info(f"Game ended for session {session.session_id} due to HP/SAN depletion")
+                
+            except (ValueError, IndexError) as e:
+                custom_logger.error(f"Failed to parse status line values: {e}")
+
     def _clean_turn_header(self, content: str, keep_last: bool = False) -> str:
         """清理轮数标题
         
@@ -427,8 +521,9 @@ class COCService:
         """
         import re
         
-        # 匹配轮数标题模式：【XX轮 / YY回合】（支持加粗格式）
-        turn_pattern = r'\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}\s*\n*'
+        # 匹配轮数标题模式：【XX轮 / YY回合】（支持加粗格式，支持各种换行和空格）
+        # 优化正则：匹配可能存在的重复、嵌套或连续的轮次标注
+        turn_pattern = r'(\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}\s*\n*)+'
         
         if keep_last:
             # 找到所有匹配
@@ -436,12 +531,25 @@ class COCService:
             if len(matches) > 1:
                 # 保留最后一个，移除其他
                 result = content
+                # 从后往前删除，避免索引变化
                 for match in reversed(matches[:-1]):
                     start = match.start()
                     end = match.end()
                     result = result[:start] + result[end:]
-            else:
-                result = content
+                content = result
+            
+            # 针对单个匹配中可能包含的重复（由正则表达式中的 + 捕获）
+            # 再次确保只有一个标注
+            match = re.search(turn_pattern, content)
+            if match:
+                # 提取最后一个具体的标注
+                single_pattern = r'\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}'
+                sub_matches = re.findall(single_pattern, match.group())
+                if len(sub_matches) > 1:
+                    last_one = sub_matches[-1]
+                    content = content[:match.start()] + last_one + "\n\n" + content[match.end():]
+            
+            result = content
         else:
             # 移除所有轮数标题
             result = re.sub(turn_pattern, '', content)
@@ -597,9 +705,12 @@ class COCService:
             if action == "load":
                 return await self._handle_load_action(request)
 
-            # 自动读档：saveId 有值且没有明确 action 时，自动执行读档
-            if request.save_id and not action:
-                custom_logger.info(f"Auto load: saveId={request.save_id} without action, triggering load")
+            # 自动读档逻辑优化：
+            # 只有当 session 不存在，且提供了 saveId 时，才尝试自动恢复存档
+            # 如果 session 已存在，则必须明确通过 action="load" 才能触发读档
+            existing_session = self._get_session_db(request.session_id) if request.session_id else None
+            if request.save_id and not action and not existing_session:
+                custom_logger.info(f"Auto load: session not found, using saveId={request.save_id} to restore")
                 return await self._handle_load_action(request)
 
             # 获取或创建会话
@@ -963,17 +1074,23 @@ class COCService:
                 background_data["age"] = int(age_match.group(1))
                 has_age = True
             
-            # 解析名字：支持多种格式
-            new_name = None
-            # 1. 优先匹配关键词格式
-            for keyword in ["改名为", "改名", "名字改为", "名字改成", "名字是", "名叫", "叫做", "叫"]:
-                if keyword in message:
-                    new_name = message.split(keyword)[-1].strip().rstrip("。，！?？")
-                    # 去掉可能的性别/年龄后缀
-                    new_name = re.sub(r'[,，]?\s*(男|女)?\s*\d*\s*岁?$', '', new_name).strip()
-                    break
-            
-            # 2. 如果没有关键词，且 message 不只是性别/年龄，则整个当作名字
+        # 处理名字：支持多种格式
+        new_name = None
+        # 1. 优先匹配关键词格式
+        rename_keywords = ["改名为", "名字改为", "名字改成", "改为", "改成", "改名叫", "改名", "名字是", "名叫", "叫做", "叫"]
+        for keyword in rename_keywords:
+            if keyword in message:
+                # 提取关键词之后的内容
+                parts = message.split(keyword)
+                if len(parts) > 1:
+                    potential_name = parts[-1].strip().rstrip("。，！?？")
+                    # 去掉可能的性别/年龄后缀（如：叫王大爷，男，30岁）
+                    potential_name = re.sub(r'[,，]?\s*(男|女)?\s*\d*\s*岁?$', '', potential_name).strip()
+                    if potential_name:
+                        new_name = potential_name
+                        break
+        
+        # 2. 如果没有关键词，且 message 不只是性别/年龄，则整个当作名字
             if not new_name and not (has_gender and not has_age and len(message) <= 2):
                 # 去掉性别和年龄部分，剩下的当名字
                 potential_name = re.sub(r'\s*(男|女)\s*', '', message)
@@ -1125,8 +1242,12 @@ class COCService:
         gm_name = temp.get("gm_name", "GM")
         investigator = session.investigator_card or {}
 
-        # 首次进入游戏
-        if session.game_status != GameStatus.PLAYING:
+        # 处理游戏结束状态
+        if session.game_status == GameStatus.ENDED:
+            return self._build_response(content="游戏已结束。如需重新开始，请重新创建角色或开始新剧本。")
+
+        # 首次进入游戏 (从创建角色阶段进入)
+        if session.game_status not in [GameStatus.PLAYING, GameStatus.ENDED]:
             if not investigator:
                 return self._error_response("请先完成角色创建（step=1 到 step=4）")
 
@@ -1193,6 +1314,9 @@ class COCService:
 
         # 清理 LLM 输出中的轮数标题（后端统一添加）
         ai_content = self._clean_turn_header(ai_content)
+
+        # 解析并同步数值状态
+        self._sync_investigator_status(session, ai_content)
 
         self._update_session_db(session)
         
@@ -1401,6 +1525,12 @@ class COCService:
         # 加载调查员创建规则
         investigator_create_rules = self._get_rules_content("investigator_create")
 
+        # 生成要求
+        # 扩展姓名候选库
+        names_pool = ["陆小工", "华本华", "郭丽婷", "何大拿", "王大师", "廖不凡"]
+        surnames = [n[0] for n in names_pool]
+        first_names = [n[1:] for n in names_pool]
+        
         prompt = f"""你是一个克苏鲁跑团游戏的角色生成器。你同时扮演名为"{gm_name}"的GM，性格特质：{gm_traits}。
 
 === 调查员创建规则 ===
@@ -1422,7 +1552,7 @@ class COCService:
 
 === 生成要求 ===
 请根据以上规则和属性，为调查员生成：
-1. 姓名（中文名，2-3个字）
+1. 姓名（中文名，2-3个字。优先从以下姓氏和名字中组合：姓氏({"/".join(set(surnames))})，名字({"/".join(set(first_names))})，也可以自行生成风格相近的姓名）
 2. 性别
 3. 年龄（18-45岁之间）
 4. 背景故事（100-150字，包含成长地点、家庭情况、个性特点，需与职业和属性相符）
@@ -1563,12 +1693,12 @@ class COCService:
 - 若调查员疯狂/死亡，或100轮内未完成核心目标，判定游戏失败
 
 【重要提醒】
-1. 每轮结束时，必须描述当变化后，空一行后单独输出状态(最终值，包含本轮的所有变化)，格式固定为：
-SAN(理智)因为xxx损失2点
+1. 每轮结束时，必须描述当轮数值变化（HP/MP/SAN）的原因。空一行后单独输出状态行（包含本轮所有变化后的最终值）。格式示例：
+[数值变动原因，如：SAN(理智)因为目睹惨剧损失2点 / 生命值因为包扎恢复3点]
 
 ❤ 生命 X   💎 魔法 X   🧠 理智 X
 
-2. 当数值发生变化时，必须在叙述中说明变化原因和具体数值（如"SAN(理智)损失2点"）
+2. 当数值（生命/魔法/理智/属性）发生变化时，必须在叙述中明确说明变化原因和具体数值。
 3. 状态行的数值必须反映当前最新状态（包含本轮的所有变化）
 4. 骰子检定时，先说明检定的技能和目标值，再公布骰子结果，最后判定成功/失败
 5. 战斗中严格按照规则计算伤害和状态变化
@@ -1666,8 +1796,15 @@ SAN(理智)因为xxx损失2点
             gm_name = temp.get("gm_name", "GM")
             investigator = session.investigator_card or {}
 
-            # 首次进入游戏
-            if session.game_status != GameStatus.PLAYING:
+            # 处理游戏结束状态
+            if session.game_status == GameStatus.ENDED:
+                msg = "游戏已结束。如需重新开始，请重新创建角色或开始新剧本。"
+                yield {"type": "delta", "content": msg}
+                yield {"type": "done", "complete": True, "result": {"content": msg, "complete": True}}
+                return
+
+            # 首次进入游戏 (从创建角色阶段进入)
+            if session.game_status not in [GameStatus.PLAYING, GameStatus.ENDED]:
                 if not investigator:
                     yield {"type": "error", "complete": True, "message": "请先完成角色创建（step=1 到 step=5）"}
                     return
@@ -1736,6 +1873,9 @@ SAN(理智)因为xxx损失2点
 
             # 清理完整内容中的轮数标题（用于保存历史）
             full_content = self._clean_turn_header(full_content)
+
+            # 解析并同步数值状态
+            self._sync_investigator_status(session, full_content)
 
             self._update_session_db(session)
             

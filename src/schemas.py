@@ -1,9 +1,10 @@
 from sqlalchemy import Column, String, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from pydantic import BaseModel, field_validator
 from typing import List, Optional, Dict, Any, Union
 from pydantic import ConfigDict, Field
 
+# 定义基础模型
 Base = declarative_base()
 
 class UserHistory(Base):

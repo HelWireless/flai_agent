@@ -80,7 +80,7 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
         model_id = "qwen_max"
     
     # 如果有虚拟身份卡，注入身份背景到 system_prompt
-    if virtual_id > 0:
+    if virtual_id and str(virtual_id) != "0":
         from src.services.identity_card_service import build_identity_prompt
         identity_prompt = build_identity_prompt(virtual_id)
         if identity_prompt:

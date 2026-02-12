@@ -3,7 +3,7 @@ Prompt 配置数据模型
 统一存储 GM、第三方人物、世界配置
 """
 from sqlalchemy import Column, BigInteger, Integer, String, Text, DateTime, JSON, SmallInteger
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 from typing import Dict, List, Optional, Any
 

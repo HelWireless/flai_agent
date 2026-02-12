@@ -2,7 +2,7 @@
 异世界数据模型
 """
 from sqlalchemy import Column, BigInteger, Integer, String, Text, DateTime, JSON, SmallInteger
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
 

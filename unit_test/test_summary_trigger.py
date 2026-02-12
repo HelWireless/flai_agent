@@ -20,8 +20,8 @@ from src.services.coc_service import COCService
 from src.schemas import IWChatRequest
 
 # 加载配置
-config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "config.yaml")
-with open(config_path, "r") as f:
+config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "config.yaml")
+with open(config_path, "r", encoding="utf-8") as f:
     app_config = yaml.safe_load(f)
 
 # 数据库配置
