@@ -25,8 +25,9 @@ import uuid
 import random
 import asyncio
 import os
+import re
 from datetime import datetime
-from typing import Dict, List, Optional, Any, AsyncGenerator
+from typing import Dict, List, Optional, Any, AsyncGenerator, Tuple
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -438,8 +439,6 @@ class COCService:
         移除重复的状态行（如 ❤ 生命 XX   💎 魔法 XX   🧠 理智 XX）
         只保留最后一个状态行
         """
-        import re
-        
         # 匹配状态行模式：❤ 生命 XX   💎 魔法 XX   🧠 理智 XX
         status_pattern = r'❤\s*生命\s*\d+\s*💎\s*魔法\s*\d+\s*🧠\s*理智\s*\d+'
         
@@ -519,11 +518,9 @@ class COCService:
         - keep_last=False：用于清理 LLM 输出（后端会添加正确的标题）
         - keep_last=True：用于清理历史对话（保留最后一个标注）
         """
-        import re
-        
-        # 匹配轮数标题模式：【XX轮 / YY回合】（支持加粗格式，支持各种换行和空格）
         # 优化正则：匹配可能存在的重复、嵌套或连续的轮次标注
-        turn_pattern = r'(\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}\s*\n*)+'
+        # 更加鲁棒的正则，匹配各种可能的轮数/回合标记，支持空格和加粗
+        turn_pattern = r'\*{0,2}【\s*\d{1,2}\s*轮\s*/\s*\d{1,2}\s*回合\s*】\*{0,2}\s*\n*'
         
         if keep_last:
             # 找到所有匹配
@@ -537,18 +534,6 @@ class COCService:
                     end = match.end()
                     result = result[:start] + result[end:]
                 content = result
-            
-            # 针对单个匹配中可能包含的重复（由正则表达式中的 + 捕获）
-            # 再次确保只有一个标注
-            match = re.search(turn_pattern, content)
-            if match:
-                # 提取最后一个具体的标注
-                single_pattern = r'\*{0,2}【\d{1,2}轮\s*/\s*\d{1,2}回合】\*{0,2}'
-                sub_matches = re.findall(single_pattern, match.group())
-                if len(sub_matches) > 1:
-                    last_one = sub_matches[-1]
-                    content = content[:match.start()] + last_one + "\n\n" + content[match.end():]
-            
             result = content
         else:
             # 移除所有轮数标题
@@ -561,6 +546,39 @@ class COCService:
         result = re.sub(r'\n{3,}', '\n\n', result)
         
         return result
+
+    def _extract_selections_and_format_status(self, content: str) -> Tuple[str, List[Dict[str, Any]]]:
+        """从 LLM 输出中提取选项并格式化状态行"""
+        # 1. 提取选项 (A. B. C. D. E.)
+        # 匹配 A. xxx 或 A、xxx 或 A: xxx
+        option_pattern = r'(?m)^([A-E])[\.、:：\s]+(.*?)$'
+        options = re.findall(option_pattern, content)
+        
+        selections = []
+        seen_options = set()
+        for opt_id, opt_text in options:
+            opt_id_upper = opt_id.upper()
+            if opt_id_upper not in seen_options:
+                selections.append({
+                    "id": opt_id_upper.lower(),
+                    "text": f"{opt_id_upper}. {opt_text.strip()}"
+                })
+                seen_options.add(opt_id_upper)
+        
+        # 从正文中删除选项行
+        cleaned_content = re.sub(option_pattern, '', content).strip()
+        
+        # 2. 格式化状态行 (生命/魔法/理智)
+        # 确保状态行前有换行
+        status_pattern = r'(❤\s*生命.*?💎\s*魔法.*?🧠\s*理智.*)'
+        if re.search(status_pattern, cleaned_content):
+            # 强制在状态行前添加两个换行符，并清理状态行周围的空格
+            cleaned_content = re.sub(r'\n*' + status_pattern + r'\n*', r'\n\n\1', cleaned_content)
+        
+        # 3. 清理可能因为删除选项而产生的连续多余空行
+        cleaned_content = re.sub(r'\n{3,}', '\n\n', cleaned_content)
+        
+        return cleaned_content.strip(), selections
 
     def _build_messages_with_summary(
         self,
@@ -635,13 +653,17 @@ class COCService:
     def _build_response(
         self,
         content: Any,
-        complete: bool = False
+        complete: bool = False,
+        selections: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """构建 COC 响应"""
-        return {
+        response = {
             "content": content,
             "complete": complete
         }
+        if selections:
+            response["selections"] = selections
+        return response
 
     def _error_response(self, message: str) -> Dict[str, Any]:
         """构建错误响应"""
@@ -1056,8 +1078,6 @@ class COCService:
         # 支持多次修改：只要用户发 message 且已在 step4，就处理修改
         message = request.message.strip() if request.message else ""
         if message and session.game_status == GameStatus.STEP4_CHARACTER:
-            import re
-            
             # 初始化标志变量
             has_gender = False
             has_age = False
@@ -1320,6 +1340,9 @@ class COCService:
         # 解析并同步数值状态
         self._sync_investigator_status(session, ai_content)
 
+        # 提取选项并格式化状态行（处理重复选项和状态行换行）
+        ai_content, selections = self._extract_selections_and_format_status(ai_content)
+
         self._update_session_db(session)
         
         # 异步触发总结生成（每5轮）
@@ -1329,7 +1352,7 @@ class COCService:
         content = f"**【{session.turn_number:02d}轮 / {session.round_number:02d}回合】**\n\n"
         content += ai_content
 
-        return self._build_response(content=content)
+        return self._build_response(content=content, selections=selections)
 
     # ==================== 存档/读档 ====================
 
@@ -1695,7 +1718,8 @@ class COCService:
 - 若调查员疯狂/死亡，或100轮内未完成核心目标，判定游戏失败
 
 【重要提醒】
-1. 每轮结束时，必须描述当轮数值变化（HP/MP/SAN）的原因。空一行后单独输出状态行（包含本轮所有变化后的最终值）。格式示例：
+1. 每轮结束时，必须描述当轮数值变化（HP/MP/SAN）的原因。**空一行**后单独输出状态行（包含本轮所有变化后的最终值）。格式示例：
+
 [数值变动原因，如：SAN(理智)因为目睹惨剧损失2点 / 生命值因为包扎恢复3点]
 
 ❤ 生命 X   💎 魔法 X   🧠 理智 X
@@ -1879,17 +1903,26 @@ class COCService:
             # 解析并同步数值状态
             self._sync_investigator_status(session, full_content)
 
+            # 提取选项并格式化状态行（处理重复选项和状态行换行）
+            # 注意：流式输出已经实时发送给前端了，这里的 ai_content 仅用于最后的 result 返回
+            # 但为了同步 selections，我们需要调用这个方法
+            formatted_content, selections = self._extract_selections_and_format_status(full_content)
+
             self._update_session_db(session)
             
             # 异步触发总结生成（每5轮）
             self._trigger_summary_if_needed(session, history)
 
             # 完整内容
-            complete_content = header + full_content
+            complete_content = header + formatted_content
             yield {
                 "type": "done",
                 "complete": True,
-                "result": {"content": complete_content, "complete": False}
+                "result": {
+                    "content": complete_content,
+                    "complete": False,
+                    "selections": selections
+                }
             }
 
         except Exception as e:
