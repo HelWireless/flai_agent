@@ -1096,23 +1096,23 @@ class COCService:
                 background_data["age"] = int(age_match.group(1))
                 has_age = True
             
-        # 处理名字：支持多种格式
-        new_name = None
-        # 1. 优先匹配关键词格式
-        rename_keywords = ["改名为", "名字改为", "名字改成", "改为", "改成", "改名叫", "改名", "名字是", "名叫", "叫做", "叫"]
-        for keyword in rename_keywords:
-            if keyword in message:
-                # 提取关键词之后的内容
-                parts = message.split(keyword)
-                if len(parts) > 1:
-                    potential_name = parts[-1].strip().rstrip("。，！?？")
-                    # 去掉可能的性别/年龄后缀（如：叫王大爷，男，30岁）
-                    potential_name = re.sub(r'[,，]?\s*(男|女)?\s*\d*\s*岁?$', '', potential_name).strip()
-                    if potential_name:
-                        new_name = potential_name
-                        break
-        
-        # 2. 如果没有关键词，且 message 不只是性别/年龄，则整个当作名字
+            # 处理名字：支持多种格式
+            new_name = None
+            # 1. 优先匹配关键词格式
+            rename_keywords = ["改名为", "名字改为", "名字改成", "改为", "改成", "改名叫", "改名", "名字是", "名叫", "叫做", "叫"]
+            for keyword in rename_keywords:
+                if keyword in message:
+                    # 提取关键词之后的内容
+                    parts = message.split(keyword)
+                    if len(parts) > 1:
+                        potential_name = parts[-1].strip().rstrip("。，！?？")
+                        # 去掉可能的性别/年龄后缀（如：叫王大爷，男，30岁）
+                        potential_name = re.sub(r'[,，]?\s*(男|女)?\s*\d*\s*岁?$', '', potential_name).strip()
+                        if potential_name:
+                            new_name = potential_name
+                            break
+            
+            # 2. 如果没有关键词，且 message 不只是性别/年龄，则整个当作名字
             if not new_name and not (has_gender and not has_age and len(message) <= 2):
                 # 去掉性别和年龄部分，剩下的当名字
                 potential_name = re.sub(r'\s*(男|女)\s*', '', message)
