@@ -1058,8 +1058,11 @@ class COCService:
         if message and session.game_status == GameStatus.STEP4_CHARACTER:
             import re
             
-            # 解析性别
+            # 初始化标志变量
             has_gender = False
+            has_age = False
+            
+            # 解析性别
             if "男" in message:
                 background_data["gender"] = "男"
                 has_gender = True
@@ -1068,7 +1071,6 @@ class COCService:
                 has_gender = True
             
             # 解析年龄
-            has_age = False
             age_match = re.search(r'(\d{1,2})\s*岁', message)
             if age_match:
                 background_data["age"] = int(age_match.group(1))
