@@ -199,7 +199,7 @@ class FreakWorldService:
             # 调用 LLM 生成总结
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 temperature=0.3,
                 parse_json=False,
                 response_format="text"
@@ -513,7 +513,7 @@ class FreakWorldService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "开始"}
                 ],
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 temperature=0.9,
                 top_p=0.85,
                 max_tokens=4096,
@@ -575,7 +575,7 @@ class FreakWorldService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 temperature=0.9,
                 top_p=0.85,
                 max_tokens=4096,
@@ -656,7 +656,7 @@ class FreakWorldService:
         try:
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 parse_json=False,
                 response_format="text"
             )
@@ -794,7 +794,7 @@ class FreakWorldService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 parse_json=False,
                 response_format="text",
                 temperature=0.9,
@@ -849,7 +849,7 @@ class FreakWorldService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 parse_json=False,
                 response_format="text",
                 temperature=0.9,
@@ -901,7 +901,7 @@ class FreakWorldService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 parse_json=False,
                 response_format="text",
                 temperature=0.9,
@@ -1012,7 +1012,7 @@ class FreakWorldService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 parse_json=False,
                 response_format="text"
             )
@@ -1095,7 +1095,7 @@ class FreakWorldService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 parse_json=False,
                 response_format="text",
                 temperature=0.9,

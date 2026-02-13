@@ -372,7 +372,7 @@ class COCService:
             # 调用 LLM 生成总结
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 temperature=0.3,
                 parse_json=False,
                 response_format="text"
@@ -1517,7 +1517,7 @@ class COCService:
         try:
             response = await self.llm.chat_completion(
                 messages=messages,
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 temperature=0.54,
                 parse_json=False,
                 response_format="text"
@@ -1610,7 +1610,7 @@ class COCService:
         try:
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen3_max"],
+                model_pool=["qwen_plus"],
                 temperature=0.54,
                 parse_json=False,
                 response_format="text"

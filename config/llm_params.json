@@ -1,18 +1,26 @@
 {
   "model_pools": {
     "chat": [
+      "qwen_character",
+      "kimi",
       "qwen3_32b_custom",
       "qwen_max",
       "deepseek"
     ],
     "emotion": [
+      "qwen_character",
+      "kimi",
       "qwen_plus",
       "qwen_max"
     ],
     "opener": [
+      "qwen_character",
+      "kimi",
       "qwen_max"
     ],
     "fortune": [
+      "qwen_character",
+      "kimi",
       "qwen_plus"
     ]
   },

@@ -74,10 +74,13 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
             # 返回一个有意义的错误信息，让调用方知道角色不存在
             # 这样可以在chat_service中进行适当处理
             system_prompt = f"{{\"error\":\"角色ID {character_id} 不存在，请检查ID是否正确\"}}"
+            model_id = None  # 角色不存在时使用默认模型
         else:
-            # 如果找到了，序列化为JSON字符串
+            # 在序列化为JSON之前检查是否有指定的模型ID
+            model_id = system_prompt.get('model_id', 'qwen_character')  # 默认使用有过期时间的模型
+            # 将角色配置序列化为JSON字符串
+            import json as json_module
             system_prompt = json_module.dumps(system_prompt, ensure_ascii=False, indent=4)
-        model_id = "qwen_max"
     
     # 如果有虚拟身份卡，注入身份背景到 system_prompt
     if virtual_id and str(virtual_id) != "0":

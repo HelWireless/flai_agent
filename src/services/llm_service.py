@@ -68,8 +68,40 @@ class LLMService:
         }
     
     def _select_model(self, model_pool: List[str]) -> str:
-        """从模型池中随机选择一个模型"""
-        return random.choice(model_pool)
+        """从模型池中选择一个模型，优先选择有过期时间且未过期的模型"""
+        from datetime import datetime
+        
+        # 分类模型：有过期时间的和没有过期时间的
+        expiring_models = []
+        non_expiring_models = []
+        
+        for model_name in model_pool:
+            if model_name in self.config and 'expired_at' in self.config[model_name]:
+                # 检查是否已过期
+                expired_at_str = self.config[model_name]['expired_at']
+                try:
+                    expired_at = datetime.strptime(expired_at_str, "%Y-%m-%d")
+                    if expired_at >= datetime.now():
+                        # 未过期，加入即将过期模型列表
+                        expiring_models.append(model_name)
+                    # 如果已过期，则不加入任何列表
+                except ValueError:
+                    # 如果日期格式不正确，当作不过期处理
+                    non_expiring_models.append(model_name)
+            else:
+                # 没有设置过期时间的模型
+                non_expiring_models.append(model_name)
+        
+        # 优先选择有过期时间且未过期的模型
+        if expiring_models:
+            return random.choice(expiring_models)
+        
+        # 如果没有即将过期的模型，从普通模型中选择
+        if non_expiring_models:
+            return random.choice(non_expiring_models)
+        
+        # 如果都没有可用的模型，抛出异常
+        raise ValueError("No available models in model pool")
     
     def _build_request_data(
         self,
