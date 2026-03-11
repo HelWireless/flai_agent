@@ -40,6 +40,8 @@ from ..models.coc_game_state import COCGameState
 from ..models.coc_save_slot import COCSaveSlot
 from ..models.instance_world import FreakWorldDialogue
 from ..models.prompt_config import PromptConfig
+from ..error_handler import ErrorHandler, GameError, ErrorCode
+from ..metrics import metrics_collector, track_request_performance, track_conversation_metrics
 from .llm_service import LLMService
 from .instance_world_prompts import get_gm_config
 from .coc_generator import (
@@ -164,6 +166,7 @@ class COCService:
     # 类级别缓存标记，确保只加载一次
     _rules_loaded: bool = False
     
+    @ErrorHandler.handle_config_error
     def _load_rules_files(self):
         """从数据库预加载规则到缓存（多客户端共享内存）
         
@@ -196,8 +199,21 @@ class COCService:
                 return
             else:
                 custom_logger.warning("No COC rules found in database, falling back to local files")
+                raise GameError(
+                    ErrorCode.CONFIG_DB_CONNECTION_FAILED,
+                    "No COC rules found in database",
+                    {"table": "t_prompt_config", "filter": "type=COC_RULE"}
+                )
+        except GameError:
+            raise
         except Exception as e:
             custom_logger.error(f"Failed to load COC rules from database: {e}, falling back to local files")
+            raise GameError(
+                ErrorCode.CONFIG_DB_CONNECTION_FAILED,
+                "Failed to load COC rules from database",
+                {"error": str(e)},
+                e
+            )
         
         # Fallback: 从本地文件加载
         self._load_rules_from_files()
@@ -301,10 +317,55 @@ class COCService:
     def _get_dialogue_history(self, session_id: str) -> List[Dict[str, str]]:
         """获取对话历史（从 t_freak_world_dialogue 读取，session_id 为会话字符串）
         
+        使用优化的查询，支持缓存和性能监控
+        
         返回的 assistant 消息会自动清理：
         - 状态行（❤ 生命 💎 魔法 🧠 理智）只保留最后一个
         - 轮数标题（【XX轮 / YY回合】）只保留最后一个
         """
+        try:
+            # 使用优化的查询服务
+            from .core.dialogue_query_optimized import OptimizedDialogueQuery
+            
+            dialogue_query = OptimizedDialogueQuery(self.db)
+            
+            # 异步查询需要在线程池中执行
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            messages = loop.run_in_executor(
+                None,
+                lambda: loop.run_until_complete(
+                    dialogue_query.get_dialogue_history_optimized(
+                        session_id=session_id,
+                        max_turns=self.HISTORY_WINDOW // 2,  # 转换为轮数
+                        use_cache=True
+                    )
+                )
+            )
+            
+            # Fallback到原始方法（如果异步执行有问题）
+            if not messages or not isinstance(messages, list):
+                return self._get_dialogue_history_fallback(session_id)
+            
+            # 清理assistant消息
+            for msg in messages:
+                if msg.get("role") == "assistant":
+                    content = msg.get("content", "")
+                    # 清理状态行（保留最后一个）
+                    content = self._clean_assistant_message(content)
+                    # 清理轮数标题（保留最后一个）
+                    content = self._clean_turn_header(content, keep_last=True)
+                    msg["content"] = content
+                    
+            return messages
+            
+        except Exception as e:
+            custom_logger.warning(f"优化对话查询失败，使用fallback: {e}")
+            return self._get_dialogue_history_fallback(session_id)
+    
+    def _get_dialogue_history_fallback(self, session_id: str) -> List[Dict[str, str]]:
+        """原始对话查询方法作为fallback"""
         try:
             dialogues = self.db.query(FreakWorldDialogue).filter(
                 and_(
@@ -316,18 +377,10 @@ class COCService:
             messages = []
             for d in dialogues:
                 for msg in d.to_messages():
-                    # 清理 assistant 消息
-                    if msg.get("role") == "assistant":
-                        content = msg.get("content", "")
-                        # 清理状态行（保留最后一个）
-                        content = self._clean_assistant_message(content)
-                        # 清理轮数标题（保留最后一个）
-                        content = self._clean_turn_header(content, keep_last=True)
-                        msg["content"] = content
                     messages.append(msg)
             return messages
         except Exception as e:
-            custom_logger.warning(f"Failed to get dialogue history: {e}")
+            custom_logger.warning(f"Fallback dialogue history query failed: {e}")
             return []
 
     # ==================== 对话总结 ====================
@@ -1250,6 +1303,9 @@ class COCService:
 
     # ==================== Step 6: 游戏对话 ====================
 
+    @ErrorHandler.handle_coc_error
+    @track_request_performance("coc_step6_playing")
+    @track_conversation_metrics("coc")
     async def _step6_playing(
         self,
         session: COCGameState,
@@ -1323,12 +1379,14 @@ class COCService:
         )
 
         try:
+            # 游戏主流程对话增加超时时间，避免存档触发等操作导致超时
             response = await self.llm.chat_completion(
                 messages=messages,
                 model_pool=["qwen3_max"],
                 temperature=0.54,
                 parse_json=False,
-                response_format="text"
+                response_format="text",
+                timeout=60
             )
             ai_content = response.get("content", "")
         except Exception as e:
@@ -1371,28 +1429,52 @@ class COCService:
         ).first()
 
     def _create_save_slot(self, save_id: str, session: COCGameState) -> COCSaveSlot:
-        """将当前 session 快照写入存档表
+        """将当前 session 快照写入存档表 (支持覆盖更新)
 
         Args:
             save_id: 前端/Java 层传入的存档ID
             session: 当前游戏会话
         """
-        save_slot = COCSaveSlot(
-            save_id=save_id,
-            session_id=session.session_id,
-            user_id=session.user_id,
-            gm_id=session.gm_id,
-            game_status=session.game_status,
-            investigator_card=session.investigator_card,
-            round_number=session.round_number,
-            turn_number=session.turn_number,
-            temp_data=session.get_temp_data(),
-            del_=0
-        )
-        self.db.add(save_slot)
-        self.db.commit()
-        self.db.refresh(save_slot)
-        custom_logger.info(f"Created save slot: {save_slot.save_id} for session {session.session_id}")
+        # 检查是否已存在同名存档（用于覆盖更新）
+        save_slot = self._get_save_slot(save_id)
+
+        if save_slot:
+            # 更新现有存档
+            save_slot.session_id = session.session_id
+            save_slot.user_id = session.user_id
+            save_slot.gm_id = session.gm_id
+            save_slot.game_status = session.game_status
+            save_slot.investigator_card = session.investigator_card
+            save_slot.round_number = session.round_number
+            save_slot.turn_number = session.turn_number
+            save_slot.temp_data = session.get_temp_data()
+            save_slot.del_ = 0  # 确保未删除
+            custom_logger.info(f"Updating existing COC save slot: {save_id}")
+        else:
+            # 创建新存档
+            save_slot = COCSaveSlot(
+                save_id=save_id,
+                session_id=session.session_id,
+                user_id=session.user_id,
+                gm_id=session.gm_id,
+                game_status=session.game_status,
+                investigator_card=session.investigator_card,
+                round_number=session.round_number,
+                turn_number=session.turn_number,
+                temp_data=session.get_temp_data(),
+                del_=0
+            )
+            self.db.add(save_slot)
+            custom_logger.info(f"Creating new COC save slot: {save_id}")
+
+        try:
+            self.db.commit()
+            self.db.refresh(save_slot)
+        except Exception as e:
+            self.db.rollback()
+            custom_logger.error(f"Failed to commit COC save slot: {e}")
+            raise
+
         return save_slot
 
     async def _handle_save_action(self, request: IWChatRequest) -> Dict[str, Any]:
@@ -1411,7 +1493,7 @@ class COCService:
             ext_param = request.ext_param or {}
             save_id = ext_param.get("saveId") or ext_param.get("save_id")
         if save_id is not None:
-            save_id = str(save_id)
+            save_id = str(save_id).strip()
 
         if not save_id:
             return self._error_response("缺少存档ID（saveId），存档ID由前端传入")
@@ -1455,7 +1537,7 @@ class COCService:
             ext_param = request.ext_param or {}
             save_id = ext_param.get("saveId") or ext_param.get("save_id")
         if save_id is not None:
-            save_id = str(save_id)
+            save_id = str(save_id).strip()
 
         if not save_id:
             return self._error_response("缺少存档ID（saveId）")
@@ -1515,12 +1597,14 @@ class COCService:
         messages.append({"role": "user", "content": resume_msg})
 
         try:
+            # 读档恢复通常包含较多历史，增加超时时间
             response = await self.llm.chat_completion(
                 messages=messages,
                 model_pool=["qwen_plus"],
                 temperature=0.54,
                 parse_json=False,
-                response_format="text"
+                response_format="text",
+                timeout=60
             )
             ai_content = response.get("content", "")
         except Exception as e:
@@ -1882,13 +1966,14 @@ class COCService:
                 user_message=message
             )
 
-            # 真正的 LLM 流式调用
+            # 真正的 LLM 流式调用增加超时时间
             full_content = ""
             async for chunk in self.llm.stream_chat_completion(
                 messages=messages,
                 model_pool=["qwen3_max"],
                 temperature=0.54,
-                response_format="text"
+                response_format="text",
+                timeout=60
             ):
                 if chunk.get("type") == "delta":
                     full_content += chunk["content"]

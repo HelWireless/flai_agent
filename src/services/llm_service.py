@@ -50,10 +50,22 @@ class LLMService:
     
     async def _make_request(self, url: str, json_data: Dict, headers: Dict, timeout: int = 15):
         """异步 HTTP 请求"""
+        # 如果是存档操作（通过消息内容或 model_name 判断），增加超时时间
+        is_save_op = False
+        if "messages" in json_data:
+            for msg in json_data["messages"]:
+                if "存档" in msg.get("content", "") or "73829104碧鹿孽心0109" in msg.get("content", ""):
+                    is_save_op = True
+                    break
+        
+        actual_timeout = 60 if is_save_op else timeout
+        if is_save_op:
+            custom_logger.info(f"Detected save/summary operation, increasing timeout to {actual_timeout}s")
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, 
-            partial(self.session.post, url, json=json_data, headers=headers, timeout=timeout)
+            partial(self.session.post, url, json=json_data, headers=headers, timeout=actual_timeout)
         )
     
     def _get_model_config(self, model_name: str) -> Dict:

@@ -3,5 +3,5 @@
   "name": "深渊暗湖·永夜酒馆",
   "theme": "炼狱镜界",
   "description": "深渊暗湖边的永夜酒馆，弥漫着神秘而危险的气息",
-  "setting_file": "data/tmp_prompt/副本世界/副本世界p1/副本世界信息：01-【深渊暗湖·永夜酒馆】/副本世界信息：01-【深渊暗湖·永夜酒馆】.txt"
+  "setting_file": "config/instance_world/world_settings/01_abyss_tavern_setting.txt"
 }

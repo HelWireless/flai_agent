@@ -929,7 +929,7 @@ class FreakWorldService:
     def _create_save_slot(
         self, save_id: str, session: FreakWorldGameState, save_content: str
     ) -> COCSaveSlot:
-        """将 IW 存档写入 t_coc_save_slot 表
+        """将 IW 存档写入 t_coc_save_slot 表 (支持覆盖更新)
 
         字段复用策略：
         - save_id / session_id / user_id / gm_id / game_status: 通用字段
@@ -937,6 +937,9 @@ class FreakWorldService:
         - temp_data: 存 LLM 压缩的存档文本（iw_prompt_saving 格式）
         - round_number / turn_number: IW 不用，默认 0
         """
+        # 检查是否已存在同名存档（用于覆盖更新）
+        save_slot = self._get_save_slot(save_id)
+        
         iw_game_state = {
             "type": "freak_world",
             "world_id": self._format_world_id(session.freak_world_id),
@@ -944,22 +947,42 @@ class FreakWorldService:
             "current_character_id": session.current_character_id,
             "characters": session.characters,
         }
-        save_slot = COCSaveSlot(
-            save_id=save_id,
-            session_id=session.session_id,
-            user_id=session.user_id,
-            gm_id=session.gm_id,
-            game_status=session.game_status,
-            investigator_card=iw_game_state,
-            round_number=0,
-            turn_number=0,
-            temp_data={"save_content": save_content},
-            del_=0
-        )
-        self.db.add(save_slot)
-        self.db.commit()
-        self.db.refresh(save_slot)
-        custom_logger.info(f"Created IW save slot: {save_slot.save_id} for session {session.session_id}")
+
+        if save_slot:
+            # 更新现有存档
+            save_slot.session_id = session.session_id
+            save_slot.user_id = session.user_id
+            save_slot.gm_id = session.gm_id
+            save_slot.game_status = session.game_status
+            save_slot.investigator_card = iw_game_state
+            save_slot.temp_data = {"save_content": save_content}
+            save_slot.del_ = 0  # 确保未删除
+            custom_logger.info(f"Updating existing IW save slot: {save_id}")
+        else:
+            # 创建新存档
+            save_slot = COCSaveSlot(
+                save_id=save_id,
+                session_id=session.session_id,
+                user_id=session.user_id,
+                gm_id=session.gm_id,
+                game_status=session.game_status,
+                investigator_card=iw_game_state,
+                round_number=0,
+                turn_number=0,
+                temp_data={"save_content": save_content},
+                del_=0
+            )
+            self.db.add(save_slot)
+            custom_logger.info(f"Creating new IW save slot: {save_id}")
+
+        try:
+            self.db.commit()
+            self.db.refresh(save_slot)
+        except Exception as e:
+            self.db.rollback()
+            custom_logger.error(f"Failed to commit save slot: {e}")
+            raise
+            
         return save_slot
 
     async def _handle_save_action(self, request: IWChatRequest) -> Dict[str, Any]:
@@ -981,7 +1004,7 @@ class FreakWorldService:
             ext_param = request.ext_param or {}
             save_id = ext_param.get("saveId") or ext_param.get("save_id")
         if save_id is not None:
-            save_id = str(save_id)
+            save_id = str(save_id).strip()
         if not save_id:
             return self._error_response("缺少存档ID（saveId），存档ID由前端传入")
 
@@ -1010,11 +1033,13 @@ class FreakWorldService:
         )
 
         try:
+            # 存档生成通常较慢，增加超时时间
             response = await self.llm.chat_completion(
                 messages=messages,
                 model_pool=["qwen_plus"],
                 parse_json=False,
-                response_format="text"
+                response_format="text",
+                timeout=60
             )
             save_content = response.get("content", "存档生成失败")
         except Exception as e:
@@ -1041,7 +1066,7 @@ class FreakWorldService:
         ext_param = request.ext_param or {}
         save_id = ext_param.get("saveId") or ext_param.get("save_id") or request.save_id
         if save_id is not None:
-            save_id = str(save_id)
+            save_id = str(save_id).strip()
         if not save_id:
             return self._error_response("缺少存档ID（saveId）")
 
