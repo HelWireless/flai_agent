@@ -188,9 +188,9 @@ class ChatService:
             filtered_user_message = self.cf.filter_sensitive_content(request.message)
             messages.append({"role": "user", "content": filtered_user_message})
             
-            # 添加系统消息以指定JSON格式要求（某些模型要求消息中包含'json'字样才能使用json_object响应格式）
-            # 这样可以避免将格式要求与用户消息混淆
-            json_format_message = "请以JSON格式回复，包含emotion_type和answer字段。"
+            # 添加系统消息以指定JSON格式要求
+            emotion_list_str = "、".join(self.emotion_service.get_emotion_map().keys()) if hasattr(self.emotion_service, 'get_emotion_map') else "开心、期待、生气、伤心、惊恐、害羞、抱抱、无语"
+            json_format_message = f"请以JSON格式回复，包含emotion_type和answer字段。其中emotion_type必须且只能从以下列表中选择一个：{emotion_list_str}。"
             messages.append({"role": "system", "content": json_format_message})
             
             # 记录发送给LLM的完整消息内容

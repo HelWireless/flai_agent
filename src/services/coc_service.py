@@ -1347,7 +1347,7 @@ class COCService:
 
 ❤ 生命 {investigator.get('currentHP', 0)}   💎 魔法 {investigator.get('currentMP', 0)}   🧠 理智 {investigator.get('currentSAN', 0)}
 
-请输入你的行动或对话："""
+请输入【继续】开始冒险"""
 
             return self._build_response(content=content)
 
@@ -1355,7 +1355,7 @@ class COCService:
 
         message = request.message.strip()
         if not message:
-            return self._build_response(content="请输入你的行动或对话。")
+            return self._build_response(content="请输入【继续】开始冒险。")
 
         # 检查存档密钥
         if message == self.SAVE_KEY:
@@ -1936,7 +1936,7 @@ class COCService:
 
 ❤ 生命 {investigator.get('currentHP', 0)}   💎 魔法 {investigator.get('currentMP', 0)}   🧠 理智 {investigator.get('currentSAN', 0)}
 
-请输入你的行动或对话："""
+请输入【继续】开始冒险"""
 
                 # 分块发送开场
                 chunk_size = 50
@@ -1949,8 +1949,8 @@ class COCService:
             # 已在游戏中
             message = request.message.strip()
             if not message:
-                yield {"type": "delta", "content": "请输入你的行动或对话。"}
-                yield {"type": "done", "complete": True, "result": {"content": "请输入你的行动或对话。", "complete": False}}
+                yield {"type": "delta", "content": "请输入【继续】开始冒险。"}
+                yield {"type": "done", "complete": True, "result": {"content": "请输入【继续】开始冒险。", "complete": False}}
                 return
 
             # 增加轮数

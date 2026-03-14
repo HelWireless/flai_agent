@@ -86,23 +86,32 @@ def create_app() -> FastAPI:
         # 记录所有请求的基本信息
         custom_logger.info(f"Incoming request: {request.method} {request.url}")
         
-        # 特别关注聊天请求
-        if request.method == "POST" and "/chat-pillow" in str(request.url):
-            try:
-                # 读取请求体
-                body = await request.body()
-                # 尝试解析为JSON
+        # 特别关注所有 POST 聊天/存档请求
+        if request.method == "POST":
+            url_str = str(request.url)
+            # 匹配主要的业务路径
+            if any(path in url_str for path in ["/chat", "/pillow", "/freak-world", "/coc"]):
                 try:
-                    body_json = json.loads(body.decode('utf-8'))
-                    custom_logger.info(f"Chat request body: {body_json}")
-                except:
-                    # 如果不是JSON格式，记录原始内容
-                    custom_logger.info(f"Chat request body (raw): {body.decode('utf-8') if body else 'Empty body'}")
-            except Exception as e:
-                custom_logger.error(f"Error reading request body: {e}")
+                    # 读取请求体
+                    body = await request.body()
+                    # 尝试解析为JSON
+                    try:
+                        body_json = json.loads(body.decode('utf-8'))
+                        # 脱敏敏感信息（可选，目前主要是业务数据）
+                        custom_logger.info(f"Request Body [{url_str}]: {body_json}")
+                    except:
+                        # 如果不是JSON格式，记录原始内容
+                        custom_logger.info(f"Request Body (raw) [{url_str}]: {body.decode('utf-8') if body else 'Empty body'}")
+                except Exception as e:
+                    custom_logger.error(f"Error reading request body in middleware: {e}")
         
-        response = await call_next(request)
-        return response
+        try:
+            response = await call_next(request)
+            custom_logger.info(f"Response: {response.status_code} for {request.method} {request.url}")
+            return response
+        except Exception as e:
+            custom_logger.error(f"Middleware caught unhandled exception: {str(e)}")
+            raise e
     
     return app
 

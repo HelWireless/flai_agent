@@ -46,6 +46,18 @@ def get_emotion_type(text: str, emotion_type=None) -> int:
         "无语": 4
     }
 
+    # 扩展匹配：将 LLM 可能返回的其他情绪词映射到这 8 种核心情绪
+    extended_mapping = {
+        "激动": "开心", "欣喜": "开心", "快乐": "开心", "高兴": "开心", "欢喜": "开心", "喜悦": "開心",
+        "怀念": "期待", "向往": "期待", "盼望": "期待", "渴望": "期待", "好奇": "期待",
+        "愤怒": "生气", "恼火": "生气", "不满": "生气", "讨厌": "生气", "愤恨": "生气",
+        "难过": "伤心", "悲伤": "伤心", "沮丧": "伤心", "痛苦": "伤心", "失落": "伤心", "委屈": "伤心",
+        "害怕": "惊恐", "恐惧": "惊恐", "惊吓": "惊恐", "担心": "惊恐", "焦虑": "惊恐", "慌张": "惊恐",
+        "羞涩": "害羞", "尴尬": "害羞", "腼腆": "害羞", "脸红": "害羞",
+        "温暖": "抱抱", "依恋": "抱抱", "安慰": "抱抱", "亲密": "抱抱",
+        "困惑": "无语", "迷茫": "无语", "无奈": "无语", "尴尬": "无语", "懵逼": "无语", "淡定": "无语", "冷静": "无语"
+    }
+
     # 表情符号映射
     emoji_map = {
         '😊': '开心', '😄': '开心', '😃': '开心', '😁': '开心',
@@ -57,12 +69,40 @@ def get_emotion_type(text: str, emotion_type=None) -> int:
         '🤗': '抱抱',
         '😐': '无语', '😑': '无语', '🙄': '无语'
     }
+
+    def _get_matched_id(e_type):
+        """内部匹配逻辑：支持精确匹配和扩展映射"""
+        if not e_type:
+            return None
+        # 1. 精确匹配核心 8 种
+        if e_type in emotion_map:
+            return emotion_map[e_type]
+        # 2. 匹配扩展映射
+        if e_type in extended_mapping:
+            core_type = extended_mapping[e_type]
+            return emotion_map[core_type]
+        # 3. 模糊匹配（包含关系）
+        for core_name, core_id in emotion_map.items():
+            if core_name in e_type or e_type in core_name:
+                return core_id
+        return None
+
     if emotion_type:
-        if emotion_type in emotion_map:
-            return emotion_map[emotion_type]
+        # 处理 LLM 可能返回列表的情况
+        if isinstance(emotion_type, list):
+            for et in emotion_type:
+                matched_id = _get_matched_id(et)
+                if matched_id:
+                    return matched_id
+            # 如果列表里都没有匹配到，取第一个作为后续处理的基础
+            emotion_type = emotion_type[0] if emotion_type else None
+
+        matched_id = _get_matched_id(emotion_type)
+        if matched_id:
+            return matched_id
         else:
-            # emotion_type不在map中，随机返回一个情绪
-            custom_logger.warning(f"Unknown emotion_type: {emotion_type}, using random")
+            # emotion_type不在map中，尝试从扩展映射中寻找
+            custom_logger.warning(f"Unknown emotion_type: {emotion_type}, using random fallback")
             return random.choice(list(emotion_map.values()))
 
     text = text.lower()
