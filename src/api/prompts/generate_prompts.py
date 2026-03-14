@@ -8,7 +8,8 @@ from src.core.config_loader import get_config_loader
 
 def get_prompt_by_character_id(character_id: str, user_id: str = 'guest', 
                                nickname: str = "熟悉的人", EMS_type: str = None,
-                               user_prompt_type: str = "return_json_prompt") -> Tuple[Dict[str, str], str]:
+                               user_prompt_type: str = "return_json_prompt",
+                               virtual_id: int = 0) -> Tuple[Dict[str, str], str]:
     """
     根据角色ID获取对应的prompt配置
     
@@ -18,6 +19,7 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
         nickname: 用户昵称
         EMS_type: 情绪类型
         user_prompt_type: 用户prompt类型
+        virtual_id: 虚拟身份卡ID，0表示用户自己，>0表示扮演对应身份卡人物
     
     Returns:
         (character_prompt, model_id): prompt字典和模型ID
@@ -72,10 +74,20 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
             # 返回一个有意义的错误信息，让调用方知道角色不存在
             # 这样可以在chat_service中进行适当处理
             system_prompt = f"{{\"error\":\"角色ID {character_id} 不存在，请检查ID是否正确\"}}"
+            model_id = None  # 角色不存在时使用默认模型
         else:
-            # 如果找到了，序列化为JSON字符串
+            # 在序列化为JSON之前检查是否有指定的模型ID
+            model_id = system_prompt.get('model_id', 'qwen_character')  # 默认使用有过期时间的模型
+            # 将角色配置序列化为JSON字符串
+            import json as json_module
             system_prompt = json_module.dumps(system_prompt, ensure_ascii=False, indent=4)
-        model_id = "qwen_max"
+    
+    # 如果有虚拟身份卡，注入身份背景到 system_prompt
+    if virtual_id and str(virtual_id) != "0":
+        from src.services.identity_card_service import build_identity_prompt
+        identity_prompt = build_identity_prompt(virtual_id)
+        if identity_prompt:
+            system_prompt = system_prompt + identity_prompt
     
     # 构建用户prompt配置
     character_user_info = {

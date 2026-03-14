@@ -2,7 +2,8 @@
 API 路由定义
 纯路由层，只负责接收请求和返回响应，业务逻辑在服务层
 """
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import json
 
@@ -10,7 +11,8 @@ from src.schemas import (
     ChatRequest, ChatResponse,
     Text2Voice, Text2VoiceResponse,
     GenerateOpenerRequest, GenerateOpenerResponse,
-    DrawCardRequest, DrawCardResponse
+    DrawCardRequest, DrawCardResponse,
+    IWChatRequest, IWChatResponse
 )
 from src.database import get_db
 from src.services.chat_service import ChatService
@@ -18,6 +20,8 @@ from src.services.fortune_service import FortuneService
 from src.services.voice_service import VoiceService
 from src.services.llm_service import LLMService
 from src.services.memory_service import MemoryService
+from src.services.instance_world_service import FreakWorldService
+from src.services.coc_service import COCService
 from src.core.content_filter import ContentFilter
 from src.core.config_loader import get_config_loader
 from src.custom_logger import custom_logger
@@ -101,30 +105,86 @@ def get_voice_service() -> VoiceService:
     return VoiceService(app_config)
 
 
+def get_freak_world_service(
+    db: Session = Depends(get_db),
+    llm_service: LLMService = Depends(get_llm_service)
+) -> FreakWorldService:
+    """获取异世界服务实例"""
+    return FreakWorldService(llm_service, db, app_config)
+
+
+def get_coc_service(
+    db: Session = Depends(get_db),
+    llm_service: LLMService = Depends(get_llm_service)
+) -> COCService:
+    """获取克苏鲁跑团服务实例"""
+    return COCService(llm_service, db, app_config)
+
+
 # ==================== API 路由 ====================
 
 @router.post("/chat-pillow", response_model=ChatResponse)
 async def chat_pillow(
     chat_request: ChatRequest,
     request: Request,  # 添加Request参数用于记录
+    background_tasks: BackgroundTasks,
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """
     对话接口
     
-    功能：
-    - 敏感内容过滤
-    - 获取短期和长期记忆
-    - 情绪分析
-    - 生成AI回复
-    - 保存对话到记忆
+    与AI角色进行对话，支持多角色和虚拟身份卡功能。
+    
+    ## 请求参数
+    
+    | 字段 | 类型 | 必填 | 说明 |
+    |------|------|------|------|
+    | userId | str | 是 | 用户ID |
+    | message | str | 是 | 用户消息内容 |
+    | message_count | int | 是 | 期望返回的消息条数 |
+    | character_id | str | 否 | 角色ID，默认"default" |
+    | voice | bool | 否 | 是否语音模式，默认false |
+    | virtualId | str | 否 | 虚拟身份卡ID，默认"0" |
+    
+    ## virtualId 身份卡说明
+    
+    | ID | 身份 |
+    |----|------|
+    | "0" | 用户自己身份（默认） |
+    | "1" | 常骁（男，大三学生/外卖员） |
+    | "2" | 陆耀阳（男，CEO） |
+    | "3" | 贺筱满（女，大学生/视频博主） |
+    | "4" | 沈清舟（女，CFO） |
+    
+    ## 请求示例
+    
+    ```json
+    {
+        "userId": "1000001",
+        "message": "你好",
+        "message_count": 3,
+        "character_id": "c1s1c1_0001",
+        "voice": false,
+        "virtualId": "0"
+    }
+    ```
+    
+    ## 响应示例
+    
+    ```json
+    {
+        "user_id": "1000001",
+        "llm_message": ["你好呀~", "今天心情怎么样？"],
+        "emotion_type": 1
+    }
+    ```
     """
     # 记录请求内容
     custom_logger.info(f"Processing chat request: user_id={chat_request.user_id}, "
                       f"message='{chat_request.message}', message_count={chat_request.message_count}, "
                       f"character_id={chat_request.character_id}, voice={chat_request.voice}")
     
-    return await chat_service.process_chat(chat_request)
+    return await chat_service.process_chat(chat_request, background_tasks=background_tasks)
 
 
 @router.post("/text2voice", response_model=Text2VoiceResponse)
@@ -220,3 +280,796 @@ async def clear_user_memory(
     """
     success = await memory_service.clear_memory(user_id, character_id)
     return {"success": success, "message": "记忆已清除" if success else "清除失败"}
+
+
+# ==================== 副本世界接口 ====================
+
+@router.post("/freak-world/chat")
+async def freak_world_chat(
+    request: IWChatRequest,
+    fw_service: FreakWorldService = Depends(get_freak_world_service)
+):
+    """
+    副本世界对话接口（支持 SSE 流式 / 同步响应）
+    
+    通过 `stream` 字段控制响应模式：
+    - `stream=true`（默认）：SSE 流式响应
+    - `stream=false`：同步 JSON 响应
+    
+    ## 游戏流程图
+    
+    ```
+    action=start → step=1 → step=2 → step=3 → 持续对话
+    背景+性别选择   世界叙事   角色列表   游戏对话
+    (JSON)        (md,流式)  (JSON)   (md,流式)
+    ```
+    
+    ## 核心机制
+    
+    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`change_char` 换人、`save` 存档、`load` 读档
+    2. **step=1 世界叙事**：选择性别后 LLM 流式输出大段世界描述
+    3. **step=2 角色列表**：confirm 获取角色列表（JSON，同 COC 选职业）；char_XX 选定角色进入游戏
+    4. **step=3 为游戏阶段**：真流式 LLM 对话
+    5. **action=change_char**：游戏中换人，LLM 返回角色列表（markdown）
+    
+    ## 请求参数
+    
+    | 字段 | 类型 | 必填 | 说明 |
+    |------|------|------|------|
+    | userId | str | 是 | 用户ID |
+    | worldId | str | 是 | 世界 config_id（如 "world_01"） |
+    | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
+    | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_01"） |
+    | step | str | 是 | 游戏阶段（见下方说明） |
+    | message | str | 是 | step=3 传游戏输入，其余可空串 |
+    | extParam | object | 是 | 扩展参数（action/selection，见下方说明） |
+    | stream | bool | 否 | true=SSE（默认），false=同步JSON |
+    
+    ## step 说明
+    
+    | step | 含义 | extParam | 响应格式 |
+    |------|------|----------|----------|
+    | — | 开始游戏 | `action: "start"` | JSON（背景+性别选择） |
+    | 1 | 世界叙事 | `selection: "male"/"female"` | markdown（流式） |
+    | 2 | 角色列表 | `selection: "confirm"` → 角色列表；`"char_01"~"char_N"` → 进入游戏 | JSON 或 markdown |
+    | 3 | 游戏对话 | — | markdown（真流式） |
+    
+    ## extParam 扩展参数说明
+    
+    | 字段 | 类型 | 说明 |
+    |------|------|------|
+    | action | str | 操作类型：`"start"` 开始游戏、`"change_char"` 换人、`"save"` 存档、`"load"` 读档 |
+    | selection | str | 用户选择：`"male"`/`"female"` 性别、`"confirm"` 确认、或角色ID（`"char_01"`~`"char_N"`） |
+    | saveId | str | 存档ID（存档时由前端生成传入，读档时传入要恢复的存档ID） |
+    
+    ## extParam 使用说明
+    
+    | step | selection 值 | 后端行为 |
+    |------|-------------|---------|
+    | 1 | `"male"` 或 `"female"` | LLM 流式输出世界叙事（大段 markdown） |
+    | 2 | `"confirm"` | 调用 LLM 生成 3-5 个角色，返回角色列表（JSON） |
+    | 2 | `"char_01"`~`"char_N"` | 选定角色，调 LLM 返回第一轮游戏对话（进入 step 3） |
+    
+    ## 请求示例
+    
+    ### 1. 开始新游戏（action=start → 返回背景+性别选择）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "0",
+        "message": "",
+        "extParam": {"action": "start"}
+    }
+    ```
+    
+    ### 2. 选择性别（step=1 + selection=female → 世界叙事流式返回）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "1",
+        "message": "",
+        "extParam": {"selection": "female"}
+    }
+    ```
+    
+    ### 3. 确认叙事，获取角色列表（step=2 + selection=confirm）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "2",
+        "message": "",
+        "extParam": {"selection": "confirm"}
+    }
+    ```
+    
+    ### 4. 选择角色（step=2 + selection=char_01 → 进入游戏）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "2",
+        "message": "",
+        "extParam": {"selection": "char_01"}
+    }
+    ```
+    
+    ### 5. 游戏中对话（step=3 + message）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "3",
+        "message": "我走向那扇神秘的门"
+    }
+    ```
+    
+    ### 6. 换人（action=change_char → LLM 返回角色列表 markdown）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "3",
+        "message": "",
+        "extParam": {"action": "change_char"}
+    }
+    ```
+    
+    ### 7. 存档（extParam 传 action + saveId）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "fw_abc123",
+        "gmId": "gm_01",
+        "step": "3",
+        "message": "",
+        "extParam": {"action": "save", "saveId": "save_abc123"}
+    }
+    ```
+    > `saveId` 由前端/Java 层生成并传入，后端写入 `t_coc_save_slot` 表
+    
+    ### 8. 读档（extParam 传 action + saveId）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "world_01",
+        "sessionId": "",
+        "gmId": "gm_01",
+        "step": "0",
+        "message": "",
+        "extParam": {"action": "load", "saveId": "save_abc123"}
+    }
+    ```
+    > 后端根据 `saveId` 查 `t_coc_save_slot` 表恢复游戏状态，调用 LLM 生成继续对话
+    
+    ## 响应格式
+    
+    响应只有 2 个字段：`content` 和 `complete`
+    
+    - `content`：选择阶段(action=start, step=2 confirm)为 JSON 对象，叙事/游戏阶段(step=1, step=3)为 markdown 字符串
+    - `complete`：游戏是否结束
+    
+    ### action=start 背景+性别选择（JSON）
+    ```json
+    {
+        "content": {
+            "description": "（焰，热情奔放...）",
+            "worldInfo": {
+                "title": "深渊暗湖·永夜酒馆",
+                "theme": "炼狱镜界",
+                "background": "深渊暗湖边的永夜酒馆，弥漫着神秘而危险的气息"
+            },
+            "selections": [
+                {"id": "male", "text": "男性"},
+                {"id": "female", "text": "女性"}
+            ]
+        },
+        "complete": false
+    }
+    ```
+    
+    ### step=1 世界叙事（markdown，流式）
+    ```json
+    {
+        "content": "你踏入永夜酒馆，空气中弥漫着异域香料和陈年麦酒的气息...",
+        "complete": false
+    }
+    ```
+    
+    ### step=2 角色列表（JSON，selection=confirm）
+    ```json
+    {
+        "content": {
+            "description": "（焰向你介绍了几位原住民）",
+            "characters": [
+                {"id": "char_01", "name": "洛尘", "gender": "男", "race": "暗影猎手", "appearance": "银发赤瞳的青年", "personality": "沉默寡言", "status": "独自在角落擦拭弯刀"},
+                {"id": "char_02", "name": "苏衍", "gender": "男", "race": "酒馆调酒师", "appearance": "笑容温润的青年", "personality": "热情健谈", "status": "正在调制一杯冒着蓝光的饮品"},
+                {"id": "char_03", "name": "夜枫", "gender": "男", "race": "佣兵团长", "appearance": "伤疤横过左眼的壮汉", "personality": "豪爽直率", "status": "和同伴大声畅饮"}
+            ],
+            "selections": [
+                {"id": "char_01", "text": "洛尘"},
+                {"id": "char_02", "text": "苏衍"},
+                {"id": "char_03", "text": "夜枫"}
+            ]
+        },
+        "complete": false
+    }
+    ```
+    
+    ### step=2 选定角色后（markdown，进入游戏）
+    ```json
+    {
+        "content": "洛尘抬起头，赤色的瞳孔在昏暗的灯光下闪了闪...",
+        "complete": false
+    }
+    ```
+    
+    ### step=3 游戏对话（markdown）
+    ```json
+    {
+        "content": "洛尘的手指在弯刀的刀柄上轻轻摩挲...",
+        "complete": false
+    }
+    ```
+    
+    ### SSE 响应（stream=true）
+    
+    #### delta 事件（流式内容，step=1 世界叙事 / step=3 游戏对话）
+    ```
+    data: {"type": "delta", "content": "洛尘抬起头，"}
+    data: {"type": "delta", "content": "赤色的瞳孔在昏暗的灯光下闪了闪..."}
+    ```
+    
+    #### done 事件（最终结果，流结束）
+    ```
+    data: {"type": "done", "complete": true, "result": {"content": "...", "complete": false}}
+    ```
+    
+    #### error 事件（错误，流结束）
+    ```
+    data: {"type": "error", "complete": true, "message": "错误信息"}
+    ```
+    
+    > **注意**: SSE 事件中的 `complete: true` 表示**流已结束**，前端收到后应关闭连接。响应体中的 `complete` 表示**游戏是否结束**。
+    """
+    custom_logger.info(
+        f"Freak World request: user_id={request.user_id}, "
+        f"session_id={request.session_id}, gm_id={request.gm_id}, "
+        f"step={request.step}, stream={request.stream}"
+    )
+    
+    # 根据 stream 字段决定响应模式
+    if request.stream:
+        # SSE 流式响应
+        async def generate():
+            async for chunk in fw_service.stream_chat(request):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    else:
+        # 同步 JSON 响应
+        return await fw_service.process_request(request)
+
+
+# ==================== 克苏鲁跑团接口 ====================
+
+@router.post("/coc/chat")
+async def coc_chat(
+    request: IWChatRequest,
+    coc_service: COCService = Depends(get_coc_service)
+):
+    """
+    克苏鲁跑团对话接口（支持 SSE 流式 / 同步响应）
+    
+    通过 `stream` 字段控制响应模式：
+    - `stream=true`（默认）：SSE 流式响应
+    - `stream=false`：同步 JSON 响应
+    
+    ## 游戏流程图
+    
+    ```
+                              ┌─reroll─┐       ┌─reroll─┐
+                              │        │       │        │
+    action=start → step=1 → step=2 → step=3 → step=4 → step=5 → step=6 → 持续对话
+    背景介绍       属性分配   次级属性   职业选择  角色确认  装备+属性摘要  游戏开始
+    (markdown)    (JSON)    (JSON)    (JSON)    (JSON)    (JSON)      (markdown)
+    ```
+    
+    ## 核心机制
+    
+    1. **extParam.action 控制特殊操作**：`start` 开始游戏、`select_character` 进入角色创建、`save` 存档、`load` 读档
+    2. **step + extParam.selection 控制游戏流程**：selection 传 `confirm`/`reroll`/职业ID
+    3. **职业 ID 格式为 `prof_01`~`prof_N`**：对应 step=3 返回的职业列表索引
+    4. **step=4 角色确认**：可发 message 修改姓名/性别/年龄，confirm 进入 step 5
+    5. **step=5 随身装备+人物属性摘要**：只有 confirm
+    6. **step=6 为游戏阶段**：首次发送开始游戏，之后持续发送 step=6 + message 进行对话
+    
+    ## 请求参数
+    
+    | 字段 | 类型 | 必填 | 说明 |
+    |------|------|------|------|
+    | userId | str | 是 | 用户ID |
+    | worldId | str | 是 | 世界 config_id（COC 固定为 "trpg_01"） |
+    | sessionId | str | 是 | 会话ID（Java 层创建，测试可传空串） |
+    | gmId | str | 是 | 用户选择的 GM config_id（如 "gm_02"） |
+    | step | str | 是 | 游戏阶段（见下方说明） |
+    | message | str | 是 | step=4 可传修改信息，step=6 传游戏输入，其余可空串 |
+    | saveId | str | 否 | 存档ID，读档时必填 |
+    | extParam | object | 是 | 扩展参数（action/selection，见下方说明） |
+    | stream | bool | 否 | true=SSE（默认），false=同步JSON |
+    
+    ## step 说明（请求）
+    
+    | step | 含义 | extParam | 响应格式 |
+    |------|------|----------|----------|
+    | — | 开始游戏 | `action: "start"` | markdown（背景介绍） |
+    | — | 角色创建 | `action: "select_character"` | JSON（常规属性 + 选择器） |
+    | 1 | 属性分配 | `selection: "confirm"/"reroll"/空` | JSON（常规属性 + 选择器） |
+    | 2 | 次级属性 | `selection: "confirm"/"reroll"/空` | JSON（次级属性 + 选择器） |
+    | 3 | 职业选择 | `selection: "prof_01"~"prof_N"/"reroll"/空` | JSON（职业选项） |
+    | 4 | 角色确认 | `selection: "confirm"` 或发 `message` 修改 | JSON（角色信息） |
+    | 5 | 随身装备+属性摘要 | `selection: "confirm"`（只有确认） | JSON（装备+属性） |
+    | 6 | 游戏对话 | — | markdown（游戏叙事） |
+    
+    ## extParam 扩展参数说明
+    
+    | 字段 | 类型 | 说明 |
+    |------|------|------|
+    | action | str | 操作类型：`"start"` 开始游戏、`"select_character"` 进入角色创建、`"save"` 存档、`"load"` 读档 |
+    | selection | str | 用户选择：`"confirm"` 确认、`"reroll"` 重roll、或职业ID（`prof_01`~`prof_N`） |
+    | saveId | str | 存档ID（存档时由前端生成传入，读档时传入要恢复的存档ID） |
+    
+    ## extParam 使用说明
+    
+    **action 驱动**：`start`/`save`/`load` 通过 `extParam.action` 触发，不依赖 step。
+    
+    **selection 驱动**：前端收到响应后，根据 `selections` 数组显示选项按钮。用户点击后，前端在下次请求中通过 `extParam.selection` 传回选择的 id：
+    
+    | step | selection 值 | 后端行为 |
+    |------|-------------|---------|
+    | 1 | `"confirm"` | 确认属性，返回次级属性（相当于进入 step 2） |
+    | 1 | `"reroll"` 或空 | 重新 roll 属性 |
+    | 2 | `"confirm"` | 确认次级属性，返回职业选项（相当于进入 step 3） |
+    | 2 | `"reroll"` 或空 | 返回 step 1 重新分配常规属性 |
+    | 3 | `"prof_01"`~`"prof_N"` | 选择职业，返回角色确认（相当于进入 step 4） |
+    | 3 | `"reroll"` 或空 | 重新 roll 职业 |
+    | 4 | `"confirm"` | 确认角色，返回随身装备+属性摘要（相当于进入 step 5） |
+    | 4 | 发 `message` | 修改姓名/性别/年龄，重新展示角色确认页 |
+    | 5 | `"confirm"` | 确认装备+属性，开始游戏（相当于进入 step 6） |
+    
+    ## 请求示例
+    
+    ### 1. 开始新游戏（action=start → 返回背景）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "0",
+        "message": "",
+        "extParam": {"action": "start"}
+    }
+    ```
+    
+    ### 2. 进入角色创建（action=select_character → 返回常规属性）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "1",
+        "message": "",
+        "extParam": {"action": "select_character"}
+    }
+    ```
+    
+    ### 3. 确认属性（step=1 + selection=confirm → 返回次级属性）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "1",
+        "message": "",
+        "extParam": {"selection": "confirm"}
+    }
+    ```
+    
+    ### 4. 重roll属性（step=1 + selection=reroll）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "1",
+        "message": "",
+        "extParam": {"selection": "reroll"}
+    }
+    ```
+    
+    ### 5. 确认次级属性（step=2 + selection=confirm → 返回职业选项）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "2",
+        "message": "",
+        "extParam": {"selection": "confirm"}
+    }
+    ```
+    
+    ### 6. 返回重新分配常规属性（step=2 + selection=reroll）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "2",
+        "message": "",
+        "extParam": {"selection": "reroll"}
+    }
+    ```
+    
+    ### 7. 选择职业（step=3 + selection=prof_01 → 返回人物卡）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "3",
+        "message": "",
+        "extParam": {"selection": "prof_01"}
+    }
+    ```
+    
+    ### 8. 重roll职业（step=3 + selection=reroll）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "3",
+        "message": "",
+        "extParam": {"selection": "reroll"}
+    }
+    ```
+    
+    ### 9. 确认角色（step=4 + selection=confirm → 随身装备+属性摘要）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "4",
+        "message": "",
+        "extParam": {"selection": "confirm"}
+    }
+    ```
+    
+    ### 10. 修改角色信息（step=4 + message）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "4",
+        "message": "名字改为李明远，女，28岁"
+    }
+    ```
+    
+    ### 11. 确认装备+属性，开始游戏（step=5 + selection=confirm）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "5",
+        "message": "",
+        "extParam": {"selection": "confirm"}
+    }
+    ```
+    
+    ### 12. 游戏中对话（step=6 + message）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "6",
+        "message": "我想调查这个房间"
+    }
+    ```
+    
+    ### 13. 存档（extParam 传 action + saveId）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "coc_abc123",
+        "gmId": "gm_02",
+        "step": "6",
+        "message": "",
+        "extParam": {"action": "save", "saveId": "save_abc123"}
+    }
+    ```
+    > `saveId` 由前端/Java 层生成并传入，后端写入 `t_coc_save_slot` 表
+    
+    ### 14. 读档（extParam 传 action + saveId）
+    ```json
+    {
+        "userId": "1000001",
+        "worldId": "trpg_01",
+        "sessionId": "",
+        "gmId": "gm_02",
+        "step": "0",
+        "message": "",
+        "extParam": {"action": "load", "saveId": "save_abc123"}
+    }
+    ```
+    > 后端根据 `saveId` 查 `t_coc_save_slot` 表恢复游戏状态，调用 LLM 生成继续对话
+    
+    ## 响应格式
+    
+    响应只有 2 个字段：`content` 和 `complete`
+    
+    - `content`：选择阶段(step 1-5)为 JSON 对象，游戏阶段(step 0,6)为 markdown 字符串
+    - `complete`：游戏是否结束
+    
+    ### step=0 背景介绍（markdown）
+    ```json
+    {
+        "content": "（璃冷静中带着利落感...）\\n\\n你好，我是璃...",
+        "complete": false
+    }
+    ```
+    
+    ### step=1 常规属性（JSON）
+    ```json
+    {
+        "content": {
+            "title": "常规属性分配结果",
+            "description": "（璃）以下是你随机分配的8个常规属性值：",
+            "attributes": [
+                {"key": "STR", "name": "力量", "value": 60, "description": "衡量调查员纯粹身体力量"},
+                {"key": "CON", "name": "体质", "value": 50, "description": "衡量调查员健康与强韧程度"}
+            ],
+            "selections": [
+                {"id": "confirm", "text": "确认属性"},
+                {"id": "reroll", "text": "重新随机"}
+            ]
+        },
+        "complete": false
+    }
+    ```
+    
+    ### step=2 次级属性（JSON）
+    ```json
+    {
+        "content": {
+            "title": "次级属性计算结果",
+            "description": "（璃记录下你的属性）根据常规属性计算出以下次级属性：",
+            "attributes": [
+                {"key": "HP", "name": "生命值", "value": 10, "formula": "(体质50 + 体型50) ÷ 10 = 10", "description": "调查员能承受的伤害量"},
+                {"key": "SAN", "name": "理智值", "value": 80, "formula": "等于意志值 = 80", "description": "调查员的心理健康程度"}
+            ],
+            "selections": [
+                {"id": "confirm", "text": "确认次级属性"},
+                {"id": "reroll", "text": "返回重新分配常规属性"}
+            ]
+        },
+        "complete": false
+    }
+    ```
+    
+    ### step=3 职业选项（JSON）
+    ```json
+    {
+        "content": {
+            "title": "职业选择",
+            "description": "（璃满意地点头）以下是随机生成的3个职业供你选择：",
+            "professions": [
+                {
+                    "id": "prof_01",
+                    "name": "考古学家",
+                    "description": "探索古代遗迹的冒险学者",
+                    "skills": [{"name": "考古学", "value": 60, "display": "考古学: 60%"}]
+                },
+                {
+                    "id": "prof_02",
+                    "name": "作家",
+                    "description": "以笔为剑的文字工作者",
+                    "skills": [{"name": "母语", "value": 60, "display": "母语: 60%"}]
+                },
+                {
+                    "id": "prof_03",
+                    "name": "私家侦探",
+                    "description": "追寻真相的独立调查者",
+                    "skills": [{"name": "侦查", "value": 60, "display": "侦查: 60%"}]
+                }
+            ],
+            "selections": [
+                {"id": "prof_01", "text": "考古学家"},
+                {"id": "prof_02", "text": "作家"},
+                {"id": "prof_03", "text": "私家侦探"},
+                {"id": "reroll", "text": "重新随机职业"}
+            ]
+        },
+        "complete": false
+    }
+    ```
+    
+    ### step=4 角色确认（JSON，可发 message 修改姓名/性别/年龄）
+    ```json
+    {
+        "content": {
+            "description": "（璃微微前倾，语气温和）\\n「这是张明远的故事——但你可以改写开头。」",
+            "investigatorCard": {
+                "title": "人物卡",
+                "name": "张明远",
+                "gender": "男",
+                "age": 32,
+                "profession": "考古学家",
+                "background": "出生于北京的书香门第，自幼对古代文明充满好奇。大学主修考古学，曾参与多次田野发掘..."
+            },
+            "skillList": {
+                "title": "技能清单",
+                "skills": [
+                    {"name": "考古学", "value": 60},
+                    {"name": "侦查", "value": 50},
+                    {"name": "图书馆使用", "value": 60},
+                    {"name": "攀爬", "value": 50},
+                    {"name": "历史", "value": 40},
+                    {"name": "导航", "value": 40},
+                    {"name": "聆听", "value": 20},
+                    {"name": "游泳", "value": 20}
+                ]
+            },
+            "selections": [
+                {"id": "confirm", "text": "确认角色"}
+            ]
+        },
+        "complete": false
+    }
+    ```
+    
+    ### step=5 随身装备+人物属性摘要（JSON，只有确认按钮）
+    ```json
+    {
+        "content": {
+            "description": "（璃将角色卡卷起，系上红绳，递向你）\\n「准备好了，张明远。检查你的装备和属性——接下来，由你执笔。」",
+            "equipmentList": {
+                "title": "随身装备",
+                "equipment": [
+                    {"name": "左轮手枪", "description": "可靠的.38口径左轮手枪\\n伤害：1D10"},
+                    {"name": "考古工具包", "description": "包含刷子、铲子等田野工具"},
+                    {"name": "手电筒", "description": "便携照明工具"},
+                    {"name": "笔记本", "description": "记录线索的随身本"},
+                    {"name": "绳索", "description": "10米结实麻绳"}
+                ]
+            },
+            "investigatorCard": {
+                "title": "人物属性摘要",
+                "attributes": [
+                    {"key": "STR", "name": "力量", "value": 60},
+                    {"key": "CON", "name": "体质", "value": 50},
+                    {"key": "DEX", "name": "敏捷", "value": 70},
+                    {"key": "SIZ", "name": "体型", "value": 50},
+                    {"key": "INT", "name": "智力", "value": 40},
+                    {"key": "POW", "name": "意志", "value": 80},
+                    {"key": "APP", "name": "外貌", "value": 60},
+                    {"key": "EDU", "name": "教育", "value": 50}
+                ]
+            },
+            "selections": [
+                {"id": "confirm", "text": "确认，开始游戏"}
+            ]
+        },
+        "complete": false
+    }
+    ```
+    
+    ### step=6 游戏对话（markdown）
+    ```json
+    {
+        "content": "**【01轮 / 01回合】**\\n\\n你仔细打量着这个昏暗的房间...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
+        "complete": false
+    }
+    ```
+    
+    ### 存档响应
+    ```json
+    {
+        "content": "（璃点点头）\\n\\n**【存档 001】**\\n\\n存档已保存。",
+        "complete": false
+    }
+    ```
+    
+    ### 读档响应（后端查表恢复 + 调用 LLM 继续对话）
+    ```json
+    {
+        "content": "**【读档成功】**\\n\\n**【05轮 / 01回合】**\\n\\n（璃翻开记录本）你之前正在调查一座废弃的档案馆...\\n\\n❤ 生命 10   💎 魔法 16   🧠 理智 80",
+        "complete": false
+    }
+    ```
+    
+    ### SSE 响应（stream=true）
+    
+    #### delta 事件（流式内容，仅 markdown 阶段）
+    ```
+    data: {"type": "delta", "content": "（璃的眼中闪过一丝期待）\\n\\n"}
+    data: {"type": "delta", "content": "**游戏正式开始！**"}
+    ```
+    
+    #### done 事件（最终结果，流结束）
+    ```
+    data: {"type": "done", "complete": true, "result": {"content": "...", "complete": false}}
+    ```
+    
+    #### error 事件（错误，流结束）
+    ```
+    data: {"type": "error", "complete": true, "message": "错误信息"}
+    ```
+    
+    > **注意**: SSE 事件中的 `complete: true` 表示**流已结束**，前端收到后应关闭连接。响应体中的 `complete` 表示**游戏是否结束**。
+    """
+    custom_logger.info(
+        f"COC chat request: user_id={request.user_id}, "
+        f"session_id={request.session_id}, gm_id={request.gm_id}, "
+        f"step={request.step}, stream={request.stream}"
+    )
+    
+    # 根据 stream 字段决定响应模式
+    if request.stream:
+        # SSE 流式响应
+        async def generate():
+            async for chunk in coc_service.stream_chat(request):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    else:
+        # 同步 JSON 响应
+        return await coc_service.process_request(request)

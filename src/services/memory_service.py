@@ -52,7 +52,8 @@ class MemoryService:
         user_id: str, 
         character_id: str = "default",
         if_voice: bool = False,
-        limit: int = 20
+        limit: int = 20,
+        virtual_id: int = 0
     ) -> Tuple[List[Dict], str]:
         """
         获取短期记忆（最近的对话历史）
@@ -64,6 +65,7 @@ class MemoryService:
             character_id: 角色ID
             if_voice: 是否语音对话
             limit: 返回数量
+            virtual_id: 虚拟身份卡ID，0表示用户自己
         
         Returns:
             (对话历史, 用户昵称)
@@ -77,7 +79,10 @@ class MemoryService:
             if character_id == 'default':
                 conversation_history, nickname = dq.get_user_pillow_dialogue_history(user_id, if_voice)
             else:
-                conversation_history, nickname = dq.get_user_third_character_dialogue_history(user_id, character_id, if_voice)
+                # 第三方角色需要按 virtual_id 过滤对话历史
+                conversation_history, nickname = dq.get_user_third_character_dialogue_history(
+                    user_id, character_id, if_voice, virtual_id
+                )
             
             # 限制返回数量 - 取最近的N条（列表已是时间正序，取最后N条）
             if len(conversation_history) > limit:
@@ -164,7 +169,8 @@ class MemoryService:
         character_id: str = "default",
         if_voice: bool = False,
         conversation_history_limit: int = 7,
-        vector_memory_limit: int = 3
+        vector_memory_limit: int = 3,
+        virtual_id: int = 0
     ) -> Tuple[List[Dict], str, Dict[str, str], bool]:
         """
         获取组合记忆（对话历史 + 持久化记忆 + 向量检索）
@@ -176,18 +182,19 @@ class MemoryService:
             if_voice: 是否语音
             conversation_history_limit: 对话历史数量
             vector_memory_limit: 向量检索数量
+            virtual_id: 虚拟身份卡ID，0表示用户自己
         
         Returns:
             (对话历史, 用户昵称, 持久化记忆, 是否需要跳过向量存储)
         """
         import time
         start_time = time.time()
-        custom_logger.info(f"Starting to get combined memory for user {user_id}")
+        custom_logger.info(f"Starting to get combined memory for user {user_id}, virtual_id={virtual_id}")
         
         # 1. 获取对话历史（MySQL t_dialogue）
         history_start_time = time.time()
         conversation_history, nickname = await self.get_short_term_memory(
-            user_id, character_id, if_voice, conversation_history_limit
+            user_id, character_id, if_voice, conversation_history_limit, virtual_id
         )
         history_end_time = time.time()
         history_duration = history_end_time - history_start_time
