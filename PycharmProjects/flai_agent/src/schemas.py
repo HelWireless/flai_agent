@@ -32,18 +32,18 @@ class ChatRequest(BaseModel):
     message_count: int
     character_id: str = "default"  # 新增人物ID字段
     voice: bool = False
-    virtual_id: str = Field(default="0", alias="virtualId")  # 虚拟身份卡ID，"0"表示用户自己
+    virtual_id: Union[str, int] = Field(default="0", alias="virtualId")  # 虚拟身份卡ID，"0"表示用户自己
     
     model_config = ConfigDict(
         populate_by_name=True  # 支持通过别名访问字段
     )
     
-    @field_validator('user_id')
+    @field_validator('user_id', mode='before')
     def convert_user_id(cls, v) -> str:
         """确保 user_id 是字符串类型"""
-        return str(v)
+        return str(v) if v is not None else ""
     
-    @field_validator('virtual_id')
+    @field_validator('virtual_id', mode='before')
     def convert_virtual_id(cls, v) -> str:
         """确保 virtual_id 是字符串类型"""
         return str(v) if v is not None else "0"
@@ -75,10 +75,10 @@ class GenerateOpenerRequest(BaseModel):
         populate_by_name=True  # 替代原来的allow_population_by_field_name
     )
     
-    @field_validator('user_id')
+    @field_validator('user_id', mode='before')
     def convert_user_id(cls, v) -> str:
         """确保 user_id 是字符串类型"""
-        return str(v)
+        return str(v) if v is not None else "guest"
 
 class GenerateOpenerResponse(BaseModel):
     opener: str
@@ -95,10 +95,10 @@ class DrawCardRequest(BaseModel):
         extra="forbid"
     )
     
-    @field_validator('user_id')
+    @field_validator('user_id', mode='before')
     def convert_user_id(cls, v) -> str:
         """确保 user_id 是字符串类型"""
-        return str(v)
+        return str(v) if v is not None else ""
 
 
 class DrawCardResponse(BaseModel):
@@ -121,13 +121,13 @@ class DrawCardResponse(BaseModel):
 
 class IWChatRequest(BaseModel):
     """副本世界对话请求（文字副本 + 跑团通用）"""
-    user_id: str = Field(alias="userId")                              # 必填
-    world_id: str = Field(alias="worldId")                            # 必填
-    session_id: str = Field(default="", alias="sessionId")            # 必填，新游戏传空串
-    gm_id: str = Field(default="0", alias="gmId")                     # 后端分配的GM（config_id），首次可传"0"
-    step: str = Field(default="0")                                    # 必填，游戏阶段，初始 "0"
+    user_id: Union[str, int] = Field(alias="userId")                              # 必填
+    world_id: Union[str, int] = Field(alias="worldId")                            # 必填
+    session_id: Union[str, int] = Field(default="", alias="sessionId")            # 必填，新游戏传空串
+    gm_id: Union[str, int] = Field(default="0", alias="gmId")                     # 后端分配的GM（config_id），首次可传"0"
+    step: Union[str, int] = Field(default="0")                                    # 必填，游戏阶段，初始 "0"
     message: str = ""                                                 # 必填，可为空串
-    save_id: Optional[str] = Field(default=None, alias="saveId")      # 选填，有值=读档
+    save_id: Optional[Union[str, int]] = Field(default=None, alias="saveId")      # 选填，有值=读档
     ext_param: Optional[Dict[str, Any]] = Field(default=None, alias="extParam")  # 扩展参数
     stream: bool = Field(default=True)                                # true=SSE, false=同步
     
