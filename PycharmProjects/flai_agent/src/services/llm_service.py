@@ -150,87 +150,87 @@ class LLMService:
         retry_count: int = 0
     ) -> Dict:
         """
-        解析 JSON 响应（带重试逻辑，兼容 deepseek 等模型的特殊格式）
-        
-        Args:
-            response_text: LLM 返回的文本
-            max_retries: 最大重试次数
-            retry_count: 当前重试次数
-        
-        Returns:
-            解析后的字典
-        
-        Raises:
-            json.JSONDecodeError: 解析失败
+        解析 JSON 响应（带重试逻辑，增加鲁棒性清洗）
         """
         import re
+        import json
         
         original_text = response_text
         
+        def clean_and_fix_json(text: str) -> str:
+            """增强版 JSON 清洗逻辑"""
+            if not text:
+                return text
+            
+            # 1. 移除 deepseek 的 <think> 标签
+            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+            
+            # 2. 清理 Markdown 代码块
+            text = re.sub(r'```json\s*', '', text)
+            text = re.sub(r'```\s*', '', text)
+            text = text.strip()
+            
+            # 3. 修复常见的 LLM 输出错误：转义引号 \" -> "
+            # 只有当外层已经是引号包围时，内部的 \" 才是合法的，但 LLM 经常错误地转义所有引号
+            if text.count('\\"') > text.count('"') / 2:
+                text = text.replace('\\"', '"')
+            
+            # 4. 修复字符串内部未转义的换行符
+            def fix_newlines(match):
+                prefix = match.group(1)
+                content = match.group(2)
+                # 将字符串内部的真实换行替换为 \n 转义符
+                fixed_content = content.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                return f'{prefix}"{fixed_content}"'
+
+            # 匹配 "key": "value" 模式，修复 value 中的换行
+            text = re.sub(r'(".*?"\s*:\s*)"([\s\S]*?)"(?=\s*[,}])', fix_newlines, text)
+            
+            return text
+
         try:
-            # 处理空白响应的情况
+            # 处理空白响应
             if not response_text or response_text.isspace():
                 raise json.JSONDecodeError("Empty response", "", 0)
             
-            # 1. 清理 deepseek 的 <think>...</think> 标签（思考过程）
-            response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
+            # 执行清洗
+            cleaned_text = clean_and_fix_json(response_text)
             
-            # 2. 清理可能的代码块标记
-            if "```json" in response_text:
-                response_text = re.sub(r'```json\s*', '', response_text)
-                response_text = re.sub(r'\s*```', '', response_text)
-            elif "```" in response_text:
-                response_text = re.sub(r'```\s*', '', response_text)
+            # 尝试解析
+            try:
+                return json.loads(cleaned_text)
+            except json.JSONDecodeError:
+                # 如果解析失败，尝试从文本中正则提取第一个 {...}
+                json_match = re.search(r'\{[\s\S]*\}', cleaned_text)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        pass
             
-            # 3. 去除前后空白
-            response_text = response_text.strip()
-            
-            # 4. 尝试直接解析
-            if response_text.startswith('{') and response_text.endswith('}'):
-                return json.loads(response_text)
-            
-            # 5. 尝试提取 JSON 对象（从文本中找 {...}）
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
-            if json_match:
-                try:
-                    parsed_json = json.loads(json_match.group())
-                    
-                    # 验证解析结果，确保answer字段包含合理内容
-                    if 'answer' in parsed_json:
-                        answer_content = parsed_json['answer']
-                        # 如果answer字段只包含很少的字符（如单个符号），可能解析错误
-                        if len(str(answer_content)) <= 2 and all(c in '~！!。.?？…' for c in str(answer_content)):
-                            custom_logger.warning(f"Answer field contains only symbols: '{answer_content}', treating as plain text")
-                            # 将整个响应作为answer返回
-                            return {
-                                "answer": response_text,
-                                "emotion_type": parsed_json.get("emotion_type", "开心")
-                            }
-                    
-                    return parsed_json
-                except json.JSONDecodeError:
-                    pass
-            
-            # 6. 如果是纯文本回复，尝试构造成需要的格式
-            if response_text and not response_text.startswith('{'):
-                custom_logger.warning(f"LLM returned plain text, wrapping as answer: {response_text[:100]}...")
-                # 将纯文本包装为标准格式
+            # 如果还是不行，且看起来不是 JSON，包装成 JSON
+            if not cleaned_text.startswith('{'):
+                custom_logger.warning(f"LLM returned non-JSON, wrapping: {cleaned_text[:100]}...")
                 return {
-                    "answer": response_text,
-                    "emotion_type": "开心"  # 默认情绪
+                    "answer": cleaned_text,
+                    "emotion_type": "开心"
                 }
             
-            # 最终尝试
-            return json.loads(response_text)
+            # 最后的倔强：直接抛出异常触发重试
+            return json.loads(cleaned_text)
             
         except json.JSONDecodeError as e:
             custom_logger.warning(f"JSON parse failed for: {original_text[:200]}...")
             if retry_count < max_retries:
                 custom_logger.warning(f"JSON 解析失败，第 {retry_count + 1} 次重试...")
-                raise  # 让调用者处理重试
+                raise
             else:
                 custom_logger.error(f"最终 JSON 解析失败: {str(e)}")
-                raise
+                # 最后的兜底：如果完全无法解析 JSON，将原始文本作为内容返回
+                return {
+                    "answer": original_text,
+                    "emotion_type": "开心"
+                }
     
     async def chat_completion(
         self,
