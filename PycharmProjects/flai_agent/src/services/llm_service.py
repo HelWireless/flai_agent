@@ -157,50 +157,49 @@ class LLMService:
         
         original_text = response_text
         
-        def clean_and_fix_json(text: str) -> str:
-            """增强版 JSON 清洗逻辑"""
+        def aggressive_clean(text: str) -> str:
+            """强力清洗 JSON 文本"""
             if not text:
                 return text
             
-            # 1. 移除 deepseek 的 <think> 标签
+            # 1. 基础清理
             text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-            
-            # 2. 清理 Markdown 代码块
             text = re.sub(r'```json\s*', '', text)
             text = re.sub(r'```\s*', '', text)
             text = text.strip()
             
-            # 3. 修复常见的 LLM 输出错误：转义引号 \" -> "
-            # 只有当外层已经是引号包围时，内部的 \" 才是合法的，但 LLM 经常错误地转义所有引号
-            if text.count('\\"') > text.count('"') / 2:
-                text = text.replace('\\"', '"')
+            # 2. 修复转义引号问题 (针对 \"emotion_type\": \"开心\" 这种格式)
+            # 这种格式通常是由于 LLM 错误地输出了被转义后的 JSON 字符串
+            if '\\"' in text:
+                # 尝试将所有 \" 替换为 "
+                temp_text = text.replace('\\"', '"')
+                # 简单校验替换后是否更像合法 JSON
+                if temp_text.startswith('{') and temp_text.endswith('}'):
+                    text = temp_text
             
-            # 4. 修复字符串内部未转义的换行符
+            # 3. 修复字符串内部未转义的真实换行符
+            # 匹配 "key": "value" 模式，将 value 中的真实换行替换为 \n
             def fix_newlines(match):
                 prefix = match.group(1)
                 content = match.group(2)
-                # 将字符串内部的真实换行替换为 \n 转义符
                 fixed_content = content.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
                 return f'{prefix}"{fixed_content}"'
 
-            # 匹配 "key": "value" 模式，修复 value 中的换行
             text = re.sub(r'(".*?"\s*:\s*)"([\s\S]*?)"(?=\s*[,}])', fix_newlines, text)
             
             return text
 
         try:
-            # 处理空白响应
             if not response_text or response_text.isspace():
                 raise json.JSONDecodeError("Empty response", "", 0)
             
-            # 执行清洗
-            cleaned_text = clean_and_fix_json(response_text)
+            cleaned_text = aggressive_clean(response_text)
             
             # 尝试解析
             try:
                 return json.loads(cleaned_text)
             except json.JSONDecodeError:
-                # 如果解析失败，尝试从文本中正则提取第一个 {...}
+                # 尝试正则提取第一个 {...}
                 json_match = re.search(r'\{[\s\S]*\}', cleaned_text)
                 if json_match:
                     try:
@@ -208,25 +207,45 @@ class LLMService:
                     except json.JSONDecodeError:
                         pass
             
-            # 如果还是不行，且看起来不是 JSON，包装成 JSON
-            if not cleaned_text.startswith('{'):
-                custom_logger.warning(f"LLM returned non-JSON, wrapping: {cleaned_text[:100]}...")
-                return {
-                    "answer": cleaned_text,
-                    "emotion_type": "开心"
-                }
+            # --- 最终兜底：正则字段提取 ---
+            # 如果 json.loads 彻底失败，手动提取关键字段
+            extracted = {}
             
-            # 最后的倔强：直接抛出异常触发重试
+            # 提取 emotion_type
+            emotion_match = re.search(r'"emotion_type"\s*:\s*"([^"]+)"', cleaned_text)
+            if not emotion_match:
+                # 兼容可能的单引号或无引号情况
+                emotion_match = re.search(r'emotion_type\s*:\s*["\']?([^"\'\s,}]+)["\']?', cleaned_text)
+            
+            if emotion_match:
+                extracted["emotion_type"] = emotion_match.group(1)
+            else:
+                extracted["emotion_type"] = "开心" # 默认值
+                
+            # 提取 answer
+            # 寻找 "answer": "..." 结构，由于内容可能很长且包含各种符号，使用非贪婪匹配到结尾或下一个键
+            answer_match = re.search(r'"answer"\s*:\s*"([\s\S]*?)"(?=\s*[,}])', cleaned_text)
+            if not answer_match:
+                # 尝试匹配到对象末尾
+                answer_match = re.search(r'"answer"\s*:\s*"([\s\S]*?)"\s*\}', cleaned_text)
+            
+            if answer_match:
+                extracted["answer"] = answer_match.group(1).replace('\\n', '\n').replace('\\"', '"')
+                return extracted
+            
+            # 如果正则也提取不到 answer，且文本不以 { 开头，直接把清洗后的文本作为 answer
+            if not cleaned_text.startswith('{'):
+                return {"answer": cleaned_text, "emotion_type": extracted.get("emotion_type", "开心")}
+            
+            # 触发异常进入重试
             return json.loads(cleaned_text)
             
         except json.JSONDecodeError as e:
-            custom_logger.warning(f"JSON parse failed for: {original_text[:200]}...")
             if retry_count < max_retries:
-                custom_logger.warning(f"JSON 解析失败，第 {retry_count + 1} 次重试...")
+                custom_logger.warning(f"JSON 解析失败 (重试 {retry_count + 1}): {original_text[:100]}...")
                 raise
             else:
-                custom_logger.error(f"最终 JSON 解析失败: {str(e)}")
-                # 最后的兜底：如果完全无法解析 JSON，将原始文本作为内容返回
+                custom_logger.error(f"JSON 最终解析失败，使用文本兜底: {str(e)}")
                 return {
                     "answer": original_text,
                     "emotion_type": "开心"
