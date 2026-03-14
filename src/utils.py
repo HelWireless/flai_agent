@@ -58,6 +58,14 @@ def get_emotion_type(text: str, emotion_type=None) -> int:
         '😐': '无语', '😑': '无语', '🙄': '无语'
     }
     if emotion_type:
+        # 处理 LLM 可能返回列表的情况
+        if isinstance(emotion_type, list):
+            for et in emotion_type:
+                if et in emotion_map:
+                    return emotion_map[et]
+            # 如果列表里都没有匹配到，取第一个作为后续处理的基础
+            emotion_type = emotion_type[0] if emotion_type else None
+
         if emotion_type in emotion_map:
             return emotion_map[emotion_type]
         else:
