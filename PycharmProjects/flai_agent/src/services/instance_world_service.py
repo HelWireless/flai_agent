@@ -621,7 +621,7 @@ class FreakWorldService:
             # 只有没有固定背景时才调用 LLM 生成叙事
             custom_logger.info(f"Generating narrative for world {session.freak_world_id}")
             
-            # 构建增强的 system prompt，要求同时生成角色
+            # 构建 system prompt（不含 json 格式指令，期望返回纯 markdown）
             system_prompt = build_system_prompt(
                 gm_id=session.gm_id,
                 world_id=self._format_world_id(session.freak_world_id),
@@ -633,9 +633,6 @@ class FreakWorldService:
             gm_context = self._build_gm_context_messages(session, gender_text)
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(gm_context)
-            
-            # 添加用户消息，要求生成叙事和角色
-            messages.append({"role": "user", "content": f"请以沉浸式的叙事风格描述这个{gender_text}旅行者进入世界后的场景，并在叙事中自然地引出2-3个{gender_text}原住民角色。每个角色用简洁的一句话介绍其外貌和状态。"})
 
             try:
                 response = await self.llm.chat_completion(
