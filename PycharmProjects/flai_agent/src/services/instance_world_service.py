@@ -202,7 +202,8 @@ class FreakWorldService:
                 model_pool=["qwen_plus"],
                 temperature=0.3,
                 parse_json=False,
-                response_format="text"
+                response_format="text",
+                timeout=60
             )
             
             new_summary = response.get("content", "")
@@ -843,7 +844,8 @@ class FreakWorldService:
                 response_format="text",
                 temperature=0.9,
                 top_p=0.85,
-                max_tokens=4096
+                max_tokens=4096,
+                timeout=60
             )
             ai_content = self._clean_llm_content(response.get("content", ""))
         except Exception as e:
@@ -898,7 +900,8 @@ class FreakWorldService:
                 response_format="text",
                 temperature=0.9,
                 top_p=0.85,
-                max_tokens=4096
+                max_tokens=4096,
+                timeout=60
             )
             ai_content = self._clean_llm_content(response.get("content", ""))
         except Exception as e:
@@ -950,7 +953,8 @@ class FreakWorldService:
                 response_format="text",
                 temperature=0.9,
                 top_p=0.85,
-                max_tokens=4096
+                max_tokens=4096,
+                timeout=60
             )
             ai_content = self._clean_llm_content(response.get("content", ""))
         except Exception as e:
