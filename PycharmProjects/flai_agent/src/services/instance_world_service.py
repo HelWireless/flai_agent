@@ -671,7 +671,9 @@ class FreakWorldService:
         gm_config = get_gm_config(session.gm_id)
         gm_name = gm_config.get("name", "GM")
 
+        # 为角色生成使用精简的世界设定
         world_setting = load_world_setting(self._format_world_id(session.freak_world_id), self.base_path)
+        world_setting_brief = world_setting[:600]  # 进一步减少到600字符
         gender_text = "男性" if session.gender_preference == "male" else "女性"
 
         session.game_status = GameStatus.CHARACTER_SELECT
@@ -680,8 +682,8 @@ class FreakWorldService:
         # 调用 LLM 生成角色
         prompt = f"""你是一个副本世界游戏的角色生成器。
 
-世界设定：
-{world_setting[:800]}
+ 世界设定：
+{world_setting_brief}
 
 请根据以上世界设定，生成 3 个{gender_text}角色供玩家选择。
 
@@ -713,7 +715,8 @@ class FreakWorldService:
                 model_pool=["qwen_turbo"],
                 temperature=0.8,
                 parse_json=False,
-                response_format="text"
+                response_format="text",
+                timeout=60
             )
             content = response.get("content", "")
             custom_logger.info(f"LLM characters response (first 200): {str(content)[:200]}")
@@ -1353,7 +1356,8 @@ class FreakWorldService:
                 messages=[{"role": "user", "content": prompt}],
                 model_pool=["qwen_turbo"],
                 temperature=0.7,
-                parse_json=False
+                parse_json=False,
+                timeout=30
             )
             
             content = response.get("content", "")
