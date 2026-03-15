@@ -1871,14 +1871,23 @@ class COCService:
             response = await self.process_request(request)
             content = response.get("content", "")
 
-            # markdown 内容分块发送
+            # 提取可展示的文本内容用于流式效果
+            display_text = ""
             if isinstance(content, str):
-                chunk_size = 50
-                for i in range(0, len(content), chunk_size):
+                display_text = content
+            elif isinstance(content, dict) and "description" in content:
+                display_text = content["description"]
+
+            # markdown 内容分块发送（模拟打字机效果）
+            if display_text:
+                import asyncio
+                chunk_size = 20 # 减小分块大小，效果更平滑
+                for i in range(0, len(display_text), chunk_size):
                     yield {
                         "type": "delta",
-                        "content": content[i:i + chunk_size]
+                        "content": display_text[i:i + chunk_size]
                     }
+                    await asyncio.sleep(0.02) # 增加微小延迟，模拟流式输出
 
             # 发送完成事件
             yield {
@@ -1938,10 +1947,12 @@ class COCService:
 
 请输入你的行动或对话："""
 
-                # 分块发送开场
-                chunk_size = 50
+                # 分块发送开场（模拟打字效果）
+                import asyncio
+                chunk_size = 20
                 for i in range(0, len(opening), chunk_size):
                     yield {"type": "delta", "content": opening[i:i + chunk_size]}
+                    await asyncio.sleep(0.02)
 
                 yield {"type": "done", "complete": True, "result": {"content": opening, "complete": False}}
                 return
@@ -1949,6 +1960,7 @@ class COCService:
             # 已在游戏中
             message = request.message.strip()
             if not message:
+                import asyncio
                 yield {"type": "delta", "content": "请输入你的行动或对话。"}
                 yield {"type": "done", "complete": True, "result": {"content": "请输入你的行动或对话。", "complete": False}}
                 return
