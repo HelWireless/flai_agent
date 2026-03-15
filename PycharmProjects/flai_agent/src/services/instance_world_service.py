@@ -585,8 +585,8 @@ class FreakWorldService:
         self, session: FreakWorldGameState, request: IWChatRequest, selection: str
     ) -> Dict[str, Any]:
         """
-        step=1 + selection=male/female → 调 LLM 生成世界叙事（同步模式返回完整文本）
-        注入 GM 引导对话作为 prior context，让 LLM 从世界叙事(1.1)开始，而非重做 GM 介绍。
+        step=1 + selection=male/female → 使用固定背景或生成世界叙事
+        优先使用预生成的固定背景，避免LLM调用
         """
         if selection not in ("male", "female"):
             return self._error_response("请在 extParam.selection 中传入性别选择（male/female）")
@@ -596,32 +596,56 @@ class FreakWorldService:
         session.game_status = GameStatus.NARRATIVE
         self._update_session_db(session)
 
-        # 构建 system prompt（不含 json 格式指令，期望返回纯 markdown）
-        system_prompt = build_system_prompt(
-            gm_id=session.gm_id,
-            world_id=self._format_world_id(session.freak_world_id),
-            is_loading=False,
-            base_path=self.base_path
-        )
-
         gender_text = "男性" if selection == "male" else "女性"
-
-        # 注入 GM 引导对话上下文，让 LLM 知道 GM 阶段已完成
-        gm_context = self._build_gm_context_messages(session, gender_text)
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(gm_context)
-
-        try:
-            response = await self.llm.chat_completion(
-                messages=messages,
-                model_pool=["qwen_plus"],
-                temperature=0.9,
-                top_p=0.85,
-                max_tokens=4096,
-                parse_json=False,
-                response_format="text"
+        
+        # 优先使用预生成的固定背景
+        world_config = get_world_config(self._format_world_id(session.freak_world_id))
+        world_name = world_config.get("name", "未知世界")
+        gm_config = get_gm_config(session.gm_id)
+        gm_name = gm_config.get("name", "GM")
+        
+        # 尝试获取固定背景
+        fixed_intro = None
+        db_config = _query_config_by_id(self._format_world_id(session.freak_world_id))
+        if db_config and db_config.config and isinstance(db_config.config, dict):
+            fixed_intro = db_config.config.get("fixed_intro")
+        
+        if fixed_intro:
+            # 使用预生成的固定背景作为世界叙事
+            custom_logger.info(f"Using fixed intro as narrative for world {session.freak_world_id}")
+            ai_content = self._process_fixed_intro(fixed_intro, gm_name, world_name)
+        else:
+            # 只有没有固定背景时才调用 LLM 生成叙事
+            custom_logger.info(f"Generating narrative for world {session.freak_world_id}")
+            
+            # 构建 system prompt（不含 json 格式指令，期望返回纯 markdown）
+            system_prompt = build_system_prompt(
+                gm_id=session.gm_id,
+                world_id=self._format_world_id(session.freak_world_id),
+                is_loading=False,
+                base_path=self.base_path
             )
-            ai_content = self._clean_llm_content(response.get("content", ""))
+
+            # 注入 GM 引导对话上下文，让 LLM 知道 GM 阶段已完成
+            gm_context = self._build_gm_context_messages(session, gender_text)
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(gm_context)
+
+            try:
+                response = await self.llm.chat_completion(
+                    messages=messages,
+                    model_pool=["qwen_plus"],
+                    temperature=0.9,
+                    top_p=0.85,
+                    max_tokens=4096,
+                    parse_json=False,
+                    response_format="text",
+                    timeout=60
+                )
+                ai_content = self._clean_llm_content(response.get("content", ""))
+            except Exception as e:
+                custom_logger.error(f"LLM narrative call failed: {e}")
+                ai_content = "欢迎来到这个世界..."
         except Exception as e:
             custom_logger.error(f"LLM narrative call failed: {e}")
             ai_content = "欢迎来到这个世界..."
