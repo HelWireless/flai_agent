@@ -512,7 +512,8 @@ class FreakWorldService:
 
         if fixed_intro:
             custom_logger.info(f"Using fixed intro for world {session.freak_world_id}")
-            gm_description = fixed_intro
+            # 处理固定背景中的占位符和随机选项语法 [A|B|C]
+            gm_description = self._process_fixed_intro(fixed_intro, gm_name, world_name)
         else:
             # 只有没有固定背景时才调用 LLM
             system_prompt = build_system_prompt(
@@ -554,6 +555,28 @@ class FreakWorldService:
             ]
         }
         return self._build_response(content=content)
+
+    def _process_fixed_intro(self, intro: str, gm_name: str, world_name: str) -> str:
+        """
+        处理固定背景模板，支持：
+        1. 变量替换：{gm_name}, {world_name}
+        2. 随机选项：[选项A|选项B|选项C]
+        """
+        import re
+        import random
+
+        # 1. 基础变量替换
+        result = intro.replace("{gm_name}", gm_name).replace("{world_name}", world_name)
+
+        # 2. 随机选项替换 [A|B|C]
+        def pick_random(match):
+            options = match.group(1).split('|')
+            return random.choice(options).strip()
+
+        # 匹配方括号内的内容，且包含 |
+        result = re.sub(r'\[([^\]]*?\|[^\]]*?)\]', pick_random, result)
+
+        return result.strip()
 
     # ==================== Step 1: 世界叙事（流式 markdown）====================
 

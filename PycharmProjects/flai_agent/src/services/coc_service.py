@@ -1692,10 +1692,11 @@ class COCService:
 只返回JSON，不要其他内容。"""
 
         try:
+            # 使用更快的模型 qwen_turbo
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen_plus"],
-                temperature=0.54,
+                model_pool=["qwen_turbo"],
+                temperature=0.7,
                 parse_json=False,
                 response_format="text"
             )

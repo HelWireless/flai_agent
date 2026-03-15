@@ -72,17 +72,29 @@ async def pre_generate_world_intros():
                 base_path=str(project_root)
             )
             
+            # 增强 Prompt，要求使用随机语法
+            custom_prompt = f"""{system_prompt}
+
+请作为 GM 生成这段开场白。
+为了增加每次游戏的随机性，请在生成时：
+1. 对于提到的 NPC 姓名、具体的地点描述、当下的天气或细微的氛围细节，请使用 [选项A|选项B|选项C] 的语法。
+2. 示例：你走在 [昏暗的街头|细雨蒙蒙的小巷|落满灰尘的走廊] 中，迎面走来了一个叫 [艾德|路德维希|西蒙] 的男人。
+3. 请确保核心背景故事固定，但细节处充满这种随机选项。
+4. 使用 {{gm_name}} 代替你的名字，使用 {{world_name}} 代替世界名字。
+
+直接开始生成背景介绍，不要包含任何 JSON 格式，不要包含“好的”、“收到”等废话。"""
+            
             try:
-                # 调用 LLM 生成 (使用 qwen_turbo 提速)
-                print(f"正在调用 LLM 生成 {world.name} 的开场介绍...")
+                # 调用 LLM 生成
+                print(f"正在调用 LLM 为 {world.name} 生成随机化背景模板...")
                 response = await llm.chat_completion(
                     messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": "开始"}
+                        {"role": "system", "content": custom_prompt},
+                        {"role": "user", "content": "请开始你的表演"}
                     ],
                     model_pool=["qwen_turbo"],
-                    temperature=0.9,
-                    top_p=0.85,
+                    temperature=0.95, # 稍微调高随机性
+                    top_p=0.9,
                     max_tokens=2048,
                     parse_json=False,
                     response_format="text"
