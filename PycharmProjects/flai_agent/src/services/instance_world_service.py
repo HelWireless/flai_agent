@@ -484,7 +484,7 @@ class FreakWorldService:
     async def _step0_intro(
         self, session: FreakWorldGameState, request: IWChatRequest
     ) -> Dict[str, Any]:
-        """action=start: 调用 LLM 生成 GM 引导介绍 + 世界背景 + 性别选择器（JSON）"""
+        """action=start: 优先从配置加载固定背景，否则调用 LLM 生成"""
         gm_config = get_gm_config(session.gm_id)
         gm_name = gm_config.get("name", "GM")
 
@@ -499,32 +499,47 @@ class FreakWorldService:
         session.characters = None
         self._update_session_db(session)
 
-        # 调用 LLM 让 GM 执行引导步骤 2.1-2.5（自我介绍 → 性别确认）
-        system_prompt = build_system_prompt(
-            gm_id=session.gm_id,
-            world_id=self._format_world_id(session.freak_world_id),
-            is_loading=False,
-            base_path=self.base_path
-        )
+        # --- 优化点 1: 优先加载固定背景，避免 LLM 生成等待 ---
+        # 尝试从 world_config 的 config 字段或 prompt 字段获取预设背景
+        # 预设背景格式建议在数据库 prompt 字段中以 "---INTRO---" 分隔，或直接存储在 config.fixed_intro
+        fixed_intro = None
+        raw_config = world_config.get("config", {}) # 注意：get_world_config 返回的可能是 to_world_dict 后的
+        
+        # 兼容性处理：尝试获取原始 PromptConfig 对象中的固定介绍
+        db_config = _query_config_by_id(self._format_world_id(session.freak_world_id))
+        if db_config and db_config.config and isinstance(db_config.config, dict):
+            fixed_intro = db_config.config.get("fixed_intro")
 
-        try:
-            response = await self.llm.chat_completion(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": "开始"}
-                ],
-                model_pool=["qwen_plus"],
-                temperature=0.9,
-                top_p=0.85,
-                max_tokens=4096,
-                parse_json=False,
-                response_format="text"
+        if fixed_intro:
+            custom_logger.info(f"Using fixed intro for world {session.freak_world_id}")
+            gm_description = fixed_intro
+        else:
+            # 只有没有固定背景时才调用 LLM
+            system_prompt = build_system_prompt(
+                gm_id=session.gm_id,
+                world_id=self._format_world_id(session.freak_world_id),
+                is_loading=False,
+                base_path=self.base_path
             )
-            gm_description = self._clean_llm_content(response.get("content", ""))
-        except Exception as e:
-            custom_logger.error(f"LLM GM intro call failed: {e}")
-            # fallback: 使用配置拼接
-            gm_description = f"（{gm_name}，{gm_config.get('traits', '')}）"
+
+            try:
+                # 使用更快的模型 qwen_turbo
+                response = await self.llm.chat_completion(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": "开始"}
+                    ],
+                    model_pool=["qwen_turbo"],
+                    temperature=0.9,
+                    top_p=0.85,
+                    max_tokens=4096,
+                    parse_json=False,
+                    response_format="text"
+                )
+                gm_description = self._clean_llm_content(response.get("content", ""))
+            except Exception as e:
+                custom_logger.error(f"LLM GM intro call failed: {e}")
+                gm_description = f"（{gm_name}，{gm_config.get('traits', '')}）"
 
         content = {
             "description": gm_description,
@@ -612,7 +627,13 @@ class FreakWorldService:
     async def _step2_character_list(
         self, session: FreakWorldGameState, request: IWChatRequest
     ) -> Dict[str, Any]:
-        """step=2 + confirm: 调用 LLM 生成角色列表，返回 JSON（同 COC 选职业格式）"""
+        """step=2 + confirm: 优先使用预提取的角色，否则实时生成"""
+        # 如果已经有了（通过异步预提取或之前生成过），直接展示
+        if session.characters:
+            custom_logger.info(f"Using cached/pre-extracted characters for session {session.session_id}")
+            return self._show_character_list(session)
+
+        # 否则实时生成（逻辑保持不变）
         gm_config = get_gm_config(session.gm_id)
         gm_name = gm_config.get("name", "GM")
 
@@ -626,37 +647,37 @@ class FreakWorldService:
         prompt = f"""你是一个副本世界游戏的角色生成器。
 
 世界设定：
-{world_setting[:2000]}
+{world_setting[:1500]}
 
-请根据以上世界设定，生成 3-5 个{gender_text}角色供玩家选择。
+请根据以上世界设定，生成 3 个{gender_text}角色供玩家选择。
 
-每个角色需要包含：
-- name: 角色名字（至少两个字，符合世界观，禁止使用"林飒"）
+每个角色包含：
+- name: 角色名
 - gender: 性别（{gender_text}）
-- race: 种族/势力/职业
-- appearance: 外貌描述（一句话）
-- personality: 个性描述（一句话）
-- status: 当前状态与心情（一句话）
+- race: 种族/职业
+- appearance: 外貌（简短）
+- personality: 性格（简短）
+- status: 状态（简短）
 
 要求：
-- 角色来自至少两个不同群体（种族/势力/职业）
-- 外貌、个性、年龄均不重复
 - 不得出现年长或外表老态的角色
-- 每个角色都要有鲜明特色
+- 角色必须符合世界观且各具特色
+- 禁止使用"林飒"作为名字
 
-请以JSON格式返回：
+请以 JSON 格式返回：
 {{
   "characters": [
-    {{"name": "角色名", "gender": "{gender_text}", "race": "种族/势力", "appearance": "外貌", "personality": "个性", "status": "当前状态"}}
+    {{"name": "...", "gender": "{gender_text}", "race": "...", "appearance": "...", "personality": "...", "status": "..."}}
   ],
-  "description": "（{gm_name}的旁白，介绍这些角色，50字以内）"
-}}
-只返回JSON，不要其他内容。"""
+  "description": "（{gm_name}的旁白，50字以内）"
+}}"""
 
         try:
+            # 使用更快的模型 qwen_turbo
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen_plus"],
+                model_pool=["qwen_turbo"],
+                temperature=0.8,
                 parse_json=False,
                 response_format="text"
             )
@@ -1187,10 +1208,19 @@ class FreakWorldService:
             response = await self.process_request(request)
             content = response.get("content", "")
 
+            # 提取文本内容用于模拟流式
+            display_text = ""
             if isinstance(content, str):
-                chunk_size = 50
-                for i in range(0, len(content), chunk_size):
-                    yield {"type": "delta", "content": content[i:i + chunk_size]}
+                display_text = content
+            elif isinstance(content, dict) and "description" in content:
+                display_text = content["description"]
+
+            if display_text:
+                import asyncio
+                chunk_size = 20
+                for i in range(0, len(display_text), chunk_size):
+                    yield {"type": "delta", "content": display_text[i:i + chunk_size]}
+                    await asyncio.sleep(0.02) # 模拟流式打字
 
             yield {"type": "done", "complete": True, "result": response}
 
@@ -1240,12 +1270,62 @@ class FreakWorldService:
                     return
 
             cleaned = self._clean_llm_content(full_content)
+            
+            # --- 优化点 2: 尝试从叙事内容中异步预提取角色 ---
+            # 这样在 step=2 点击 confirm 时，可能已经有现成的角色了
+            asyncio.create_task(self._pre_extract_characters(session, cleaned))
+
             yield {"type": "done", "complete": True, "result": {"content": cleaned, "complete": False}}
 
         except Exception as e:
             custom_logger.error(f"Error in _stream_narrative: {e}", exc_info=True)
             self.db.rollback()
             yield {"type": "error", "complete": True, "message": str(e)}
+
+    async def _pre_extract_characters(self, session: FreakWorldGameState, narrative: str):
+        """从世界叙事中预提取角色信息"""
+        try:
+            gender_text = "男性" if session.gender_preference == "male" else "女性"
+            gm_config = get_gm_config(session.gm_id)
+            gm_name = gm_config.get("name", "GM")
+            
+            prompt = f"""请从以下世界叙事文本中提取出提到的{gender_text}角色。
+如果文本中没有明确提到具体角色，请根据叙事氛围虚构 3 个符合背景的角色。
+
+【叙事文本】
+{narrative}
+
+请以 JSON 格式返回：
+{{
+  "characters": [
+    {{"name": "...", "gender": "{gender_text}", "race": "...", "appearance": "...", "personality": "...", "status": "..."}}
+  ],
+  "description": "（{gm_name}向你介绍了几位原住民）"
+}}"""
+            response = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model_pool=["qwen_turbo"],
+                temperature=0.7,
+                parse_json=False
+            )
+            
+            content = response.get("content", "")
+            if content:
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                result = json.loads(content.strip())
+                if "characters" in result:
+                    # 获取新 session 更新数据库
+                    session_db = self._get_session_db(session.session_id)
+                    if session_db and not session_db.characters:
+                        session_db.characters = result["characters"]
+                        self.db.commit()
+                        custom_logger.info(f"Pre-extracted {len(result['characters'])} characters for session {session.session_id}")
+        except Exception as e:
+            custom_logger.warning(f"Failed to pre-extract characters: {e}")
 
     async def _stream_playing(
         self, request: IWChatRequest
