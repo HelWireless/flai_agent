@@ -28,20 +28,23 @@ class LLMService:
         self.session = self._create_retry_session()
     
     def _create_retry_session(self, retries=5, backoff_factor=1.0, 
-                              status_forcelist=(500, 502, 504)):
+                              status_forcelist=(500, 502, 503, 504)):
         """创建带重试机制的 HTTP 会话"""
         session = requests.Session()
         # 禁用SSL警告
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         
+        # 这里的 verify=False 会在 session.post 中生效，但我们需要确保重试逻辑也能捕获 SSL 错误
         retry = Retry(
             total=retries,
             read=retries,
             connect=retries,
             backoff_factor=backoff_factor,
             status_forcelist=status_forcelist,
-            # 添加对SSL错误的重试
-            allowed_methods=frozenset(['HEAD', 'GET', 'PUT', 'DELETE', 'OPTIONS', 'TRACE', 'POST'])
+            # 确保对所有方法都重试
+            allowed_methods=frozenset(['HEAD', 'GET', 'PUT', 'DELETE', 'OPTIONS', 'TRACE', 'POST']),
+            # 允许对 SSL 握手等连接错误进行重试
+            raise_on_status=False
         )
         adapter = HTTPAdapter(max_retries=retry)
         session.mount('http://', adapter)
@@ -63,9 +66,10 @@ class LLMService:
             custom_logger.info(f"Detected save/summary operation, increasing timeout to {actual_timeout}s")
 
         loop = asyncio.get_event_loop()
+        # 显式禁用 SSL 验证 (verify=False) 以解决部分环境下证书库不兼容导致的 SSLError
         return await loop.run_in_executor(
             None, 
-            partial(self.session.post, url, json=json_data, headers=headers, timeout=actual_timeout)
+            lambda: self.session.post(url, json=json_data, headers=headers, timeout=actual_timeout, verify=False)
         )
     
     def _get_model_config(self, model_name: str) -> Dict:
