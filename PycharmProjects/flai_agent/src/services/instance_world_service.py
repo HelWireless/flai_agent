@@ -656,6 +656,16 @@ class FreakWorldService:
         if session.characters:
             custom_logger.info(f"Using cached/pre-extracted characters for session {session.session_id}")
             return self._show_character_list(session)
+        
+        # 等待一小段时间让预提取完成（如果有）
+        await asyncio.sleep(0.5)
+        
+        # 再次检查是否预提取已完成
+        session_check = self._get_session_db(session.session_id)
+        if session_check and session_check.characters:
+            custom_logger.info(f"Pre-extraction completed during wait for session {session.session_id}")
+            session.characters = session_check.characters
+            return self._show_character_list(session)
 
         # 否则实时生成（逻辑保持不变）
         gm_config = get_gm_config(session.gm_id)
@@ -671,7 +681,7 @@ class FreakWorldService:
         prompt = f"""你是一个副本世界游戏的角色生成器。
 
 世界设定：
-{world_setting[:1500]}
+{world_setting[:800]}
 
 请根据以上世界设定，生成 3 个{gender_text}角色供玩家选择。
 
@@ -869,10 +879,20 @@ class FreakWorldService:
         if not message:
             return self._build_response(content="请输入你的对话或行动。")
 
+        # 对于游戏对话，使用精简的世界设定以提高性能
+        world_setting_brief = ""
+        try:
+            # 尝试获取精简的世界设定
+            full_setting = load_world_setting(self._format_world_id(session.freak_world_id), self.base_path)
+            world_setting_brief = full_setting[:1000]  # 截取前1000字符
+        except Exception as e:
+            custom_logger.warning(f"Failed to load world setting for brief: {e}")
+        
         system_prompt = build_system_prompt(
             gm_id=session.gm_id,
             world_id=self._format_world_id(session.freak_world_id),
             is_loading=False,
+            world_setting=world_setting_brief,  # 使用精简设定
             base_path=self.base_path
         )
 
