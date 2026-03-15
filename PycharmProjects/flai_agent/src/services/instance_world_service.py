@@ -614,9 +614,6 @@ class FreakWorldService:
             # 使用预生成的固定背景作为世界叙事
             custom_logger.info(f"Using fixed intro as narrative for world {session.freak_world_id}")
             ai_content = self._process_fixed_intro(fixed_intro, gm_name, world_name)
-            
-            # 尝试从固定背景中提取角色并缓存
-            await self._extract_and_cache_characters(session, ai_content, gender_text, gm_name)
         else:
             # 只有没有固定背景时才调用 LLM 生成叙事
             custom_logger.info(f"Generating narrative for world {session.freak_world_id}")
@@ -633,6 +630,9 @@ class FreakWorldService:
             gm_context = self._build_gm_context_messages(session, gender_text)
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(gm_context)
+            
+            # 添加用户消息，引导生成背景并提示即将选择角色
+            messages.append({"role": "user", "content": "请描述我进入这个世界后的场景和氛围。在描述的最后，用一句话引导我选择一位原住民开始冒险。"})
 
             try:
                 response = await self.llm.chat_completion(
@@ -646,15 +646,9 @@ class FreakWorldService:
                     timeout=60
                 )
                 ai_content = self._clean_llm_content(response.get("content", ""))
-                
-                # 从生成的叙事中提取并缓存角色
-                await self._extract_and_cache_characters(session, ai_content, gender_text, gm_name)
             except Exception as e:
                 custom_logger.error(f"LLM narrative call failed: {e}")
                 ai_content = "欢迎来到这个世界..."
-        except Exception as e:
-            custom_logger.error(f"LLM narrative call failed: {e}")
-            ai_content = "欢迎来到这个世界..."
 
         return self._build_response(content=ai_content)
 
@@ -681,96 +675,26 @@ class FreakWorldService:
     async def _step2_character_list(
         self, session: FreakWorldGameState, request: IWChatRequest
     ) -> Dict[str, Any]:
-        """step=2 + confirm: 优先使用预提取的角色，否则实时生成"""
-        # 如果已经有了（通过异步预提取或之前生成过），直接展示
+        """step=2 + confirm: 使用预制数据组合生成角色"""
+        # 如果已经有了，直接展示
         if session.characters:
-            custom_logger.info(f"Using cached/pre-extracted characters for session {session.session_id}")
-            return self._show_character_list(session)
-        
-        # 等待一小段时间让预提取完成（如果有）
-        await asyncio.sleep(0.5)
-        
-        # 再次检查是否预提取已完成
-        session_check = self._get_session_db(session.session_id)
-        if session_check and session_check.characters:
-            custom_logger.info(f"Pre-extraction completed during wait for session {session.session_id}")
-            session.characters = session_check.characters
+            custom_logger.info(f"Using cached characters for session {session.session_id}")
             return self._show_character_list(session)
 
-        # 否则实时生成（逻辑保持不变）
         gm_config = get_gm_config(session.gm_id)
         gm_name = gm_config.get("name", "GM")
-
-        world_setting = load_world_setting(self._format_world_id(session.freak_world_id), self.base_path)
+        
         gender_text = "男性" if session.gender_preference == "male" else "女性"
-
+        
         session.game_status = GameStatus.CHARACTER_SELECT
         self._update_session_db(session)
 
-        # 调用 LLM 生成角色
-        prompt = f"""你是一个副本世界游戏的角色生成器。
-
- 世界设定：
-{world_setting[:1500]}
-
-请根据以上世界设定，生成 3 个{gender_text}角色供玩家选择。
-
-每个角色包含：
-- name: 角色名
-- gender: 性别（{gender_text}）
-- race: 种族/职业
-- appearance: 外貌（简短）
-- personality: 性格（简短）
-- status: 状态（简短）
-
-要求：
-- 不得出现年长或外表老态的角色
-- 角色必须符合世界观且各具特色
-- 禁止使用"林飒"作为名字
-
-请以 JSON 格式返回：
-{{
-  "characters": [
-    {{"name": "...", "gender": "{gender_text}", "race": "...", "appearance": "...", "personality": "...", "status": "..."}}
-  ],
-  "description": "（{gm_name}的旁白，50字以内）"
-}}"""
-
-        try:
-            # 使用更快的模型 qwen_turbo
-            response = await self.llm.chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen_turbo"],
-                temperature=0.8,
-                parse_json=False,
-                response_format="text",
-                timeout=60
-            )
-            content = response.get("content", "")
-            custom_logger.info(f"LLM characters response (first 200): {str(content)[:200]}")
-
-            if isinstance(content, dict):
-                result = content
-            else:
-                if not content or not content.strip():
-                    raise ValueError("LLM returned empty content")
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                result = json.loads(content.strip())
-
-            characters = result.get("characters", [])
-            description = result.get("description", f"（{gm_name}向你介绍了几位原住民）")
-
-        except Exception as e:
-            custom_logger.error(f"Failed to generate characters: {e}")
-            characters = [
-                {"name": "旅人", "gender": gender_text, "race": "旅者", "appearance": "风尘仆仆的旅人", "personality": "沉默寡言", "status": "正在休息"},
-                {"name": "商人", "gender": gender_text, "race": "商贩", "appearance": "精明干练的商人", "personality": "热情健谈", "status": "正在整理货物"},
-                {"name": "守卫", "gender": gender_text, "race": "守卫", "appearance": "身材魁梧的守卫", "personality": "严肃认真", "status": "正在巡逻"}
-            ]
-            description = f"（{gm_name}向你介绍了几位原住民）"
+        # 使用预制数据生成角色
+        characters = await self._generate_characters_from_preset(
+            session.freak_world_id, gender_text, gm_name, count=3
+        )
+        
+        description = f"（{gm_name}向你介绍了几位原住民）"
 
         # 保存角色列表
         session.characters = characters
@@ -1350,99 +1274,6 @@ class FreakWorldService:
             self.db.rollback()
             yield {"type": "error", "complete": True, "message": str(e)}
 
-    async def _pre_extract_characters(self, session: FreakWorldGameState, narrative: str):
-        """从世界叙事中预提取角色信息（异步，用于流式版本）"""
-        try:
-            gender_text = "男性" if session.gender_preference == "male" else "女性"
-            gm_config = get_gm_config(session.gm_id)
-            gm_name = gm_config.get("name", "GM")
-            
-            prompt = f"""请从以下世界叙事文本中提取出提到的{gender_text}角色。
-如果文本中没有明确提到具体角色，请根据叙事氛围虚构 3 个符合背景的角色。
-
-【叙事文本】
-{narrative}
-
-请以 JSON 格式返回：
-{{
-  "characters": [
-    {{"name": "...", "gender": "{gender_text}", "race": "...", "appearance": "...", "personality": "...", "status": "..."}}
-  ],
-  "description": "（{gm_name}向你介绍了几位原住民）"
-}}"""
-            response = await self.llm.chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen_turbo"],
-                temperature=0.7,
-                parse_json=False,
-                timeout=30
-            )
-            
-            content = response.get("content", "")
-            if content:
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                
-                result = json.loads(content.strip())
-                if "characters" in result:
-                    # 获取新 session 更新数据库
-                    session_db = self._get_session_db(session.session_id)
-                    if session_db and not session_db.characters:
-                        session_db.characters = result["characters"]
-                        self.db.commit()
-                        custom_logger.info(f"Pre-extracted {len(result['characters'])} characters for session {session.session_id}")
-        except Exception as e:
-            custom_logger.warning(f"Failed to pre-extract characters: {e}")
-
-    async def _extract_and_cache_characters(self, session: FreakWorldGameState, narrative: str, gender_text: str, gm_name: str):
-        """从叙事文本中提取角色信息并缓存到session（同步版本，用于Step 1）"""
-        try:
-            # 检查是否已有缓存的角色
-            if session.characters:
-                custom_logger.info(f"Characters already cached for session {session.session_id}")
-                return
-            
-            # 使用LLM提取角色信息
-            prompt = f"""请从以下世界叙事文本中提取出提到的{gender_text}角色。
-如果文本中没有明确提到具体角色，请根据叙事氛围虚构 3 个符合背景的角色。
-
-【叙事文本】
-{narrative[:1000]}
-
-请以 JSON 格式返回：
-{{
-  "characters": [
-    {{"name": "...", "gender": "{gender_text}", "race": "...", "appearance": "...", "personality": "...", "status": "..."}}
-  ],
-  "description": "（{gm_name}向你介绍了几位原住民）"
-}}"""
-            
-            response = await self.llm.chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen_turbo"],
-                temperature=0.7,
-                parse_json=False,
-                timeout=30
-            )
-            
-            content = response.get("content", "")
-            if content:
-                # 清理JSON格式
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                
-                result = json.loads(content.strip())
-                if "characters" in result:
-                    # 保存到session
-                    session.characters = result["characters"]
-                    self._update_session_db(session)
-                    custom_logger.info(f"Extracted and cached {len(result['characters'])} characters for session {session.session_id}")
-        except Exception as e:
-            custom_logger.warning(f"Failed to extract characters from narrative: {e}")
 
     async def _stream_playing(
         self, request: IWChatRequest
@@ -1512,3 +1343,151 @@ class FreakWorldService:
             custom_logger.error(f"Error in _stream_playing: {e}", exc_info=True)
             self.db.rollback()
             yield {"type": "error", "complete": True, "message": str(e)}
+
+    async def _generate_characters_from_preset(
+        self, world_id: str, gender: str, gm_name: str, count: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        使用预制数据组合生成角色
+        - race + appearance: 从预制表随机获取
+        - gender + personality: 从预制表随机获取
+        - name: 实时生成
+        - status: 基于personality实时生成
+        """
+        from src.models.world_preset_data import WorldPresetDataManager
+        
+        try:
+            # 初始化预制数据管理器
+            preset_manager = WorldPresetDataManager(self.db)
+            
+            # 获取预制数据组合
+            combinations = preset_manager.generate_character_combinations(
+                self._format_world_id(world_id), gender, count
+            )
+            
+            if not combinations:
+                custom_logger.warning(f"No preset data found for world {world_id}, using fallback")
+                # 使用默认数据
+                return self._get_fallback_characters(gender, count)
+            
+            characters = []
+            for combo in combinations:
+                # 实时生成名字
+                name = await self._generate_character_name(world_id, combo["race"])
+                
+                # 基于personality生成status
+                status = await self._generate_character_status(combo["personality"])
+                
+                char = {
+                    "name": name,
+                    "gender": combo["gender"],
+                    "race": combo["race"],
+                    "appearance": combo["appearance"],
+                    "personality": combo["personality"],
+                    "status": status
+                }
+                characters.append(char)
+            
+            custom_logger.info(f"Generated {len(characters)} characters from preset data")
+            return characters
+            
+        except Exception as e:
+            custom_logger.error(f"Failed to generate characters from preset: {e}")
+            return self._get_fallback_characters(gender, count)
+    
+    async def _generate_character_name(self, world_id: str, race: str) -> str:
+        """实时生成角色名字"""
+        try:
+            prompt = f"""请为一位{race}生成一个合适的名字。
+要求：
+- 2-4个字
+- 符合该种族/职业的气质
+- 不要俗套的名字
+
+只返回名字本身，不要任何其他内容。"""
+
+            response = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model_pool=["qwen_turbo"],
+                temperature=0.9,
+                max_tokens=20,
+                parse_json=False,
+                timeout=10
+            )
+            
+            name = response.get("content", "").strip()
+            # 清理可能的引号或多余内容
+            name = name.strip('"\'「」『』')
+            
+            if name and len(name) >= 2:
+                return name
+            else:
+                return self._get_random_fallback_name()
+                
+        except Exception as e:
+            custom_logger.error(f"Failed to generate name: {e}")
+            return self._get_random_fallback_name()
+    
+    async def _generate_character_status(self, personality: str) -> str:
+        """基于个性生成当前状态"""
+        try:
+            prompt = f"""这位角色的个性是：{personality}
+
+请根据这个个性，描述TA当前的状态和心情（一句话，10-20字）。
+
+只返回状态描述，不要任何其他内容。"""
+
+            response = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model_pool=["qwen_turbo"],
+                temperature=0.8,
+                max_tokens=50,
+                parse_json=False,
+                timeout=10
+            )
+            
+            status = response.get("content", "").strip()
+            # 清理可能的引号
+            status = status.strip('"\'')
+            
+            if status and len(status) >= 5:
+                return status
+            else:
+                return "正在等待"
+                
+        except Exception as e:
+            custom_logger.error(f"Failed to generate status: {e}")
+            return "正在等待"
+    
+    def _get_fallback_characters(self, gender: str, count: int = 3) -> List[Dict[str, Any]]:
+        """获取默认角色数据"""
+        fallback_pool = [
+            {"race": "血契贵族", "appearance": "银灰长发松挽，深红高开叉旗袍裹着冷艳曲线，指尖把玩着一柄血晶匕首。", "personality": "疏离而敏锐，言语如湖面涟漪般轻不可捉，却总能精准刺中他人未言之痛。"},
+            {"race": "影息族", "appearance": "烟雾般的靛蓝轮廓倚在墙角，胸口能量核心幽幽发亮，耳后延伸出两根感知震颤的晶须。", "personality": "恪守逻辑却厌恶规则，用讽刺当盾、悖论为矛，在秩序废墟上栽种自己的正义。"},
+            {"race": "血纹刻印师", "appearance": "苍白指尖沾满暗红颜料，颈侧蔓延着未完成的刺青，瞳孔深处藏着未愈合的旧伤。", "personality": "以沉默为甲、温柔为刃，在阴影里缝补他人裂痕，却从不允许自己被照亮。"},
+            {"race": "时痕行者", "appearance": "灰蓝斗篷裹着瘦削身形，袖口露出半截机械义肢，左眼瞳孔呈现诡异的逆时针漩涡。", "personality": "表面玩世不恭，内心背负着无法言说的使命，在时间长河中寻找失落的真相。"},
+            {"race": "灵能歌者", "appearance": "银白发丝间缠绕着发光藤蔓，耳垂悬挂着会随情绪变色的晶石，嗓音带着奇异的共鸣。", "personality": "用歌声编织梦境，在虚实之间游走，相信音乐是连接所有世界的唯一语言。"},
+        ]
+        
+        import random
+        selected = random.sample(fallback_pool, min(count, len(fallback_pool)))
+        
+        characters = []
+        for combo in selected:
+            char = {
+                "name": self._get_random_fallback_name(),
+                "gender": gender,
+                "race": combo["race"],
+                "appearance": combo["appearance"],
+                "personality": combo["personality"],
+                "status": "正在等待"
+            }
+            characters.append(char)
+        
+        return characters
+    
+    def _get_random_fallback_name(self) -> str:
+        """获取随机默认名字"""
+        import random
+        names = ["艾德", "路德维希", "西蒙", "薇拉", "伊莎", "卡伦", "雷恩", "诺瓦", "塞拉", "维克多"]
+        return random.choice(names)
