@@ -1,0 +1,6 @@
+@echo off
+echo 开始插入预制数据...
+python insert_preset_data.py
+echo.
+echo 按任意键退出...
+pause > nul
