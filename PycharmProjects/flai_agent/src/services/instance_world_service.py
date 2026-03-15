@@ -618,21 +618,34 @@ class FreakWorldService:
             # 只有没有固定背景时才调用 LLM 生成叙事
             custom_logger.info(f"Generating narrative for world {session.freak_world_id}")
             
-            # 构建 system prompt（不含 json 格式指令，期望返回纯 markdown）
-            system_prompt = build_system_prompt(
-                gm_id=session.gm_id,
-                world_id=self._format_world_id(session.freak_world_id),
-                is_loading=False,
-                base_path=self.base_path
-            )
+            # Step 1: 手动构建简化版 system prompt，不包含角色生成指令
+            from .instance_world_prompts import get_style_guide, get_gm_config, load_world_setting
+            
+            parts = []
+            # 1. 通用文风指南
+            parts.append(get_style_guide())
+            # 2. GM 设定
+            gm_config = get_gm_config(session.gm_id)
+            if gm_config:
+                parts.append(f"### GM 引导者设定 ###\n{gm_config.get('prompt', '')}")
+            # 3. 世界设定
+            world_setting = load_world_setting(self._format_world_id(session.freak_world_id), self.base_path)
+            parts.append(f"### 副本世界信息 ###\n{world_setting}")
+            # 4. 明确指令：只生成场景，不生成角色
+            parts.append("""### 当前任务 ###
+请描述用户进入这个世界后的场景、氛围和环境。
+重要：不要描述任何具体的人物或NPC，只描述环境和氛围。
+在描述的最后，用一句话引导用户接下来选择一位同伴开始冒险。""")
+            
+            system_prompt = "\n\n".join(parts)
 
-            # 注入 GM 引导对话上下文，让 LLM 知道 GM 阶段已完成
+            # 注入 GM 引导对话上下文
             gm_context = self._build_gm_context_messages(session, gender_text)
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(gm_context)
             
-            # 添加用户消息，引导生成背景并提示即将选择角色
-            messages.append({"role": "user", "content": "请描述我进入这个世界后的场景和氛围。在描述的最后，用一句话引导我选择一位原住民开始冒险。"})
+            # 添加用户消息
+            messages.append({"role": "user", "content": "我已经到达这个世界了，请描述我看到的场景。"})
 
             try:
                 response = await self.llm.chat_completion(
