@@ -58,10 +58,10 @@ async def pre_generate_world_intros():
             world_id = world.config_id
             print(f"\n正在处理世界: {world.name} ({world_id})...")
             
-            # 检查是否已经有了固定背景
+            # 检查是否已经有了固定背景 (如果包含 [ 则认为是新版随机模板，跳过)
             current_config = world.config or {}
-            if current_config.get("fixed_intro"):
-                print(f"跳过: 世界 {world.name} 已有固定背景")
+            if current_config.get("fixed_intro") and "[" in current_config.get("fixed_intro"):
+                print(f"跳过: 世界 {world.name} 已有随机化背景模板")
                 continue
             
             # 构建生成 Prompt
