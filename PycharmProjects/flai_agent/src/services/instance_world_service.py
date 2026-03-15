@@ -614,11 +614,14 @@ class FreakWorldService:
             # 使用预生成的固定背景作为世界叙事
             custom_logger.info(f"Using fixed intro as narrative for world {session.freak_world_id}")
             ai_content = self._process_fixed_intro(fixed_intro, gm_name, world_name)
+            
+            # 尝试从固定背景中提取角色并缓存
+            await self._extract_and_cache_characters(session, ai_content, gender_text, gm_name)
         else:
             # 只有没有固定背景时才调用 LLM 生成叙事
             custom_logger.info(f"Generating narrative for world {session.freak_world_id}")
             
-            # 构建 system prompt（不含 json 格式指令，期望返回纯 markdown）
+            # 构建增强的 system prompt，要求同时生成角色
             system_prompt = build_system_prompt(
                 gm_id=session.gm_id,
                 world_id=self._format_world_id(session.freak_world_id),
@@ -630,6 +633,9 @@ class FreakWorldService:
             gm_context = self._build_gm_context_messages(session, gender_text)
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(gm_context)
+            
+            # 添加用户消息，要求生成叙事和角色
+            messages.append({"role": "user", "content": f"请以沉浸式的叙事风格描述这个{gender_text}旅行者进入世界后的场景，并在叙事中自然地引出2-3个{gender_text}原住民角色。每个角色用简洁的一句话介绍其外貌和状态。"})
 
             try:
                 response = await self.llm.chat_completion(
@@ -643,6 +649,9 @@ class FreakWorldService:
                     timeout=60
                 )
                 ai_content = self._clean_llm_content(response.get("content", ""))
+                
+                # 从生成的叙事中提取并缓存角色
+                await self._extract_and_cache_characters(session, ai_content, gender_text, gm_name)
             except Exception as e:
                 custom_logger.error(f"LLM narrative call failed: {e}")
                 ai_content = "欢迎来到这个世界..."
@@ -1345,7 +1354,7 @@ class FreakWorldService:
             yield {"type": "error", "complete": True, "message": str(e)}
 
     async def _pre_extract_characters(self, session: FreakWorldGameState, narrative: str):
-        """从世界叙事中预提取角色信息"""
+        """从世界叙事中预提取角色信息（异步，用于流式版本）"""
         try:
             gender_text = "男性" if session.gender_preference == "male" else "女性"
             gm_config = get_gm_config(session.gm_id)
@@ -1389,6 +1398,54 @@ class FreakWorldService:
                         custom_logger.info(f"Pre-extracted {len(result['characters'])} characters for session {session.session_id}")
         except Exception as e:
             custom_logger.warning(f"Failed to pre-extract characters: {e}")
+
+    async def _extract_and_cache_characters(self, session: FreakWorldGameState, narrative: str, gender_text: str, gm_name: str):
+        """从叙事文本中提取角色信息并缓存到session（同步版本，用于Step 1）"""
+        try:
+            # 检查是否已有缓存的角色
+            if session.characters:
+                custom_logger.info(f"Characters already cached for session {session.session_id}")
+                return
+            
+            # 使用LLM提取角色信息
+            prompt = f"""请从以下世界叙事文本中提取出提到的{gender_text}角色。
+如果文本中没有明确提到具体角色，请根据叙事氛围虚构 3 个符合背景的角色。
+
+【叙事文本】
+{narrative[:1000]}
+
+请以 JSON 格式返回：
+{{
+  "characters": [
+    {{"name": "...", "gender": "{gender_text}", "race": "...", "appearance": "...", "personality": "...", "status": "..."}}
+  ],
+  "description": "（{gm_name}向你介绍了几位原住民）"
+}}"""
+            
+            response = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model_pool=["qwen_turbo"],
+                temperature=0.7,
+                parse_json=False,
+                timeout=30
+            )
+            
+            content = response.get("content", "")
+            if content:
+                # 清理JSON格式
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                result = json.loads(content.strip())
+                if "characters" in result:
+                    # 保存到session
+                    session.characters = result["characters"]
+                    self._update_session_db(session)
+                    custom_logger.info(f"Extracted and cached {len(result['characters'])} characters for session {session.session_id}")
+        except Exception as e:
+            custom_logger.warning(f"Failed to extract characters from narrative: {e}")
 
     async def _stream_playing(
         self, request: IWChatRequest
