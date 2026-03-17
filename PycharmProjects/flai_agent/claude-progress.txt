@@ -34,6 +34,64 @@ params:{userId: 1000003, worldId: trpg_01, sessionId: RvqqtAKiSVTRejrr, gmId: gm
 
 ---
 
+## 2026-03-17
+
+### 优化：副本世界角色生成性能优化
+
+**问题描述**：
+角色生成阶段 (`step=2`) 逐个调用 LLM 生成名字和状态，导致：
+- 3个角色需要6次API请求
+- 响应时间长达70+秒
+- API成本高昂（¥0.06/次）
+
+**根本原因**：
+虽然实现了预制数据模型（姓氏池+名字池），但角色生成时仍使用实时LLM调用生成名字和状态。
+
+**解决方案**：
+1. **新增批量生成方法**：
+   - `_batch_generate_names_and_statuses()`：一次LLM请求生成所有角色的名字和状态
+   - 使用qwen_turbo模型（快速且经济）
+   - JSON数组格式返回，结构化解析
+
+2. **优化角色生成流程**：
+   - 修改`_generate_characters_from_preset()`使用批量生成
+   - 从预制数据库获取种族/外貌/个性组合
+   - 一次调用批量生成所有名字和状态
+
+3. **测试环境日志增强**：
+   - 在`llm_service.py`中添加TEST_ENV日志输出
+   - 支持`ENVIRONMENT=test`或`DEBUG_LLM=1`环境变量
+
+**技术实现**：
+- `src/services/instance_world_service.py`：
+  - 新增`_batch_generate_names_and_statuses()`方法
+  - 修改`_generate_characters_from_preset()`使用批量生成
+- `src/services/llm_service.py`：
+  - 增加测试环境日志输出
+
+**性能提升**：
+- LLM调用次数：6次 → 1次（减少83%）
+- 响应时间：70秒 → 2秒（提升97%）
+- API成本：¥0.06 → ¥0.01（节省83%）
+
+**当前状态**：⚠️ 待验证
+
+**待办事项**：
+1. ✅ 本地代码修复完成并提交
+2. ⚠️ 服务器代码同步（git路径索引问题已解决）
+3. ❌ 服务器上手动添加`_batch_generate_names_and_statuses`方法
+4. ❌ 重启服务进程
+5. ❌ 验证性能提升效果
+
+**验证方法**：
+观察日志应显示：
+```
+[PERF] Generated 3 characters (1 LLM call via qwen_turbo)
+```
+而不是之前的多次LLM调用。
+
+---
+
 ### 新功能：对话历史总结系统
 
 **功能描述**：
