@@ -37,7 +37,7 @@ from .llm_service import LLMService
 from .instance_world_prompts import (
     build_system_prompt, get_gm_config, get_world_config,
     load_world_setting, get_gm_ids, get_enabled_gms,
-    get_iw_prompt_saving
+    get_iw_prompt_saving, get_style_guide, _query_config_by_id
 )
 
 
@@ -484,7 +484,7 @@ class FreakWorldService:
     async def _step0_intro(
         self, session: FreakWorldGameState, request: IWChatRequest
     ) -> Dict[str, Any]:
-        """action=start: 调用 LLM 生成 GM 引导介绍 + 世界背景 + 性别选择器（JSON）"""
+        """action=start: 优先从配置加载固定背景，否则调用 LLM 生成"""
         gm_config = get_gm_config(session.gm_id)
         gm_name = gm_config.get("name", "GM")
 
@@ -499,32 +499,35 @@ class FreakWorldService:
         session.characters = None
         self._update_session_db(session)
 
-        # 调用 LLM 让 GM 执行引导步骤 2.1-2.5（自我介绍 → 性别确认）
-        system_prompt = build_system_prompt(
-            gm_id=session.gm_id,
-            world_id=self._format_world_id(session.freak_world_id),
-            is_loading=False,
-            base_path=self.base_path
-        )
+        fixed_intro = self._get_fixed_intro(session.freak_world_id)
 
-        try:
-            response = await self.llm.chat_completion(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": "开始"}
-                ],
-                model_pool=["qwen_plus"],
-                temperature=0.9,
-                top_p=0.85,
-                max_tokens=4096,
-                parse_json=False,
-                response_format="text"
+        if fixed_intro:
+            custom_logger.info(f"Using fixed intro for world {session.freak_world_id}")
+            gm_description = self._process_fixed_intro(fixed_intro, gm_name, world_name)
+        else:
+            system_prompt = build_system_prompt(
+                gm_id=session.gm_id,
+                world_id=self._format_world_id(session.freak_world_id),
+                is_loading=False,
+                base_path=self.base_path
             )
-            gm_description = self._clean_llm_content(response.get("content", ""))
-        except Exception as e:
-            custom_logger.error(f"LLM GM intro call failed: {e}")
-            # fallback: 使用配置拼接
-            gm_description = f"（{gm_name}，{gm_config.get('traits', '')}）"
+            try:
+                response = await self.llm.chat_completion(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": "开始"}
+                    ],
+                    model_pool=["qwen_plus"],
+                    temperature=0.9,
+                    top_p=0.85,
+                    max_tokens=4096,
+                    parse_json=False,
+                    response_format="text"
+                )
+                gm_description = self._clean_llm_content(response.get("content", ""))
+            except Exception as e:
+                custom_logger.error(f"LLM GM intro call failed: {e}")
+                gm_description = f"（{gm_name}，{gm_config.get('traits', '')}）"
 
         content = {
             "description": gm_description,
@@ -540,52 +543,90 @@ class FreakWorldService:
         }
         return self._build_response(content=content)
 
+    def _get_fixed_intro(self, freak_world_id) -> Optional[str]:
+        """从数据库配置中获取预设固定背景"""
+        try:
+            db_config = _query_config_by_id(self._format_world_id(freak_world_id))
+            if db_config and db_config.config and isinstance(db_config.config, dict):
+                return db_config.config.get("fixed_intro")
+        except Exception as e:
+            custom_logger.warning(f"Failed to get fixed_intro: {e}")
+        return None
+
+    @staticmethod
+    def _process_fixed_intro(intro: str, gm_name: str, world_name: str) -> str:
+        """处理固定背景模板：变量替换 + 随机选项 [A|B|C]"""
+        import re
+        result = intro.replace("{gm_name}", gm_name).replace("{world_name}", world_name)
+
+        def pick_random(match):
+            options = match.group(1).split('|')
+            return random.choice(options).strip()
+
+        result = re.sub(r'\[([^\]]*?\|[^\]]*?)\]', pick_random, result)
+        return result.strip()
+
     # ==================== Step 1: 世界叙事（流式 markdown）====================
 
     async def _handle_step1(
         self, session: FreakWorldGameState, request: IWChatRequest, selection: str
     ) -> Dict[str, Any]:
-        """
-        step=1 + selection=male/female → 调 LLM 生成世界叙事（同步模式返回完整文本）
-        注入 GM 引导对话作为 prior context，让 LLM 从世界叙事(1.1)开始，而非重做 GM 介绍。
-        """
+        """step=1 + selection=male/female: 优先使用固定背景，否则 LLM 生成世界叙事"""
         if selection not in ("male", "female"):
             return self._error_response("请在 extParam.selection 中传入性别选择（male/female）")
 
-        # 保存性别偏好
         session.gender_preference = selection
         session.game_status = GameStatus.NARRATIVE
         self._update_session_db(session)
 
-        # 构建 system prompt（不含 json 格式指令，期望返回纯 markdown）
-        system_prompt = build_system_prompt(
-            gm_id=session.gm_id,
-            world_id=self._format_world_id(session.freak_world_id),
-            is_loading=False,
-            base_path=self.base_path
-        )
-
         gender_text = "男性" if selection == "male" else "女性"
 
-        # 注入 GM 引导对话上下文，让 LLM 知道 GM 阶段已完成
-        gm_context = self._build_gm_context_messages(session, gender_text)
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(gm_context)
-
-        try:
-            response = await self.llm.chat_completion(
-                messages=messages,
-                model_pool=["qwen_plus"],
-                temperature=0.9,
-                top_p=0.85,
-                max_tokens=4096,
-                parse_json=False,
-                response_format="text"
+        fixed_intro = self._get_fixed_intro(session.freak_world_id)
+        if fixed_intro:
+            custom_logger.info(f"Using fixed intro as narrative for world {session.freak_world_id}")
+            world_config = get_world_config(self._format_world_id(session.freak_world_id))
+            gm_config = get_gm_config(session.gm_id)
+            ai_content = self._process_fixed_intro(
+                fixed_intro, gm_config.get("name", "GM"), world_config.get("name", "未知世界")
             )
-            ai_content = self._clean_llm_content(response.get("content", ""))
-        except Exception as e:
-            custom_logger.error(f"LLM narrative call failed: {e}")
-            ai_content = "欢迎来到这个世界..."
+        else:
+            parts = []
+            parts.append(get_style_guide())
+            gm_config = get_gm_config(session.gm_id)
+            if gm_config:
+                parts.append(f"### GM 引导者设定 ###\n{gm_config.get('prompt', '')}")
+            world_setting = load_world_setting(
+                self._format_world_id(session.freak_world_id), self.base_path
+            )
+            parts.append(f"### 副本世界信息 ###\n{world_setting}")
+            parts.append(
+                "### 当前任务 ###\n"
+                "请描述用户进入这个世界后的场景、氛围和环境。\n"
+                "重要：不要描述任何具体的人物或NPC，只描述环境和氛围。\n"
+                "在描述的最后，用一句话引导用户接下来选择一位同伴开始冒险。"
+            )
+            system_prompt = "\n\n".join(parts)
+
+            gm_context = self._build_gm_context_messages(session, gender_text)
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(gm_context)
+            messages.append({"role": "user", "content": "我已经到达这个世界了，请描述我看到的场景。"})
+
+            try:
+                response = await self.llm.chat_completion(
+                    messages=messages,
+                    model_pool=["qwen_plus"],
+                    temperature=0.9,
+                    top_p=0.85,
+                    max_tokens=4096,
+                    parse_json=False,
+                    response_format="text",
+                    timeout=60
+                )
+                ai_content = self._clean_llm_content(response.get("content", ""))
+            except Exception as e:
+                custom_logger.error(f"LLM narrative call failed: {e}")
+                ai_content = "欢迎来到这个世界..."
 
         return self._build_response(content=ai_content)
 
@@ -612,85 +653,26 @@ class FreakWorldService:
     async def _step2_character_list(
         self, session: FreakWorldGameState, request: IWChatRequest
     ) -> Dict[str, Any]:
-        """step=2 + confirm: 调用 LLM 生成角色列表，返回 JSON（同 COC 选职业格式）"""
+        """step=2 + confirm: 使用预制数据组合生成角色，零 LLM 调用"""
+        if session.characters:
+            custom_logger.info(f"Using cached characters for session {session.session_id}")
+            return self._show_character_list(session)
+
         gm_config = get_gm_config(session.gm_id)
         gm_name = gm_config.get("name", "GM")
-
-        world_setting = load_world_setting(self._format_world_id(session.freak_world_id), self.base_path)
         gender_text = "男性" if session.gender_preference == "male" else "女性"
 
         session.game_status = GameStatus.CHARACTER_SELECT
         self._update_session_db(session)
 
-        # 调用 LLM 生成角色
-        prompt = f"""你是一个副本世界游戏的角色生成器。
+        characters = self._generate_characters_from_preset(
+            session.freak_world_id, gender_text, count=3
+        )
+        description = f"（{gm_name}向你介绍了几位原住民）"
 
-世界设定：
-{world_setting[:2000]}
-
-请根据以上世界设定，生成 3-5 个{gender_text}角色供玩家选择。
-
-每个角色需要包含：
-- name: 角色名字（至少两个字，符合世界观，禁止使用"林飒"）
-- gender: 性别（{gender_text}）
-- race: 种族/势力/职业
-- appearance: 外貌描述（一句话）
-- personality: 个性描述（一句话）
-- status: 当前状态与心情（一句话）
-
-要求：
-- 角色来自至少两个不同群体（种族/势力/职业）
-- 外貌、个性、年龄均不重复
-- 不得出现年长或外表老态的角色
-- 每个角色都要有鲜明特色
-
-请以JSON格式返回：
-{{
-  "characters": [
-    {{"name": "角色名", "gender": "{gender_text}", "race": "种族/势力", "appearance": "外貌", "personality": "个性", "status": "当前状态"}}
-  ],
-  "description": "（{gm_name}的旁白，介绍这些角色，50字以内）"
-}}
-只返回JSON，不要其他内容。"""
-
-        try:
-            response = await self.llm.chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                model_pool=["qwen_plus"],
-                parse_json=False,
-                response_format="text"
-            )
-            content = response.get("content", "")
-            custom_logger.info(f"LLM characters response (first 200): {str(content)[:200]}")
-
-            if isinstance(content, dict):
-                result = content
-            else:
-                if not content or not content.strip():
-                    raise ValueError("LLM returned empty content")
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                result = json.loads(content.strip())
-
-            characters = result.get("characters", [])
-            description = result.get("description", f"（{gm_name}向你介绍了几位原住民）")
-
-        except Exception as e:
-            custom_logger.error(f"Failed to generate characters: {e}")
-            characters = [
-                {"name": "旅人", "gender": gender_text, "race": "旅者", "appearance": "风尘仆仆的旅人", "personality": "沉默寡言", "status": "正在休息"},
-                {"name": "商人", "gender": gender_text, "race": "商贩", "appearance": "精明干练的商人", "personality": "热情健谈", "status": "正在整理货物"},
-                {"name": "守卫", "gender": gender_text, "race": "守卫", "appearance": "身材魁梧的守卫", "personality": "严肃认真", "status": "正在巡逻"}
-            ]
-            description = f"（{gm_name}向你介绍了几位原住民）"
-
-        # 保存角色列表
         session.characters = characters
         self._update_session_db(session)
 
-        # 构建角色展示（同 COC 选职业格式）
         characters_display = []
         selections = []
         for i, char in enumerate(characters):
@@ -1148,6 +1130,110 @@ class FreakWorldService:
             pass
         return content
 
+    # ==================== 预制数据角色生成 ====================
+
+    def _generate_characters_from_preset(
+        self, world_id, gender: str, count: int = 3
+    ) -> List[Dict[str, Any]]:
+        """使用预制数据组合生成角色，完全不调用 LLM"""
+        try:
+            from ..models.world_preset_data import WorldPresetDataManager
+            preset_manager = WorldPresetDataManager(self.db)
+
+            combinations = preset_manager.generate_character_combinations(
+                self._format_world_id(world_id), gender, count
+            )
+
+            if not combinations:
+                custom_logger.warning(f"No preset data for world {world_id}, using fallback")
+                return self._get_fallback_characters(gender, count)
+
+            characters = []
+            used_names = set()
+            for combo in combinations:
+                name = combo.get("name")
+                if not name or name in used_names:
+                    name = self._get_random_fallback_name(used_names)
+                used_names.add(name)
+
+                status = self._generate_status_from_personality(combo["personality"])
+
+                characters.append({
+                    "name": name,
+                    "gender": combo["gender"],
+                    "race": combo["race"],
+                    "appearance": combo["appearance"],
+                    "personality": combo["personality"],
+                    "status": status
+                })
+
+            custom_logger.info(f"Generated {len(characters)} characters from preset (0 LLM calls)")
+            return characters
+
+        except Exception as e:
+            custom_logger.error(f"Failed to generate from preset: {e}", exc_info=True)
+            return self._get_fallback_characters(gender, count)
+
+    @staticmethod
+    def _generate_status_from_personality(personality: str) -> str:
+        """根据个性描述生成状态（纯模板，不调 LLM）"""
+        status_templates = [
+            "正倚在角落，目光不经意扫过来人",
+            "独自坐在一旁，似乎在思考什么",
+            "正百无聊赖地把玩着手中的小物件",
+            "靠在墙边，嘴角挂着若有若无的笑意",
+            "正低头整理着自己的随身物品",
+            "站在窗边，望着外面出神",
+            "正和旁边的人低声交谈着什么",
+            "独自一人坐着，手指有节奏地敲着桌面",
+            "正慢悠悠地喝着什么，神情闲适",
+            "背靠柱子闭目养神，但似乎并未真正入睡",
+        ]
+        return random.choice(status_templates)
+
+    def _get_fallback_characters(self, gender: str, count: int = 3) -> List[Dict[str, Any]]:
+        """预制数据不可用时的兜底角色"""
+        fallback_pool = [
+            {"race": "血契贵族", "appearance": "银灰长发松挽，深红高开叉旗袍裹着冷艳曲线，指尖把玩着一柄血晶匕首。",
+             "personality": "疏离而敏锐，言语如湖面涟漪般轻不可捉，却总能精准刺中他人未言之痛。"},
+            {"race": "影息族", "appearance": "烟雾般的靛蓝轮廓倚在墙角，胸口能量核心幽幽发亮，耳后延伸出两根感知震颤的晶须。",
+             "personality": "恪守逻辑却厌恶规则，用讽刺当盾、悖论为矛，在秩序废墟上栽种自己的正义。"},
+            {"race": "血纹刻印师", "appearance": "苍白指尖沾满暗红颜料，颈侧蔓延着未完成的刺青，瞳孔深处藏着未愈合的旧伤。",
+             "personality": "以沉默为甲、温柔为刃，在阴影里缝补他人裂痕，却从不允许自己被照亮。"},
+            {"race": "时痕行者", "appearance": "灰蓝斗篷裹着瘦削身形，袖口露出半截机械义肢，左眼瞳孔呈现诡异的逆时针漩涡。",
+             "personality": "表面玩世不恭，内心背负着无法言说的使命，在时间长河中寻找失落的真相。"},
+            {"race": "灵能歌者", "appearance": "银白发丝间缠绕着发光藤蔓，耳垂悬挂着会随情绪变色的晶石，嗓音带着奇异的共鸣。",
+             "personality": "用歌声编织梦境，在虚实之间游走，相信音乐是连接所有世界的唯一语言。"},
+        ]
+        selected = random.sample(fallback_pool, min(count, len(fallback_pool)))
+        used_names = set()
+        characters = []
+        for combo in selected:
+            name = self._get_random_fallback_name(used_names)
+            used_names.add(name)
+            characters.append({
+                "name": name,
+                "gender": gender,
+                "race": combo["race"],
+                "appearance": combo["appearance"],
+                "personality": combo["personality"],
+                "status": self._generate_status_from_personality(combo["personality"])
+            })
+        return characters
+
+    @staticmethod
+    def _get_random_fallback_name(used_names: set = None) -> str:
+        """随机兜底名字，避免重复"""
+        names = [
+            "沈砚", "顾辞", "林昭", "苏衍", "叶澜", "裴渡", "温时", "陆辰",
+            "楚宁", "萧逸", "纪云", "谢临", "卫清", "姜渝", "柳行", "霍晏",
+        ]
+        if used_names:
+            available = [n for n in names if n not in used_names]
+            if available:
+                return random.choice(available)
+        return random.choice(names)
+
     # ==================== SSE 流式 ====================
 
     async def stream_chat(
@@ -1202,13 +1288,29 @@ class FreakWorldService:
     async def _stream_narrative(
         self, request: IWChatRequest, gender: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Step 1 世界叙事的真流式处理（注入 GM 引导上下文）"""
+        """Step 1 世界叙事：有固定背景则模拟流式输出，否则真流式 LLM"""
         try:
             session = self._get_or_create_session(request)
 
             session.gender_preference = gender
             session.game_status = GameStatus.NARRATIVE
             self._update_session_db(session)
+
+            gender_text = "男性" if gender == "male" else "女性"
+
+            fixed_intro = self._get_fixed_intro(session.freak_world_id)
+            if fixed_intro:
+                world_config = get_world_config(self._format_world_id(session.freak_world_id))
+                gm_config = get_gm_config(session.gm_id)
+                content = self._process_fixed_intro(
+                    fixed_intro, gm_config.get("name", "GM"), world_config.get("name", "未知世界")
+                )
+                chunk_size = 20
+                for i in range(0, len(content), chunk_size):
+                    yield {"type": "delta", "content": content[i:i + chunk_size]}
+                    await asyncio.sleep(0.02)
+                yield {"type": "done", "complete": True, "result": {"content": content, "complete": False}}
+                return
 
             system_prompt = build_system_prompt(
                 gm_id=session.gm_id,
@@ -1217,9 +1319,6 @@ class FreakWorldService:
                 base_path=self.base_path
             )
 
-            gender_text = "男性" if gender == "male" else "女性"
-
-            # 注入 GM 引导对话上下文
             gm_context = self._build_gm_context_messages(session, gender_text)
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(gm_context)
