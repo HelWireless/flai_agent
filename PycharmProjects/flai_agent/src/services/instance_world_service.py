@@ -1472,6 +1472,59 @@ class FreakWorldService:
             custom_logger.error(f"Failed to generate status: {e}")
             return "正在等待"
     
+    async def _batch_generate_names_and_statuses(
+        self, combinations: list[dict], world_id: str
+    ) -> list[dict[str, str]]:
+        """
+        批量生成名字和状态（一次 LLM 调用，返回 JSON 数组）
+        """
+        try:
+            # 构建角色信息用于 prompt
+            char_infos = []
+            for i, combo in enumerate(combinations):
+                char_infos.append(
+                    f"{i+1}. {combo['race']} - {combo['personality']}"
+                )
+            
+            chars_text = "\n".join(char_infos)
+            
+            prompt = f"""请为以下{len(combinations)}个角色生成名字和当前状态：
+
+{chars_text}
+
+要求：
+- 名字：2-4 个字，符合种族/职业特色，不要俗套
+- 状态：描述当前动作/心情，10-20 字，生动有趣
+- 性别：根据上下文保持一致
+
+请以 JSON 数组格式返回：
+[
+  {{"name": "角色名", "status": "当前状态"}},
+  ...
+]
+
+只返回 JSON 数组，不要任何其他内容。"""
+
+            response = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model_pool=["qwen_turbo"],
+                temperature=0.9,
+                max_tokens=500,
+                parse_json=True,
+                timeout=15
+            )
+            
+            result = response.get("content", [])
+            if isinstance(result, list) and len(result) > 0:
+                return result
+            else:
+                return [{"name": self._get_random_fallback_name(), "status": "正在等待"} 
+                        for _ in combinations]
+                        
+        except Exception as e:
+            return [{"name": self._get_random_fallback_name(), "status": "正在等待"} 
+                    for _ in combinations]
+    
     def _get_fallback_characters(self, gender: str, count: int = 3) -> List[Dict[str, Any]]:
         """获取默认角色数据"""
         fallback_pool = [
