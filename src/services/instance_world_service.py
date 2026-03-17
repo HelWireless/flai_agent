@@ -603,6 +603,7 @@ class FreakWorldService:
                 "### 当前任务 ###\n"
                 "请描述用户进入这个世界后的场景、氛围和环境。\n"
                 "重要：不要描述任何具体的人物或NPC，只描述环境和氛围。\n"
+                "不要询问用户任何选择题（性别、职业等），用户已经做过选择了。\n"
                 "在描述的最后，用一句话引导用户接下来选择一位同伴开始冒险。"
             )
             system_prompt = "\n\n".join(parts)
@@ -1312,16 +1313,28 @@ class FreakWorldService:
                 yield {"type": "done", "complete": True, "result": {"content": content, "complete": False}}
                 return
 
-            system_prompt = build_system_prompt(
-                gm_id=session.gm_id,
-                world_id=self._format_world_id(session.freak_world_id),
-                is_loading=False,
-                base_path=self.base_path
+            parts = []
+            parts.append(get_style_guide())
+            gm_config_data = get_gm_config(session.gm_id)
+            if gm_config_data:
+                parts.append(f"### GM 引导者设定 ###\n{gm_config_data.get('prompt', '')}")
+            world_setting = load_world_setting(
+                self._format_world_id(session.freak_world_id), self.base_path
             )
+            parts.append(f"### 副本世界信息 ###\n{world_setting}")
+            parts.append(
+                "### 当前任务 ###\n"
+                "请描述用户进入这个世界后的场景、氛围和环境。\n"
+                "重要：不要描述任何具体的人物或NPC，只描述环境和氛围。\n"
+                "不要询问用户任何选择题（性别、职业等），用户已经做过选择了。\n"
+                "在描述的最后，用一句话引导用户接下来选择一位同伴开始冒险。"
+            )
+            system_prompt = "\n\n".join(parts)
 
             gm_context = self._build_gm_context_messages(session, gender_text)
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(gm_context)
+            messages.append({"role": "user", "content": "我已经到达这个世界了，请描述我看到的场景。"})
 
             full_content = ""
             async for chunk in self.llm.stream_chat_completion(
