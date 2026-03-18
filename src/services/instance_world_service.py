@@ -743,34 +743,46 @@ class FreakWorldService:
             ids = [f"char_{i + 1:02d}" for i in range(len(characters))]
             return self._error_response(f"未找到角色 '{char_id}'，可选：{', '.join(ids)}")
 
-        # 保存选定角色，进入游戏
         session.current_character_id = selected_char.get("name", "")
         session.game_status = GameStatus.PLAYING
         self._update_session_db(session)
 
-        # 构建对话上下文，调用 LLM
-        system_prompt = build_system_prompt(
-            gm_id=session.gm_id,
-            world_id=self._format_world_id(session.freak_world_id),
-            is_loading=False,
-            base_path=self.base_path
-        )
-
         char_name = selected_char.get("name", "角色")
         gender_text = "男性" if session.gender_preference == "male" else "女性"
 
-        # 注入完整前序上下文（GM 引导 + 角色列表 + 选择）
         char_list_text = "\n".join([
             f"- {c.get('name')}（{c.get('race', '')}）：{c.get('appearance', '')}，{c.get('personality', '')}，{c.get('status', '')}"
             for c in characters
         ])
 
+        parts = []
+        parts.append(get_style_guide())
+        world_setting = load_world_setting(
+            self._format_world_id(session.freak_world_id), self.base_path
+        )
+        parts.append(f"### 副本世界信息 ###\n{world_setting}")
+        parts.append(
+            "### 角色扮演指令 ###\n"
+            f"用户已选择与「{char_name}」交谈。\n"
+            f"角色信息：{selected_char.get('race', '')}，{selected_char.get('appearance', '')}，"
+            f"性格：{selected_char.get('personality', '')}\n\n"
+            "请立即以第三人称视角完全沉浸为该角色，与用户开始第一轮对话。\n"
+            "要求：\n"
+            "- 以角色身份自然地与用户打招呼、开启互动\n"
+            "- 称呼用户为「旅行者」，并自然地询问用户的名字\n"
+            "- 角色态度友善欢迎，展现角色的个性特点\n"
+            "- 禁止重新介绍角色列表，用户已经做过选择了\n"
+            "- 禁止使用标题、编号、括号说明等破坏沉浸感的格式\n"
+            "- 回复控制在300字以内"
+        )
+        parts.append(get_iw_prompt_saving())
+        system_prompt = "\n\n---\n\n".join(parts)
+
         gm_context = self._build_gm_context_messages(session, gender_text)
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(gm_context)
         messages.extend([
-            {"role": "user", "content": "我进入了这个世界，我能看到哪些人？"},
-            {"role": "assistant", "content": f"你推开那扇门，在昏暗的光线中看到了几个身影：\n\n{char_list_text}\n\n你想和谁交谈？"},
+            {"role": "assistant", "content": f"在这里你看到了几个身影：\n\n{char_list_text}"},
             {"role": "user", "content": f"我选择和{char_name}交谈。"}
         ])
 
