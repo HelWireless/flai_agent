@@ -543,25 +543,27 @@ class FreakWorldService:
         }
         return self._build_response(content=content)
 
-    def _get_fixed_intro(self, freak_world_id) -> Optional[str]:
-        """从数据库配置中获取预设固定背景（step 0 GM介绍用）"""
+    def _get_fixed_content(self, freak_world_id, field: str) -> Optional[str]:
+        """从数据库配置中获取预设内容，支持 str 或 list（随机选一个）"""
         try:
             db_config = _query_config_by_id(self._format_world_id(freak_world_id))
             if db_config and db_config.config and isinstance(db_config.config, dict):
-                return db_config.config.get("fixed_intro")
+                value = db_config.config.get(field)
+                if isinstance(value, list) and value:
+                    return random.choice(value)
+                if isinstance(value, str) and value:
+                    return value
         except Exception as e:
-            custom_logger.warning(f"Failed to get fixed_intro: {e}")
+            custom_logger.warning(f"Failed to get {field}: {e}")
         return None
 
+    def _get_fixed_intro(self, freak_world_id) -> Optional[str]:
+        """获取预设GM介绍（step 0），支持单条或多条随机"""
+        return self._get_fixed_content(freak_world_id, "fixed_intro")
+
     def _get_fixed_narrative(self, freak_world_id) -> Optional[str]:
-        """从数据库配置中获取预设世界叙事（step 1 选完性别后的场景描写）"""
-        try:
-            db_config = _query_config_by_id(self._format_world_id(freak_world_id))
-            if db_config and db_config.config and isinstance(db_config.config, dict):
-                return db_config.config.get("fixed_narrative")
-        except Exception as e:
-            custom_logger.warning(f"Failed to get fixed_narrative: {e}")
-        return None
+        """获取预设世界叙事（step 1），支持单条或多条随机"""
+        return self._get_fixed_content(freak_world_id, "fixed_narrative")
 
     @staticmethod
     def _process_fixed_intro(intro: str, gm_name: str, world_name: str) -> str:
