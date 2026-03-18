@@ -544,13 +544,23 @@ class FreakWorldService:
         return self._build_response(content=content)
 
     def _get_fixed_intro(self, freak_world_id) -> Optional[str]:
-        """从数据库配置中获取预设固定背景"""
+        """从数据库配置中获取预设固定背景（step 0 GM介绍用）"""
         try:
             db_config = _query_config_by_id(self._format_world_id(freak_world_id))
             if db_config and db_config.config and isinstance(db_config.config, dict):
                 return db_config.config.get("fixed_intro")
         except Exception as e:
             custom_logger.warning(f"Failed to get fixed_intro: {e}")
+        return None
+
+    def _get_fixed_narrative(self, freak_world_id) -> Optional[str]:
+        """从数据库配置中获取预设世界叙事（step 1 选完性别后的场景描写）"""
+        try:
+            db_config = _query_config_by_id(self._format_world_id(freak_world_id))
+            if db_config and db_config.config and isinstance(db_config.config, dict):
+                return db_config.config.get("fixed_narrative")
+        except Exception as e:
+            custom_logger.warning(f"Failed to get fixed_narrative: {e}")
         return None
 
     @staticmethod
@@ -571,7 +581,7 @@ class FreakWorldService:
     async def _handle_step1(
         self, session: FreakWorldGameState, request: IWChatRequest, selection: str
     ) -> Dict[str, Any]:
-        """step=1 + selection=male/female: 优先使用固定背景，否则 LLM 生成世界叙事"""
+        """step=1 + selection=male/female: 优先使用预制叙事，否则 LLM 生成世界叙事"""
         if selection not in ("male", "female"):
             return self._error_response("请在 extParam.selection 中传入性别选择（male/female）")
 
@@ -581,13 +591,13 @@ class FreakWorldService:
 
         gender_text = "男性" if selection == "male" else "女性"
 
-        fixed_intro = self._get_fixed_intro(session.freak_world_id)
-        if fixed_intro:
-            custom_logger.info(f"Using fixed intro as narrative for world {session.freak_world_id}")
+        fixed_narrative = self._get_fixed_narrative(session.freak_world_id)
+        if fixed_narrative:
+            custom_logger.info(f"Using fixed narrative for world {session.freak_world_id}")
             world_config = get_world_config(self._format_world_id(session.freak_world_id))
             gm_config = get_gm_config(session.gm_id)
             ai_content = self._process_fixed_intro(
-                fixed_intro, gm_config.get("name", "GM"), world_config.get("name", "未知世界")
+                fixed_narrative, gm_config.get("name", "GM"), world_config.get("name", "未知世界")
             )
         else:
             parts = []
@@ -1301,7 +1311,7 @@ class FreakWorldService:
     async def _stream_narrative(
         self, request: IWChatRequest, gender: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Step 1 世界叙事：有固定背景则模拟流式输出，否则真流式 LLM"""
+        """Step 1 世界叙事：有预制叙事则模拟流式输出，否则真流式 LLM"""
         try:
             session = self._get_or_create_session(request)
 
@@ -1311,12 +1321,12 @@ class FreakWorldService:
 
             gender_text = "男性" if gender == "male" else "女性"
 
-            fixed_intro = self._get_fixed_intro(session.freak_world_id)
-            if fixed_intro:
+            fixed_narrative = self._get_fixed_narrative(session.freak_world_id)
+            if fixed_narrative:
                 world_config = get_world_config(self._format_world_id(session.freak_world_id))
                 gm_config = get_gm_config(session.gm_id)
                 content = self._process_fixed_intro(
-                    fixed_intro, gm_config.get("name", "GM"), world_config.get("name", "未知世界")
+                    fixed_narrative, gm_config.get("name", "GM"), world_config.get("name", "未知世界")
                 )
                 chunk_size = 20
                 for i in range(0, len(content), chunk_size):
