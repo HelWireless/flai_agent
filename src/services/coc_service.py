@@ -317,55 +317,10 @@ class COCService:
     def _get_dialogue_history(self, session_id: str) -> List[Dict[str, str]]:
         """获取对话历史（从 t_freak_world_dialogue 读取，session_id 为会话字符串）
         
-        使用优化的查询，支持缓存和性能监控
-        
         返回的 assistant 消息会自动清理：
         - 状态行（❤ 生命 💎 魔法 🧠 理智）只保留最后一个
         - 轮数标题（【XX轮 / YY回合】）只保留最后一个
         """
-        try:
-            # 使用优化的查询服务
-            from .core.dialogue_query_optimized import OptimizedDialogueQuery
-            
-            dialogue_query = OptimizedDialogueQuery(self.db)
-            
-            # 异步查询需要在线程池中执行
-            import asyncio
-            loop = asyncio.get_event_loop()
-            
-            messages = loop.run_in_executor(
-                None,
-                lambda: loop.run_until_complete(
-                    dialogue_query.get_dialogue_history_optimized(
-                        session_id=session_id,
-                        max_turns=self.HISTORY_WINDOW // 2,  # 转换为轮数
-                        use_cache=True
-                    )
-                )
-            )
-            
-            # Fallback到原始方法（如果异步执行有问题）
-            if not messages or not isinstance(messages, list):
-                return self._get_dialogue_history_fallback(session_id)
-            
-            # 清理assistant消息
-            for msg in messages:
-                if msg.get("role") == "assistant":
-                    content = msg.get("content", "")
-                    # 清理状态行（保留最后一个）
-                    content = self._clean_assistant_message(content)
-                    # 清理轮数标题（保留最后一个）
-                    content = self._clean_turn_header(content, keep_last=True)
-                    msg["content"] = content
-                    
-            return messages
-            
-        except Exception as e:
-            custom_logger.warning(f"优化对话查询失败，使用fallback: {e}")
-            return self._get_dialogue_history_fallback(session_id)
-    
-    def _get_dialogue_history_fallback(self, session_id: str) -> List[Dict[str, str]]:
-        """原始对话查询方法作为fallback"""
         try:
             dialogues = self.db.query(FreakWorldDialogue).filter(
                 and_(
@@ -377,10 +332,15 @@ class COCService:
             messages = []
             for d in dialogues:
                 for msg in d.to_messages():
+                    if msg.get("role") == "assistant":
+                        content = msg.get("content", "")
+                        content = self._clean_assistant_message(content)
+                        content = self._clean_turn_header(content, keep_last=True)
+                        msg["content"] = content
                     messages.append(msg)
             return messages
         except Exception as e:
-            custom_logger.warning(f"Fallback dialogue history query failed: {e}")
+            custom_logger.warning(f"Failed to get dialogue history: {e}")
             return []
 
     # ==================== 对话总结 ====================
