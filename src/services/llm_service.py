@@ -230,13 +230,28 @@ class LLMService:
                 except json.JSONDecodeError:
                     pass
 
-            # 6. 如果是纯文本回复，尝试构造成需要的格式
+            # 6. 尝试从残缺/格式错误的 JSON 中提取字段
+            emotion_match = re.search(r'"emotion_type"\s*:\s*"([^"]*)"', response_text)
+            answer_match = re.search(r'"answer"\s*:\s*"(.*)', response_text, re.DOTALL)
+            if answer_match:
+                answer_raw = answer_match.group(1)
+                # 去掉尾部可能的 "} 或 "}] 等残留
+                answer_raw = re.sub(r'"\s*\}?\s*\]?\s*$', '', answer_raw)
+                # 处理转义
+                answer_raw = answer_raw.replace('\\"', '"').replace('\\n', '\n').strip()
+                if answer_raw:
+                    custom_logger.info(f"Recovered answer from malformed JSON: {answer_raw[:80]}...")
+                    return {
+                        "answer": answer_raw,
+                        "emotion_type": emotion_match.group(1) if emotion_match else "开心"
+                    }
+
+            # 7. 如果是纯文本回复，包装为标准格式
             if response_text and not response_text.startswith('{'):
                 custom_logger.warning(f"LLM returned plain text, wrapping as answer: {response_text[:100]}...")
-                # 将纯文本包装为标准格式
                 return {
                     "answer": response_text,
-                    "emotion_type": "开心"  # 默认情绪
+                    "emotion_type": "开心"
                 }
             
             # 最终尝试
