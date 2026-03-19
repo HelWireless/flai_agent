@@ -543,6 +543,15 @@ class COCService:
         
         return result
 
+    @staticmethod
+    def _get_fallback_selections() -> List[Dict[str, Any]]:
+        """LLM 未生成选项时的兜底选项"""
+        return [
+            {"id": "a", "text": "A. 继续调查当前线索"},
+            {"id": "b", "text": "B. 观察周围环境"},
+            {"id": "c", "text": "C. 与身边的人交谈"},
+        ]
+
     def _extract_selections_and_format_status(self, content: str) -> Tuple[str, List[Dict[str, Any]]]:
         """从 LLM 输出中提取选项并格式化状态行"""
         # 1. 提取选项 (A. B. C. D. E.)
@@ -1371,8 +1380,9 @@ class COCService:
         is_inventory_check = any(kw in message for kw in ["查看背包", "打开背包", "查看物品", "我的物品", "检查背包"])
         if is_inventory_check:
             selections = []
+        elif not selections:
+            selections = self._get_fallback_selections()
 
-        # 构建响应内容（根据用户要求，不再由后端添加标题，保留 AI 生成的标题）
         content = ai_content
 
         return self._build_response(content=content, selections=selections)
@@ -1757,8 +1767,12 @@ class COCService:
 - 故事推进明确过了一天，进入下一个回合
 - 回合和轮数互相独立计算
 - 每轮生成300-500字（禁止展示字数）
-- 每轮结束给出2-3个行动选项，格式为：A. 选项内容【补充说明】，玩家也可自行输入
-- 选项中的补充说明必须使用中文括号（）或【】，禁止使用英文括号()
+- 【强制】每轮回复的末尾必须给出2-3个行动选项，无一例外。格式严格为：
+  A. 选项内容
+  B. 选项内容
+  C. 选项内容（可选）
+  选项必须以大写字母A/B/C开头，后跟英文句号和空格。选项内容中的补充说明使用中文括号（）或【】
+- 即使是战斗、检定、对话等任何场景，都必须在末尾提供选项
 
 【核心目标】
 - 剧情需设明确阶段性目标和核心目标
@@ -1952,6 +1966,8 @@ class COCService:
             is_inventory_check = any(kw in message for kw in ["查看背包", "打开背包", "查看物品", "我的物品", "检查背包"])
             if is_inventory_check:
                 selections = []
+            elif not selections:
+                selections = self._get_fallback_selections()
 
             # 解析并同步数值状态
             self._sync_investigator_status(session, full_content)
