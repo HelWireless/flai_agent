@@ -545,11 +545,29 @@ class COCService:
 
     @staticmethod
     def _get_fallback_selections() -> List[Dict[str, Any]]:
-        """LLM 未生成选项时的兜底选项"""
+        """LLM 未生成选项时的兜底选项，从池中随机选 2 个"""
+        pool = [
+            "继续调查当前线索",
+            "仔细观察周围环境",
+            "和附近的人聊聊",
+            "翻找一下身边的东西",
+            "继续往前走",
+            "回到之前的地方再看看",
+            "检查一下地上的痕迹",
+            "安静下来仔细听",
+            "看看有没有什么出口",
+            "试着回忆一下之前的线索",
+            "查看自己随身带的东西",
+            "找个安全的地方先待一会儿",
+            "小心地靠近可疑的地方",
+            "向同行的人问问情况",
+            "四处搜索有用的物品",
+        ]
+        chosen = random.sample(pool, 2)
+        labels = ["A", "B"]
         return [
-            {"id": "a", "text": "A. 继续调查当前线索"},
-            {"id": "b", "text": "B. 观察周围环境"},
-            {"id": "c", "text": "C. 与身边的人交谈"},
+            {"id": label.lower(), "text": f"{label}. {text}"}
+            for label, text in zip(labels, chosen)
         ]
 
     def _extract_selections_and_format_status(self, content: str) -> Tuple[str, List[Dict[str, Any]]]:
