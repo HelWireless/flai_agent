@@ -77,7 +77,7 @@ def get_prompt_by_character_id(character_id: str, user_id: str = 'guest',
             model_id = None  # 角色不存在时使用默认模型
         else:
             # 在序列化为JSON之前检查是否有指定的模型ID
-            model_id = system_prompt.get('model_id', 'qwen_character')  # 默认使用有过期时间的模型
+            model_id = system_prompt.get('model_id') or None
             # 将角色配置序列化为JSON字符串
             import json as json_module
             system_prompt = json_module.dumps(system_prompt, ensure_ascii=False, indent=4)
