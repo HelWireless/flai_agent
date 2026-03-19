@@ -190,7 +190,15 @@ class ChatService:
             
             # 添加系统消息以指定JSON格式要求
             emotion_list_str = "、".join(self.emotion_service.get_emotion_map().keys()) if hasattr(self.emotion_service, 'get_emotion_map') else "开心、期待、生气、伤心、惊恐、害羞、抱抱、无语"
-            json_format_message = f"请以JSON格式回复，包含emotion_type和answer字段。其中emotion_type必须且只能从以下列表中选择一个：{emotion_list_str}。"
+            json_format_message = (
+                f"【强制】你必须严格以JSON格式回复，不要输出任何JSON以外的内容。格式如下：\n"
+                f'{{"emotion_type": "情绪", "answer": "回复内容"}}\n'
+                f"要求：\n"
+                f"1. emotion_type 必须且只能从以下列表中选一个：{emotion_list_str}\n"
+                f"2. answer 的值必须是单行字符串，禁止在 answer 值内换行\n"
+                f"3. 如果回复内容需要换行，请用 \\n 表示\n"
+                f"4. 禁止输出数组格式，禁止输出多个JSON对象，只输出一个JSON对象"
+            )
             messages.append({"role": "system", "content": json_format_message})
             
             # 记录发送给LLM的完整消息内容
