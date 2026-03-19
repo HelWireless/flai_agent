@@ -34,21 +34,21 @@ class VectorStore:
                 
                 custom_logger.info(f"Initializing vector store - URL: {qdrant_url}, HTTPS: {is_https}")
                 
-                # 根据URL类型决定是否需要SSL配置
+                api_key = config.get('api_key') or None
+
                 if is_https:
                     self.client = QdrantClient(
                         url=qdrant_url,
-                        api_key=config.get('api_key'),
+                        api_key=api_key,
                         https=True,
-                        verify=False  # 忽略SSL证书验证
+                        verify=False
                     )
                 else:
-                    # HTTP连接明确指定不需要HTTPS
                     self.client = QdrantClient(
                         url=qdrant_url,
-                        api_key=config.get('api_key'),
+                        api_key=api_key if api_key else None,
                         https=False,
-                        prefer_grpc=False  # 使用HTTP而不是gRPC
+                        prefer_grpc=False
                     )
                     
                 self.collection_name = config.get('collection_name', 'conversations')
