@@ -189,6 +189,15 @@ class LLMService:
             if response_text.startswith('{') and response_text.endswith('}'):
                 return json.loads(response_text)
             
+            # 4.5 处理 JSON 数组格式 [{"emotion_type":"...", "answer":"..."}]
+            if response_text.startswith('[') and response_text.endswith(']'):
+                try:
+                    arr = json.loads(response_text)
+                    if isinstance(arr, list) and arr and isinstance(arr[0], dict):
+                        return arr[0]
+                except json.JSONDecodeError:
+                    pass
+            
             # 5. 尝试提取 JSON 对象（从文本中找 {...}）
             json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
             if json_match:
@@ -211,6 +220,16 @@ class LLMService:
                 except json.JSONDecodeError:
                     pass
             
+            # 5.5 尝试从文本中提取 JSON 数组 [{...}]
+            arr_match = re.search(r'\[(\s*\{[^[\]]*\}(?:\s*,\s*\{[^[\]]*\})*\s*)\]', response_text)
+            if arr_match:
+                try:
+                    arr = json.loads(arr_match.group())
+                    if isinstance(arr, list) and arr and isinstance(arr[0], dict):
+                        return arr[0]
+                except json.JSONDecodeError:
+                    pass
+
             # 6. 如果是纯文本回复，尝试构造成需要的格式
             if response_text and not response_text.startswith('{'):
                 custom_logger.warning(f"LLM returned plain text, wrapping as answer: {response_text[:100]}...")
